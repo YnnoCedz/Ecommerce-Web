@@ -1,0 +1,10 @@
+{
+  "description": "This multi-vendor ecommerce platform connects buyers and sellers, enabling seamless product discovery, purchase, and order management while ensuring a streamlined experience for administrators.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
