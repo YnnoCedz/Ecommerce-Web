@@ -1,0 +1,60 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
+
+class Product extends Model
+{
+    use SoftDeletes;
+
+    protected $fillable = [
+        'seller_id',
+        'category_id',
+        'name',
+        'slug',
+        'description',
+        'sku',
+        'barcode',
+        'price',
+        'sale_price',
+        'cost_price',
+        'status',
+        'delivery_type',
+        'track_inventory',
+        'stock_quantity',
+        'low_stock_threshold',
+        'weight_grams',
+        'length_cm',
+        'width_cm',
+        'height_cm',
+        'free_shipping',
+        'published_at',
+    ];
+
+    public function seller()
+    {
+        return $this->belongsTo(Seller::class);
+    }
+
+    public function category()
+    {
+        return $this->belongsTo(Category::class);
+    }
+
+    public function images()
+    {
+        return $this->hasMany(ProductImage::class);
+    }
+
+    public function variants()
+    {
+        return $this->hasMany(ProductVariant::class);
+    }
+
+    public function orderItems()
+    {
+        return $this->hasMany(OrderItem::class);
+    }
+}
