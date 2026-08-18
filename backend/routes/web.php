@@ -8,4 +8,3 @@ Route::get('/', function () {
         'status' => 'ok',
     ]);
 });
-

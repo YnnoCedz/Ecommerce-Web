@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router";
+import { useAuth } from "../auth/AuthContext";
+import { fetchCatalogCategories, type CatalogCategory } from "../api/catalog";
 import {
   IconCart, IconHeart, IconSearch, IconMenu, IconClose,
   IconChevronDown, IconChevronRight, IconHome,
 } from "./icons";
-import { CATEGORIES } from "../pages/pub/data";
 
 interface PublicShellProps {
   children: React.ReactNode;
@@ -13,9 +14,6 @@ interface PublicShellProps {
   isLoggedIn?: boolean;
   activePage?: string;
 }
-
-// Nav categories are derived from the canonical 12-category source.
-const NAV_CATEGORIES = CATEGORIES;
 
 // Footer links carry an href so every entry routes somewhere real.
 const FOOTER_LINKS: { heading: string; links: { label: string; href: string }[] }[] = [
@@ -66,41 +64,85 @@ const FOOTER_LINKS: { heading: string; links: { label: string; href: string }[] 
 ];
 
 // Account menu — label + destination route.
-const ACCOUNT_LINKS: { label: string; href: string }[] = [
+const BASE_ACCOUNT_LINKS: { label: string; href: string }[] = [
   { label: "My Orders", href: "/account/orders" },
   { label: "Wishlist", href: "/account/wishlist" },
   { label: "Addresses", href: "/account/addresses" },
   { label: "Messages", href: "/account/messages" },
-  { label: "Become a Seller", href: "/seller-center/onboarding" },
   { label: "Settings", href: "/account/preferences" },
 ];
 
+function getAccountLinks(user: ReturnType<typeof useAuth>["user"]) {
+  const sellerLink = user?.seller_approved || user?.role === "seller"
+    ? { label: "Switch to Seller", href: "/seller-center" }
+    : { label: "Become a Seller", href: "/seller-center/onboarding" };
+
+  return [...BASE_ACCOUNT_LINKS.slice(0, 4), sellerLink, BASE_ACCOUNT_LINKS[4]];
+}
+
 export default function PublicShell({ children, cartCount = 0, wishlistCount = 0, isLoggedIn = false, activePage }: PublicShellProps) {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [navCategories, setNavCategories] = useState<CatalogCategory[]>([]);
 
   const submitSearch = (q: string) => {
     const trimmed = q.trim();
     navigate(trimmed ? `/search?q=${encodeURIComponent(trimmed)}` : "/search");
   };
   const [megaMenuCategory, setMegaMenuCategory] = useState<string | null>(null);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const megaRef = useRef<HTMLDivElement>(null);
   const accountRef = useRef<HTMLDivElement>(null);
+  const hasSession = Boolean(user) || isLoggedIn;
+  const accountInitials = user
+    ? `${user.first_name?.[0] ?? ""}${user.last_name?.[0] ?? ""}`.trim() || user.display_name?.[0] || "M"
+    : "M";
+  const accountName = user?.display_name ?? "Guest";
+  const accountEmail = user?.email ?? "Sign in to your account";
+  const accountLinks = getAccountLinks(user);
 
   // Close menus on outside click
   useEffect(() => {
+    void fetchCatalogCategories()
+      .then((response) => setNavCategories(response.data))
+      .catch(() => setNavCategories([]));
+
     const handler = (e: MouseEvent) => {
       if (megaRef.current && !megaRef.current.contains(e.target as Node)) setMegaMenuCategory(null);
+      if (megaRef.current && !megaRef.current.contains(e.target as Node)) setMoreMenuOpen(false);
       if (accountRef.current && !accountRef.current.contains(e.target as Node)) setAccountMenuOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const activeCat = NAV_CATEGORIES.find(c => c.label === megaMenuCategory);
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } finally {
+      setAccountMenuOpen(false);
+      setMobileMenuOpen(false);
+      navigate("/auth/login");
+    }
+  };
+
+  const activeCat = navCategories.find(c => c.label === megaMenuCategory);
+  const visibleCategories = navCategories.slice(0, 7);
+  const extraCategories = navCategories.slice(7);
+
+  const openCategoryMenu = (label: string) => {
+    setMoreMenuOpen(false);
+    setMegaMenuCategory(label);
+  };
+
+  const openMoreCategoriesMenu = () => {
+    setMegaMenuCategory(null);
+    setMoreMenuOpen(true);
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--color-ground)]">
@@ -192,7 +234,7 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
 
             {/* Account */}
             <div ref={accountRef} className="relative hidden md:block">
-              {isLoggedIn ? (
+              {hasSession ? (
                 <>
                   <button
                     onClick={() => setAccountMenuOpen(!accountMenuOpen)}
@@ -201,21 +243,21 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
                     aria-haspopup="true"
                     className="flex flex-col items-center p-2 text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] transition-colors cursor-pointer">
                     <div className="w-6 h-6 rounded-full bg-[var(--color-navy)] flex items-center justify-center">
-                      <span className="text-white text-[10px] font-[500]">M</span>
+                      <span className="text-white text-[10px] font-[500]">{accountInitials}</span>
                     </div>
                     <span className="text-[9px] font-[var(--font-mono)] mt-0.5 hidden lg:block">Account</span>
                   </button>
                   {accountMenuOpen && (
                     <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-[var(--color-border)] rounded-sm shadow-[0_8px_24px_rgba(28,27,24,0.12)] z-50">
                       <div className="px-4 py-3 border-b border-[var(--color-border)]">
-                        <p className="text-sm font-[600] text-[var(--color-ink)]">Maria Santos</p>
-                        <p className="text-xs text-[var(--color-ink-muted)]">maria@example.com</p>
+                        <p className="text-sm font-[600] text-[var(--color-ink)]">{accountName}</p>
+                        <p className="text-xs text-[var(--color-ink-muted)]">{accountEmail}</p>
                       </div>
-                      {ACCOUNT_LINKS.map(({ label, href }) => (
-                        <Link key={label} to={href} onClick={() => setAccountMenuOpen(false)} className={`flex items-center px-4 py-2.5 text-sm hover:bg-[var(--color-surface)] transition-colors cursor-pointer ${label === "Become a Seller" ? "text-[var(--color-navy)] font-[500]" : "text-[var(--color-ink)]"}`}>{label}</Link>
+                      {accountLinks.map(({ label, href }) => (
+                        <Link key={label} to={href} onClick={() => setAccountMenuOpen(false)} className={`flex items-center px-4 py-2.5 text-sm hover:bg-[var(--color-surface)] transition-colors cursor-pointer ${label === "Switch to Seller" || label === "Become a Seller" ? "text-[var(--color-navy)] font-[500]" : "text-[var(--color-ink)]"}`}>{label}</Link>
                       ))}
                       <div className="border-t border-[var(--color-border)]">
-                        <Link to="/auth/login" onClick={() => setAccountMenuOpen(false)} className="flex items-center px-4 py-2.5 text-sm text-[var(--color-red)] hover:bg-[var(--color-red-light)] transition-colors cursor-pointer">Log out</Link>
+                        <button onClick={handleLogout} className="w-full text-left flex items-center px-4 py-2.5 text-sm text-[var(--color-red)] hover:bg-[var(--color-red-light)] transition-colors cursor-pointer">Log out</button>
                       </div>
                     </div>
                   )}
@@ -239,12 +281,15 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
             <Link to="/c/all" className="flex items-center gap-1.5 px-4 h-full text-xs font-[500] text-[var(--color-ink-muted)] hover:text-[var(--color-navy)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer border-r border-[var(--color-border-subtle)]">
               <IconHome size={13} />All Categories
             </Link>
-            {NAV_CATEGORIES.slice(0, 7).map(cat => (
+            {visibleCategories.map(cat => (
               <button
                 key={cat.label}
-                onMouseEnter={() => setMegaMenuCategory(cat.label)}
+                onMouseEnter={() => openCategoryMenu(cat.label)}
                 onMouseLeave={() => {}}
-                onClick={() => navigate(`/c/${cat.slug}`)}
+                onClick={() => {
+                  setMoreMenuOpen(false);
+                  navigate(`/c/${cat.slug}`);
+                }}
                 onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate(`/c/${cat.slug}`); } if (e.key === "Escape") setMegaMenuCategory(null); }}
                 aria-expanded={megaMenuCategory === cat.label}
                 aria-haspopup="true"
@@ -253,6 +298,47 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
                 <IconChevronDown size={10} aria-hidden="true" />
               </button>
             ))}
+            {extraCategories.length > 0 && (
+              <div
+                className="relative h-full"
+                onMouseEnter={openMoreCategoriesMenu}
+                onMouseLeave={() => setMoreMenuOpen(false)}>
+                <button
+                  onClick={() => setMoreMenuOpen((open) => {
+                    const next = !open;
+                    if (next) setMegaMenuCategory(null);
+                    return next;
+                  })}
+                  aria-expanded={moreMenuOpen}
+                  aria-haspopup="true"
+                  className={`flex items-center gap-1 px-4 h-full text-xs font-[500] transition-colors cursor-pointer whitespace-nowrap ${moreMenuOpen ? "text-[var(--color-navy)] bg-[var(--color-navy-surface)]" : "text-[var(--color-ink-muted)] hover:text-[var(--color-navy)] hover:bg-[var(--color-surface)]"}`}>
+                  More
+                  <IconChevronDown size={10} aria-hidden="true" />
+                </button>
+                {moreMenuOpen && (
+                  <div className="absolute top-full right-0 mt-0.5 w-[320px] bg-white border border-[var(--color-border)] shadow-[0_8px_24px_rgba(28,27,24,0.10)] z-50">
+                    <div className="px-4 py-3 border-b border-[var(--color-border)]">
+                      <p className="text-xs font-[600] text-[var(--color-ink)] uppercase tracking-wide">More categories</p>
+                      <p className="text-[11px] text-[var(--color-ink-muted)] mt-0.5">{extraCategories.length} additional categories</p>
+                    </div>
+                    <div className="max-h-80 overflow-y-auto p-2 grid grid-cols-1 gap-1">
+                      {extraCategories.map((cat) => (
+                        <button
+                          key={cat.label}
+                          onClick={() => {
+                            navigate(`/c/${cat.slug}`);
+                            setMoreMenuOpen(false);
+                          }}
+                          className="flex items-center justify-between gap-3 w-full px-3 py-2 rounded-sm text-left text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface)] hover:text-[var(--color-navy)] transition-colors">
+                          <span className="truncate">{cat.label}</span>
+                          <span className="text-[10px] font-[var(--font-mono)] text-[var(--color-ink-disabled)]">{cat.count.toLocaleString()}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Mega menu */}
@@ -317,7 +403,7 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
             {/* Mobile categories */}
             <div className="flex-1 overflow-y-auto py-2">
               <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] tracking-widest px-4 py-2 uppercase">Categories</p>
-              {NAV_CATEGORIES.map(cat => (
+              {navCategories.map(cat => (
                 <Link key={cat.label} to={`/c/${cat.slug}`} onClick={() => setMobileMenuOpen(false)} className="flex items-center justify-between px-4 py-3 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface)] border-b border-[var(--color-border-subtle)] cursor-pointer">
                   {cat.label}
                   <IconChevronRight size={14} className="text-[var(--color-ink-muted)]" />
@@ -326,12 +412,12 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
 
               <div className="border-t border-[var(--color-border)] mt-2 pt-2">
                 <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] tracking-widest px-4 py-2 uppercase">Account</p>
-                {isLoggedIn ? (
+                {hasSession ? (
                   <>
-                    {ACCOUNT_LINKS.map(({ label, href }) => (
-                      <Link key={label} to={href} onClick={() => setMobileMenuOpen(false)} className={`flex items-center px-4 py-3 text-sm hover:bg-[var(--color-surface)] cursor-pointer ${label === "Become a Seller" ? "text-[var(--color-navy)] font-[500]" : "text-[var(--color-ink)]"}`}>{label}</Link>
+                    {accountLinks.map(({ label, href }) => (
+                      <Link key={label} to={href} onClick={() => setMobileMenuOpen(false)} className={`flex items-center px-4 py-3 text-sm hover:bg-[var(--color-surface)] cursor-pointer ${label === "Switch to Seller" || label === "Become a Seller" ? "text-[var(--color-navy)] font-[500]" : "text-[var(--color-ink)]"}`}>{label}</Link>
                     ))}
-                    <Link to="/auth/login" onClick={() => setMobileMenuOpen(false)} className="flex items-center px-4 py-3 text-sm text-[var(--color-red)] hover:bg-[var(--color-red-light)] cursor-pointer">Log out</Link>
+                    <button onClick={handleLogout} className="w-full text-left flex items-center px-4 py-3 text-sm text-[var(--color-red)] hover:bg-[var(--color-red-light)] cursor-pointer">Log out</button>
                   </>
                 ) : (
                   <div className="flex gap-2 px-4 py-3">

@@ -2,12 +2,13 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Seller extends Model
 {
-    use SoftDeletes;
+    use HasFactory, SoftDeletes;
 
     protected $fillable = [
         'user_id',
@@ -74,5 +75,10 @@ class Seller extends Model
     public function followers()
     {
         return $this->hasMany(SellerFollower::class);
+    }
+
+    public function isApproved(): bool
+    {
+        return $this->status === 'approved';
     }
 }

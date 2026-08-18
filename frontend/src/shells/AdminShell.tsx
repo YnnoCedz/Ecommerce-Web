@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
+import { useAuth } from "../auth/AuthContext";
 import {
   IconDashboard, IconUsers, IconSellers, IconProducts, IconOrders,
   IconCategories, IconReports, IconModeration, IconAnalytics, IconSettings,
@@ -36,12 +37,21 @@ interface AdminShellProps {
 
 export default function AdminShell({ children, activeNav = "dashboard", onNavChange }: AdminShellProps) {
   const navigate = useNavigate();
+  const { logout } = useAuth();
   const [activeItem, setActiveItem] = useState(activeNav);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } finally {
+      setAccountOpen(false);
+      navigate("/auth/login");
+    }
+  };
 
   useEffect(() => {
     setActiveItem(activeNav);
@@ -99,7 +109,7 @@ export default function AdminShell({ children, activeNav = "dashboard", onNavCha
           <IconHelp size={15} className="shrink-0" />
           <span className="text-sm">Help</span>
         </button>
-        <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-sm text-white/40 hover:text-white/80 hover:bg-white/8 transition-all cursor-pointer">
+        <button onClick={handleLogout} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-sm text-white/40 hover:text-white/80 hover:bg-white/8 transition-all cursor-pointer">
           <IconLogout size={15} className="shrink-0" />
           <span className="text-sm">Log out</span>
         </button>
@@ -245,7 +255,7 @@ export default function AdminShell({ children, activeNav = "dashboard", onNavCha
                     <button key={l} onClick={() => { setAccountOpen(false); navigate("/admin/settings"); }} className="w-full flex items-center px-4 py-2.5 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface)] cursor-pointer">{l}</button>
                   ))}
                   <div className="border-t border-[var(--color-border)]">
-                    <button onClick={() => { setAccountOpen(false); navigate("/auth/login"); }} className="w-full flex items-center px-4 py-2.5 text-sm text-[var(--color-red)] hover:bg-[var(--color-red-light)] cursor-pointer">Log out</button>
+                    <button onClick={handleLogout} className="w-full flex items-center px-4 py-2.5 text-sm text-[var(--color-red)] hover:bg-[var(--color-red-light)] cursor-pointer">Log out</button>
                   </div>
                 </div>
               )}

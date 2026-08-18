@@ -1,9 +1,17 @@
-import { useState } from "react";
-import { PRODUCTS } from "./data";
+import { useEffect, useMemo, useState } from "react";
 import { Rating, Price } from "../../Part03";
 import { IconSearch, IconChevronRight } from "../../shells/icons";
+import { fetchCatalogProducts, type CatalogProduct } from "../../api/catalog";
 
 type NavFn = (page: string, params?: Record<string, string>) => void;
+
+const PRICE_RANGES = [
+  { label: "Under ₱500", min: 0, max: 500 },
+  { label: "₱500 – ₱1,000", min: 500, max: 1000 },
+  { label: "₱1,000 – ₱3,000", min: 1000, max: 3000 },
+  { label: "₱3,000 – ₱5,000", min: 3000, max: 5000 },
+  { label: "Over ₱5,000", min: 5000, max: Infinity },
+];
 
 const SORT_OPTIONS = [
   { value: "relevance", label: "Relevance" },
@@ -14,17 +22,9 @@ const SORT_OPTIONS = [
   { value: "sales", label: "Best Selling" },
 ];
 
-const PRICE_RANGES = [
-  { label: "Under ₱500", min: 0, max: 500 },
-  { label: "₱500 – ₱1,000", min: 500, max: 1000 },
-  { label: "₱1,000 – ₱3,000", min: 1000, max: 3000 },
-  { label: "₱3,000 – ₱5,000", min: 3000, max: 5000 },
-  { label: "Over ₱5,000", min: 5000, max: Infinity },
-];
-
-function ProductCard({ product, onNavigate }: { product: typeof PRODUCTS[0]; onNavigate: NavFn }) {
+function ProductCard({ product, onNavigate }: { product: CatalogProduct; onNavigate: NavFn }) {
   const [wished, setWished] = useState(false);
-  const discount = product.originalPrice ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100) : null;
+  const discount = product.original_price ? Math.round(((product.original_price - product.price) / product.original_price) * 100) : null;
   return (
     <div
       className="group bg-white border border-[var(--color-border)] rounded-sm overflow-hidden hover:shadow-[0_4px_20px_rgba(28,27,24,0.10)] hover:border-[var(--color-border-strong)] transition-all cursor-pointer"
@@ -49,9 +49,9 @@ function ProductCard({ product, onNavigate }: { product: typeof PRODUCTS[0]; onN
       <div className="p-3.5">
         <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] mb-1 truncate">{product.seller}</p>
         <p className="text-sm font-[500] text-[var(--color-ink)] leading-snug mb-2 line-clamp-2">{product.name}</p>
-        <div className="mb-2"><Rating value={product.rating} count={product.ratingCount} /></div>
-        <Price amount={product.price} original={product.originalPrice} size="sm" />
-        {product.freeShipping && <p className="text-[10px] font-[var(--font-mono)] text-[var(--color-green)] mt-1">Free Shipping</p>}
+        <div className="mb-2"><Rating value={product.rating} count={product.rating_count} /></div>
+        <Price amount={product.price} original={product.original_price ?? undefined} size="sm" />
+        {product.free_shipping && <p className="text-[10px] font-[var(--font-mono)] text-[var(--color-green)] mt-1">Free Shipping</p>}
       </div>
     </div>
   );
@@ -70,37 +70,33 @@ export default function SearchPage({
   const [selectedPrice, setSelectedPrice] = useState<number | null>(null);
   const [minRating, setMinRating] = useState<number | null>(null);
   const [freeShipping, setFreeShipping] = useState(false);
-  const [noResults, setNoResults] = useState(false);
   const [page, setPage] = useState(1);
+  const [products, setProducts] = useState<CatalogProduct[]>([]);
 
-  // Simulate filtering / "no results" toggle
-  let results = PRODUCTS;
-  if (query.trim()) {
-    const q = query.toLowerCase();
-    const searched = PRODUCTS.filter(
-      p => p.name.toLowerCase().includes(q) || p.seller.toLowerCase().includes(q) || p.category.toLowerCase().includes(q)
-    );
-    if (!noResults) results = searched.length > 0 ? searched : PRODUCTS;
-    else results = [];
-  }
-  if (selectedPrice !== null) {
-    const r = PRICE_RANGES[selectedPrice];
-    results = results.filter(p => p.price >= r.min && p.price <= r.max);
-  }
-  if (minRating !== null) results = results.filter(p => p.rating >= minRating);
-  if (freeShipping) results = results.filter(p => p.freeShipping);
-  if (sort === "price-asc") results = [...results].sort((a, b) => a.price - b.price);
-  if (sort === "price-desc") results = [...results].sort((a, b) => b.price - a.price);
-  if (sort === "rating") results = [...results].sort((a, b) => b.rating - a.rating);
+  useEffect(() => {
+    void fetchCatalogProducts({ search: query }).then((response) => setProducts(response.data)).catch(() => setProducts([]));
+  }, [query]);
+
+  const filtered = useMemo(() => {
+    let results = [...products];
+    if (selectedPrice !== null) {
+      const r = PRICE_RANGES[selectedPrice];
+      results = results.filter(p => p.price >= r.min && p.price <= r.max);
+    }
+    if (minRating !== null) results = results.filter(p => p.rating >= minRating);
+    if (freeShipping) results = results.filter(p => p.free_shipping);
+    if (sort === "price-asc") results = results.sort((a, b) => a.price - b.price);
+    if (sort === "price-desc") results = results.sort((a, b) => b.price - a.price);
+    if (sort === "rating") results = results.sort((a, b) => b.rating - a.rating);
+    if (sort === "sales") results = results.sort((a, b) => b.sold_count - a.sold_count);
+    return results;
+  }, [products, selectedPrice, minRating, freeShipping, sort]);
 
   const doSearch = () => { setQuery(inputValue); setPage(1); };
-
   const SUGGESTED = ["Leather bag", "Natural skincare", "Handmade ceramics", "Chronograph watch", "Canvas sneakers"];
 
   return (
     <div className="bg-[var(--color-ground)] min-h-full">
-
-      {/* ── SEARCH BAR STRIP ───────────────────────────────────── */}
       <div className="bg-white border-b border-[var(--color-border)] px-4 md:px-8 lg:px-12 py-5">
         <div className="max-w-screen-xl mx-auto">
           <div className="flex gap-2 max-w-2xl">
@@ -127,21 +123,11 @@ export default function SearchPage({
             </button>
           </div>
 
-          {/* Query info / suggestions */}
           {query ? (
             <div className="flex items-center gap-2 mt-3">
               <p className="text-sm text-[var(--color-ink-muted)]">
-                {results.length > 0 ? (
-                  <><span className="font-[500] text-[var(--color-ink)]">{results.length.toLocaleString()}</span> results for <span className="font-[500] text-[var(--color-ink)]">"{query}"</span></>
-                ) : (
-                  <>No results for <span className="font-[500] text-[var(--color-ink)]">"{query}"</span></>
-                )}
+                <span className="font-[500] text-[var(--color-ink)]">{filtered.length.toLocaleString()}</span> results for <span className="font-[500] text-[var(--color-ink)]">"{query}"</span>
               </p>
-              {/* Demo toggle */}
-              <button onClick={() => setNoResults(r => !r)}
-                className="font-[var(--font-mono)] text-[9px] text-[var(--color-ink-disabled)] border border-dashed border-[var(--color-border)] px-2 py-0.5 rounded cursor-pointer hover:border-[var(--color-border-strong)]">
-                {noResults ? "show results" : "demo: no results"}
-              </button>
             </div>
           ) : (
             <div className="flex items-center gap-2 mt-3 flex-wrap">
@@ -159,12 +145,9 @@ export default function SearchPage({
 
       <div className="px-4 md:px-8 lg:px-12 max-w-screen-xl mx-auto py-6">
         <div className="flex gap-6">
-
-          {/* ── FILTER SIDEBAR ──────────────────────────────────── */}
           <aside className="hidden lg:block w-52 shrink-0">
             <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] tracking-widest uppercase mb-3">Refine</p>
             <div className="bg-white border border-[var(--color-border)] rounded-sm overflow-hidden">
-              {/* Price */}
               <div className="px-4 py-3 border-b border-[var(--color-border)]">
                 <p className="text-xs font-[600] text-[var(--color-ink)] mb-2.5">Price Range</p>
                 <div className="space-y-2">
@@ -178,7 +161,6 @@ export default function SearchPage({
                   ))}
                 </div>
               </div>
-              {/* Rating */}
               <div className="px-4 py-3 border-b border-[var(--color-border)]">
                 <p className="text-xs font-[600] text-[var(--color-ink)] mb-2.5">Min. Rating</p>
                 {[4, 3, 2].map(r => (
@@ -193,7 +175,6 @@ export default function SearchPage({
                   </button>
                 ))}
               </div>
-              {/* Delivery */}
               <div className="px-4 py-3">
                 <label className="flex items-center gap-2.5 cursor-pointer" onClick={() => setFreeShipping(f => !f)}>
                   <div className={`w-8 h-4 rounded-full relative transition-colors ${freeShipping ? "bg-[var(--color-navy)]" : "bg-[var(--color-border-strong)]"}`}>
@@ -205,15 +186,12 @@ export default function SearchPage({
             </div>
           </aside>
 
-          {/* ── RESULTS AREA ────────────────────────────────────── */}
           <div className="flex-1 min-w-0">
-
-            {results.length > 0 ? (
+            {filtered.length > 0 ? (
               <>
-                {/* Sort bar */}
                 <div className="flex items-center justify-between mb-5">
                   <p className="text-sm text-[var(--color-ink-muted)]">
-                    <span className="font-[500] text-[var(--color-ink)]">{results.length}</span> products
+                    <span className="font-[500] text-[var(--color-ink)]">{filtered.length}</span> products
                   </p>
                   <div className="flex items-center gap-2">
                     <label className="text-xs text-[var(--color-ink-muted)]">Sort:</label>
@@ -225,10 +203,9 @@ export default function SearchPage({
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {results.map(p => <ProductCard key={p.id} product={p} onNavigate={onNavigate} />)}
+                  {filtered.map(p => <ProductCard key={p.id} product={p} onNavigate={onNavigate} />)}
                 </div>
 
-                {/* Pagination */}
                 <div className="mt-8 flex items-center justify-center gap-1.5">
                   {[1, 2, 3, 4, 5].map(p => (
                     <button key={p} onClick={() => setPage(p)}
@@ -243,7 +220,6 @@ export default function SearchPage({
                 </div>
               </>
             ) : (
-              /* ── NO RESULTS STATE ────────────────────── */
               <div className="py-16 text-center max-w-md mx-auto">
                 <div className="w-20 h-20 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-full flex items-center justify-center mx-auto mb-6">
                   <IconSearch size={28} className="text-[var(--color-ink-muted)]" />
@@ -261,7 +237,7 @@ export default function SearchPage({
                 <div className="flex flex-wrap gap-2 justify-center mb-6">
                   <p className="w-full text-xs text-[var(--color-ink-muted)] mb-1">Try searching for:</p>
                   {["Leather bag", "Skincare", "Watches", "Ceramics"].map(s => (
-                    <button key={s} onClick={() => { setInputValue(s); setQuery(s); setNoResults(false); }}
+                    <button key={s} onClick={() => { setInputValue(s); setQuery(s); }}
                       className="px-3 py-1.5 border border-[var(--color-border)] rounded-full text-xs text-[var(--color-ink)] hover:border-[var(--color-navy)] cursor-pointer transition-colors">
                       {s}
                     </button>

@@ -1,6 +1,8 @@
-import { createContext, useContext } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { Outlet, useNavigate } from "react-router";
+import { useAuth } from "../auth/AuthContext";
 import PublicShell from "../shells/PublicShell";
+import { fetchCart } from "../api/cart";
 
 // ── NavFn context ──────────────────────────────────────────────
 // Bridges the existing onNavigate(page, params) pattern to React Router
@@ -23,6 +25,7 @@ function buildNavFn(navigate: ReturnType<typeof useNavigate>): NavFn {
       case "register":       return navigate("/auth/register");
       case "forgot-password":return navigate("/auth/forgot-password");
       case "verify-email":   return navigate("/auth/verify-email");
+      case "email-verified": return navigate("/auth/email-verified");
       case "orders":         return navigate("/account/orders");
       case "order-detail":   return navigate(`/account/orders/${params?.id ?? ""}`);
       case "wishlist":       return navigate("/account/wishlist");
@@ -39,11 +42,47 @@ function buildNavFn(navigate: ReturnType<typeof useNavigate>): NavFn {
 
 export default function PublicLayout() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const navFn = buildNavFn(navigate);
+  const [cartCount, setCartCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!user) {
+      setCartCount(0);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void fetchCart()
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+
+        const count = response.data.sellers.reduce(
+          (sum, seller) => sum + seller.items.reduce((itemSum, item) => itemSum + item.quantity, 0),
+          0,
+        );
+
+        setCartCount(count);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCartCount(0);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   return (
     <NavCtx.Provider value={navFn}>
-      <PublicShell cartCount={3} wishlistCount={2} isLoggedIn={true}>
+      <PublicShell cartCount={cartCount} wishlistCount={user?.wishlist_count ?? 0} isLoggedIn={Boolean(user)}>
         <Outlet />
       </PublicShell>
     </NavCtx.Provider>

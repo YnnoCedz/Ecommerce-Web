@@ -9,8 +9,10 @@ class SellerDocument extends Model
     protected $fillable = [
         'seller_id',
         'document_type',
+        'storage_disk',
         'file_name',
         'file_path',
+        'original_filename',
         'mime_type',
         'file_size',
         'status',
@@ -21,5 +23,10 @@ class SellerDocument extends Model
     public function seller()
     {
         return $this->belongsTo(Seller::class);
+    }
+
+    public function sellerApplication()
+    {
+        return $this->belongsTo(SellerApplication::class);
     }
 }

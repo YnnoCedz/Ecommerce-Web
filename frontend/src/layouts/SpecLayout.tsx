@@ -1,20 +1,22 @@
+import { lazy } from "react";
 import { useNavigate, useParams, Navigate } from "react-router";
 import { Tag } from "../shared";
-import Part01 from "../Part01";
-import Part02 from "../Part02";
-import Part03 from "../Part03";
-import Part04 from "../Part04";
-import Part05 from "../Part05";
-import Part06 from "../Part06";
-import Part07 from "../Part07";
-import Part08 from "../Part08";
-import Part09 from "../Part09";
-import Part10 from "../Part10";
-import Part11 from "../Part11";
-import Part12 from "../Part12";
-import Part13 from "../Part13";
-import Part14 from "../Part14";
-import Part15 from "../Part15";
+
+const Part01 = lazy(() => import("../Part01"));
+const Part02 = lazy(() => import("../Part02"));
+const Part03 = lazy(() => import("../Part03"));
+const Part04 = lazy(() => import("../Part04"));
+const Part05 = lazy(() => import("../Part05"));
+const Part06 = lazy(() => import("../Part06"));
+const Part07 = lazy(() => import("../Part07"));
+const Part08 = lazy(() => import("../Part08"));
+const Part09 = lazy(() => import("../Part09"));
+const Part10 = lazy(() => import("../Part10"));
+const Part11 = lazy(() => import("../Part11"));
+const Part12 = lazy(() => import("../Part12"));
+const Part13 = lazy(() => import("../Part13"));
+const Part14 = lazy(() => import("../Part14"));
+const Part15 = lazy(() => import("../Part15"));
 
 const PARTS = [
   { id: "01", label: "Project Foundation",     sublabel: "Scope · Roles · Principles" },

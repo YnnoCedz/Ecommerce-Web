@@ -8,10 +8,11 @@ class ReportAttachment extends Model
 {
     protected $fillable = [
         'report_id',
+        'storage_disk',
         'file_name',
         'file_path',
+        'original_filename',
         'mime_type',
         'file_size',
     ];
 }
-

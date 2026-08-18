@@ -1,63 +1,67 @@
-import { createBrowserRouter, Navigate, useParams, useSearchParams } from "react-router";
+import { createBrowserRouter, Navigate, Outlet, useParams, useSearchParams } from "react-router";
+import { lazy } from "react";
 
 // ── Layouts ───────────────────────────────────────────────────
 import PublicLayout, { useNav } from "./layouts/PublicLayout";
-import SellerLayout from "./layouts/SellerLayout";
-import AdminLayout from "./layouts/AdminLayout";
+const SellerLayout = lazy(() => import("./layouts/SellerLayout"));
+const AdminLayout = lazy(() => import("./layouts/AdminLayout"));
 import SpecLayout from "./layouts/SpecLayout";
 
 // ── Public pages ──────────────────────────────────────────────
-import HomePage from "./pages/pub/HomePage";
-import CategoryPage from "./pages/pub/CategoryPage";
-import SearchPage from "./pages/pub/SearchPage";
-import ProductPage from "./pages/pub/ProductPage";
-import SellerStorePage from "./pages/pub/SellerStorePage";
+const HomePage = lazy(() => import("./pages/pub/HomePage"));
+const CategoryPage = lazy(() => import("./pages/pub/CategoryPage"));
+const SearchPage = lazy(() => import("./pages/pub/SearchPage"));
+const ProductPage = lazy(() => import("./pages/pub/ProductPage"));
+const SellerStorePage = lazy(() => import("./pages/pub/SellerStorePage"));
 
 // ── Auth pages ────────────────────────────────────────────────
-import LoginPage from "./pages/auth/LoginPage";
-import RegisterPage from "./pages/auth/RegisterPage";
-import ForgotPasswordPage from "./pages/auth/ForgotPasswordPage";
-import VerifyEmailPage from "./pages/auth/VerifyEmailPage";
-import ResetPasswordPage from "./pages/auth/ResetPasswordPage";
+const LoginPage = lazy(() => import("./pages/auth/LoginPage"));
+const RegisterPage = lazy(() => import("./pages/auth/RegisterPage"));
+const ForgotPasswordPage = lazy(() => import("./pages/auth/ForgotPasswordPage"));
+const VerifyEmailPage = lazy(() => import("./pages/auth/VerifyEmailPage"));
+const EmailVerifiedPage = lazy(() => import("./pages/auth/EmailVerifiedPage"));
+const ResetPasswordPage = lazy(() => import("./pages/auth/ResetPasswordPage"));
+const TwoFactorPage = lazy(() => import("./pages/auth/TwoFactorPage"));
 
 // ── Buyer / account pages ─────────────────────────────────────
-import CartPage from "./pages/buyer/CartPage";
-import WishlistPage from "./pages/buyer/WishlistPage";
-import BuyerDashboardPage from "./pages/buyer/BuyerDashboardPage";
-import CheckoutFlow from "./pages/checkout/CheckoutFlow";
-import OrderHistoryPage from "./pages/orders/OrderHistoryPage";
-import OrderDetailPage from "./pages/orders/OrderDetailPage";
-import MessagingPage from "./pages/messaging/MessagingPage";
-import NotificationCenter from "./pages/notifications/NotificationCenter";
-import ProfilePage from "./pages/account/ProfilePage";
-import SecurityPage from "./pages/account/SecurityPage";
-import AddressesPage from "./pages/account/AddressesPage";
-import PreferencesPage from "./pages/account/PreferencesPage";
-import { DEMO_USER } from "./pages/account/AccountLayout";
+const CartPage = lazy(() => import("./pages/buyer/CartPage"));
+const WishlistPage = lazy(() => import("./pages/buyer/WishlistPage"));
+const BuyerDashboardPage = lazy(() => import("./pages/buyer/BuyerDashboardPage"));
+const CheckoutFlow = lazy(() => import("./pages/checkout/CheckoutFlow"));
+const OrderHistoryPage = lazy(() => import("./pages/orders/OrderHistoryPage"));
+const OrderDetailPage = lazy(() => import("./pages/orders/OrderDetailPage"));
+const MessagingPage = lazy(() => import("./pages/messaging/MessagingPage"));
+const NotificationCenter = lazy(() => import("./pages/notifications/NotificationCenter"));
+const ProfilePage = lazy(() => import("./pages/account/ProfilePage"));
+const SecurityPage = lazy(() => import("./pages/account/SecurityPage"));
+const AddressesPage = lazy(() => import("./pages/account/AddressesPage"));
+const PreferencesPage = lazy(() => import("./pages/account/PreferencesPage"));
+import { useAuth } from "./auth/AuthContext";
+import type { AccountUser } from "./pages/account/AccountLayout";
 
 // ── Seller pages ──────────────────────────────────────────────
-import SellerDashboard from "./pages/seller/SellerDashboard";
-import ProductListPage from "./pages/seller/ProductListPage";
-import ProductCreationPage from "./pages/seller/ProductCreationPage";
-import InventoryPage from "./pages/seller/InventoryPage";
-import SellerOrdersPage from "./pages/seller/SellerOrdersPage";
-import CustomersPage from "./pages/seller/CustomersPage";
-import PromotionsPage from "./pages/seller/PromotionsPage";
-import AnalyticsPage from "./pages/seller/AnalyticsPage";
-import StoreManagementPage from "./pages/seller/StoreManagementPage";
-import SellerSettingsPage from "./pages/seller/SellerSettingsPage";
-import SellerOnboarding from "./pages/seller/onboarding/SellerOnboarding";
+const SellerDashboard = lazy(() => import("./pages/seller/SellerDashboard"));
+const ProductListPage = lazy(() => import("./pages/seller/ProductListPage"));
+const ProductCreationPage = lazy(() => import("./pages/seller/ProductCreationPage"));
+const InventoryPage = lazy(() => import("./pages/seller/InventoryPage"));
+const SellerOrdersPage = lazy(() => import("./pages/seller/SellerOrdersPage"));
+const CustomersPage = lazy(() => import("./pages/seller/CustomersPage"));
+const PromotionsPage = lazy(() => import("./pages/seller/PromotionsPage"));
+const AnalyticsPage = lazy(() => import("./pages/seller/AnalyticsPage"));
+const StoreManagementPage = lazy(() => import("./pages/seller/StoreManagementPage"));
+const SellerSettingsPage = lazy(() => import("./pages/seller/SellerSettingsPage"));
+const SellerOnboarding = lazy(() => import("./pages/seller/onboarding/SellerOnboarding"));
 
 // ── Admin pages ───────────────────────────────────────────────
-import AdminDashboard from "./pages/admin/AdminDashboard";
-import UserManagementPage from "./pages/admin/UserManagementPage";
-import SellerManagementPage from "./pages/admin/SellerManagementPage";
-import AdminProductsPage from "./pages/admin/AdminProductsPage";
-import AdminOrdersPage from "./pages/admin/AdminOrdersPage";
-import CategoryManagementPage from "./pages/admin/CategoryManagementPage";
-import ReportsModerationPage from "./pages/admin/ReportsModerationPage";
-import AdminAnalyticsPage from "./pages/admin/AdminAnalyticsPage";
-import AdminSettingsPage from "./pages/admin/AdminSettingsPage";
+const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
+const UserManagementPage = lazy(() => import("./pages/admin/UserManagementPage"));
+const SellerManagementPage = lazy(() => import("./pages/admin/SellerManagementPage"));
+const AdminProductsPage = lazy(() => import("./pages/admin/AdminProductsPage"));
+const AdminOrdersPage = lazy(() => import("./pages/admin/AdminOrdersPage"));
+const CategoryManagementPage = lazy(() => import("./pages/admin/CategoryManagementPage"));
+const ReportsModerationPage = lazy(() => import("./pages/admin/ReportsModerationPage"));
+const AdminAnalyticsPage = lazy(() => import("./pages/admin/AdminAnalyticsPage"));
+const AdminSettingsPage = lazy(() => import("./pages/admin/AdminSettingsPage"));
 
 // ── Route bridge components ───────────────────────────────────
 // These bridge existing onNavigate-based pages into the React Router context.
@@ -112,9 +116,39 @@ function VerifyEmailRoute() {
   return <VerifyEmailPage onNavigate={nav} />;
 }
 
+function EmailVerifiedRoute() {
+  return <EmailVerifiedPage />;
+}
+
+function RequireVerifiedAccount() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="px-4 md:px-8 lg:px-12 max-w-screen-xl mx-auto py-10 text-sm text-[var(--color-ink-muted)]">
+        Loading your account...
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/auth/login" replace />;
+  }
+
+  if (!user.email_verified_at) {
+    return <Navigate to={`/auth/verify-email?email=${encodeURIComponent(user.email)}`} replace />;
+  }
+
+  return <Outlet />;
+}
+
 function ResetPasswordRoute() {
   const nav = useNav();
   return <ResetPasswordPage onNavigate={nav} />;
+}
+
+function TwoFactorRoute() {
+  return <TwoFactorPage />;
 }
 
 function OrderDetailRoute() {
@@ -129,9 +163,46 @@ function OrderHistoryRoute() {
 
 function ProfileRoute() {
   const nav = useNav();
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="px-4 md:px-8 lg:px-12 max-w-screen-xl mx-auto py-10 text-sm text-[var(--color-ink-muted)]">
+        Loading your account...
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/auth/login" replace />;
+  }
+
+  const accountUser: AccountUser = {
+    firstName: user.first_name ?? user.display_name.split(" ")[0] ?? "User",
+    lastName: user.last_name ?? user.display_name.split(" ").slice(1).join(" ") ?? "",
+    email: user.email,
+    phone: user.phone ?? user.mobile ?? "",
+    avatar: null,
+    status:
+      user.email_verified_at
+        ? user.status === "active"
+          ? "verified"
+          : user.status === "pending"
+            ? "pending"
+            : user.status === "restricted"
+              ? "restricted"
+              : user.status === "suspended"
+                ? "suspended"
+                : "unverified"
+        : "unverified",
+    joinedDate: user.joined_at ? new Date(user.joined_at).toLocaleString("en-US", { month: "long", year: "numeric" }) : "New member",
+    orderCount: user.order_count ?? 0,
+    wishlistCount: user.wishlist_count ?? 0,
+  };
+
   return (
     <ProfilePage
-      user={DEMO_USER}
+      user={accountUser}
       onNavigate={nav}
       onPageChange={(page) => nav(page)}
     />
@@ -226,6 +297,7 @@ export const router = createBrowserRouter([
       // Buyer account
       {
         path: "account",
+        element: <RequireVerifiedAccount />,
         children: [
           { index: true, element: <Navigate to="/account/dashboard" replace /> },
           { path: "dashboard", Component: BuyerDashboardPage },
@@ -247,9 +319,11 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="/auth/login" replace /> },
           { path: "login", Component: LoginRoute },
+          { path: "two-factor", Component: TwoFactorRoute },
           { path: "register", Component: RegisterRoute },
           { path: "forgot-password", Component: ForgotPasswordRoute },
           { path: "verify-email", Component: VerifyEmailRoute },
+          { path: "email-verified", Component: EmailVerifiedRoute },
           { path: "reset-password", Component: ResetPasswordRoute },
         ],
       },

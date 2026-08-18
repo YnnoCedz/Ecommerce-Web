@@ -1,0 +1,249 @@
+import { createContext, useContext, useEffect, useState } from "react";
+import type { ReactNode } from "react";
+import {
+  fetchCurrentUser,
+  loginRequest,
+  logoutRequest,
+  registerRequest,
+  resendTwoFactorRequest,
+  verifyEmailVerificationRequest,
+  verifyTwoFactorRequest,
+  type TwoFactorChallenge,
+  type AuthUser,
+  type LoginPayload,
+  type RegisterPayload,
+} from "../api/auth";
+import { ApiError } from "../api/client";
+
+type AuthState = {
+  user: AuthUser | null;
+  loading: boolean;
+  error: string | null;
+  pendingTwoFactor: TwoFactorChallenge | null;
+};
+
+type AuthContextValue = AuthState & {
+  refreshUser: () => Promise<AuthUser | null>;
+  login: (payload: LoginPayload) => Promise<{ user: AuthUser; redirectTo?: string; requiresTwoFactor?: boolean }>;
+  register: (payload: RegisterPayload) => Promise<{ user: AuthUser; redirectTo?: string; message?: string; requiresEmailVerification?: boolean }>;
+  verifyEmail: (payload: { email: string; code: string }) => Promise<{ user: AuthUser; redirectTo?: string; message?: string }>;
+  logout: () => Promise<void>;
+  verifyTwoFactor: (payload: { code: string; challengeId?: number }) => Promise<{ user: AuthUser; redirectTo?: string }>;
+  resendTwoFactor: () => Promise<TwoFactorChallenge | null>;
+  clearError: () => void;
+  clearPendingTwoFactor: () => void;
+};
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+const PENDING_TWO_FACTOR_STORAGE_KEY = "maketo.pending-two-factor";
+
+function readPendingTwoFactor(): TwoFactorChallenge | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const raw = window.sessionStorage.getItem(PENDING_TWO_FACTOR_STORAGE_KEY);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as TwoFactorChallenge;
+  } catch {
+    window.sessionStorage.removeItem(PENDING_TWO_FACTOR_STORAGE_KEY);
+    return null;
+  }
+}
+
+function writePendingTwoFactor(value: TwoFactorChallenge | null) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (!value) {
+    window.sessionStorage.removeItem(PENDING_TWO_FACTOR_STORAGE_KEY);
+    return;
+  }
+
+  window.sessionStorage.setItem(PENDING_TWO_FACTOR_STORAGE_KEY, JSON.stringify(value));
+}
+
+function extractErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof ApiError) {
+    if (error.errors) {
+      const firstError = Object.values(error.errors).flat().find(Boolean);
+      if (firstError) return firstError;
+    }
+    if (error.message) return error.message;
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return fallback;
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingTwoFactor, setPendingTwoFactor] = useState<TwoFactorChallenge | null>(() => readPendingTwoFactor());
+
+  const refreshUser = async () => {
+    try {
+      const response = await fetchCurrentUser();
+      setUser(response.user);
+      setError(null);
+      return response.user;
+    } catch (err) {
+      setUser(null);
+      if (err instanceof ApiError && err.status === 401) {
+        setError(null);
+      } else {
+        setError(extractErrorMessage(err, "Unable to load your session."));
+      }
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshUser();
+  }, []);
+
+  const login = async (payload: LoginPayload) => {
+    const response = await loginRequest(payload);
+    if (response.requires_two_factor) {
+      const challenge = {
+        challengeId: response.two_factor_challenge_id ?? 0,
+        email: payload.email,
+        redirectTo: response.redirect_to,
+        expiresAt: response.two_factor_expires_at ?? null,
+        resendAvailableAt: response.two_factor_resend_available_at ?? null,
+      };
+      setPendingTwoFactor(challenge);
+      writePendingTwoFactor(challenge);
+      setUser(null);
+      setError(null);
+      return {
+        user: response.user as AuthUser,
+        redirectTo: response.redirect_to,
+        requiresTwoFactor: true,
+      };
+    }
+
+    setUser(response.user as AuthUser);
+    setError(null);
+    return {
+      user: response.user as AuthUser,
+      redirectTo: response.redirect_to,
+      requiresTwoFactor: false,
+    };
+  };
+
+  const register = async (payload: RegisterPayload) => {
+    const response = await registerRequest(payload);
+    setUser(response.user as AuthUser);
+    setError(null);
+    return {
+      user: response.user as AuthUser,
+      redirectTo: response.redirect_to,
+      message: response.message,
+      requiresEmailVerification: response.requires_email_verification,
+    };
+  };
+
+  const verifyEmail = async (payload: { email: string; code: string }) => {
+    const response = await verifyEmailVerificationRequest(payload);
+    setUser(response.user as AuthUser);
+    setError(null);
+
+    return {
+      user: response.user as AuthUser,
+      redirectTo: response.redirect_to,
+      message: response.message,
+    };
+  };
+
+  const logout = async () => {
+    await logoutRequest();
+    setUser(null);
+    setError(null);
+    setPendingTwoFactor(null);
+    writePendingTwoFactor(null);
+  };
+
+  const verifyTwoFactor = async (payload: { code: string; challengeId?: number }) => {
+    const challengeId = payload.challengeId ?? pendingTwoFactor?.challengeId;
+    const response = await verifyTwoFactorRequest({
+      challenge_id: challengeId,
+      code: payload.code,
+    });
+
+    setUser(response.user as AuthUser);
+    setError(null);
+    setPendingTwoFactor(null);
+    writePendingTwoFactor(null);
+
+    return {
+      user: response.user as AuthUser,
+      redirectTo: response.redirect_to,
+    };
+  };
+
+  const resendTwoFactor = async () => {
+    if (!pendingTwoFactor?.challengeId) {
+      return null;
+    }
+
+    const response = await resendTwoFactorRequest({
+      challenge_id: pendingTwoFactor.challengeId,
+    });
+
+    const nextChallenge = {
+      ...pendingTwoFactor,
+      challengeId: response.two_factor_challenge_id ?? pendingTwoFactor.challengeId,
+      expiresAt: response.two_factor_expires_at ?? pendingTwoFactor.expiresAt,
+      resendAvailableAt: response.two_factor_resend_available_at ?? pendingTwoFactor.resendAvailableAt,
+    };
+
+    setPendingTwoFactor(nextChallenge);
+    writePendingTwoFactor(nextChallenge);
+    setError(null);
+
+    return nextChallenge;
+  };
+
+  const value: AuthContextValue = {
+    user,
+    loading,
+    error,
+    pendingTwoFactor,
+    refreshUser,
+    login,
+    register,
+    verifyEmail,
+    logout,
+    verifyTwoFactor,
+    resendTwoFactor,
+    clearError: () => setError(null),
+    clearPendingTwoFactor: () => {
+      setPendingTwoFactor(null);
+      writePendingTwoFactor(null);
+    },
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+
+  return context;
+}

@@ -1,92 +1,130 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
+import { fetchSellerProducts, type SellerProduct } from "../../api/seller";
 
 type ProductStatus = "active" | "draft" | "archived" | "out-of-stock";
-
-type Product = {
-  id: string; sku: string; name: string; category: string;
-  price: number; salePrice?: number; stock: number;
-  status: ProductStatus; image: string; sales: number; createdAt: string;
-};
+type BulkAction = "publish" | "archive" | "delete";
 
 const STATUS_CFG: Record<ProductStatus, { label: string; color: string; bg: string }> = {
-  "active":       { label: "Active",        color: "var(--color-green)",  bg: "var(--color-green-light)"  },
-  "draft":        { label: "Draft",         color: "var(--color-ink-muted)", bg: "var(--color-surface)"   },
-  "archived":     { label: "Archived",      color: "var(--color-ink-disabled)", bg: "var(--color-surface)" },
-  "out-of-stock": { label: "Out of stock",  color: "var(--color-red)",    bg: "var(--color-red-light)"    },
+  active: { label: "Active", color: "var(--color-green)", bg: "var(--color-green-light)" },
+  draft: { label: "Draft", color: "var(--color-ink-muted)", bg: "var(--color-surface)" },
+  archived: { label: "Archived", color: "var(--color-ink-disabled)", bg: "var(--color-surface)" },
+  "out-of-stock": { label: "Out of stock", color: "var(--color-red)", bg: "var(--color-red-light)" },
 };
 
-const PRODUCTS: Product[] = [
-  { id: "p01", sku: "VB-SRM-001", name: "Organic Lavender Serum 30ml", category: "Health and Beauty", price: 1450, stock: 3, status: "active", image: "https://images.unsplash.com/photo-1620916566398-39f1143ab7be?w=60&h=60&fit=crop&auto=format", sales: 284, createdAt: "Mar 2026" },
-  { id: "p02", sku: "VB-OIL-003", name: "Rose Hip Face Oil 50ml", category: "Health and Beauty", price: 1890, salePrice: 1490, stock: 1, status: "active", image: "https://images.unsplash.com/photo-1598440947619-2c35fc9aa908?w=60&h=60&fit=crop&auto=format", sales: 197, createdAt: "Mar 2026" },
-  { id: "p03", sku: "VB-SET-002", name: "Natural Botanical Skincare Set", category: "Health and Beauty", price: 3200, stock: 18, status: "active", image: "https://images.unsplash.com/photo-1571781926291-c477ebfd024b?w=60&h=60&fit=crop&auto=format", sales: 312, createdAt: "Jan 2026" },
-  { id: "p04", sku: "VB-SOP-007", name: "Bamboo Charcoal Soap Bar", category: "Health and Beauty", price: 320, stock: 5, status: "active", image: "https://images.unsplash.com/photo-1607006344380-b6775a0824a7?w=60&h=60&fit=crop&auto=format", sales: 521, createdAt: "Nov 2025" },
-  { id: "p05", sku: "VB-ALO-005", name: "Aloe Vera Gel Moisturizer 100g", category: "Health and Beauty", price: 580, stock: 44, status: "active", image: "https://images.unsplash.com/photo-1556228720-da76e7f25ea6?w=60&h=60&fit=crop&auto=format", sales: 408, createdAt: "Oct 2025" },
-  { id: "p06", sku: "VB-MIS-010", name: "Green Tea Facial Mist", category: "Health and Beauty", price: 680, stock: 0, status: "out-of-stock", image: "https://images.unsplash.com/photo-1576426863848-c21f53c60b19?w=60&h=60&fit=crop&auto=format", sales: 143, createdAt: "Sep 2025" },
-  { id: "p07", sku: "VB-LIP-014", name: "Tinted Botanical Lip Balm (Set of 3)", category: "Health and Beauty", price: 450, salePrice: 380, stock: 22, status: "active", image: "https://images.unsplash.com/photo-1586495777744-4e6232bf2176?w=60&h=60&fit=crop&auto=format", sales: 671, createdAt: "Aug 2025" },
-  { id: "p08", sku: "VB-DFT-018", name: "Peppermint Body Scrub [DRAFT]", category: "Health and Beauty", price: 720, stock: 0, status: "draft", image: "https://images.unsplash.com/photo-1608248543803-ba4f8c70ae0b?w=60&h=60&fit=crop&auto=format", sales: 0, createdAt: "Aug 2026" },
-  { id: "p09", sku: "VB-OLD-022", name: "Tea Tree Toner 120ml", category: "Health and Beauty", price: 580, stock: 0, status: "archived", image: "https://images.unsplash.com/photo-1556229010-6c3f2c9ca5f8?w=60&h=60&fit=crop&auto=format", sales: 88, createdAt: "Jan 2025" },
-  { id: "p10", sku: "VB-SUN-030", name: "SPF 50 Mineral Sunscreen", category: "Health and Beauty", price: 1200, stock: 67, status: "active", image: "https://images.unsplash.com/photo-1596462502278-27bfdc403348?w=60&h=60&fit=crop&auto=format", sales: 229, createdAt: "May 2026" },
-];
+function normalizeStatus(status: string, stockQuantity: number): ProductStatus {
+  if (status === "draft" || status === "archived") {
+    return status;
+  }
 
-type BulkAction = "publish" | "archive" | "delete";
+  return stockQuantity <= 0 ? "out-of-stock" : "active";
+}
+
+function formatPrice(value: number) {
+  return `PHP ${value.toLocaleString()}`;
+}
 
 export default function ProductListPage() {
   const navigate = useNavigate();
-  const [products, setProducts] = useState<Product[]>(PRODUCTS);
+  const [products, setProducts] = useState<SellerProduct[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ProductStatus | "all">("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [sort, setSort] = useState("newest");
-  const [selected, setSelected] = useState<string[]>([]);
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [selected, setSelected] = useState<number[]>([]);
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   const [showBulkMenu, setShowBulkMenu] = useState(false);
 
-  const categories = ["all", ...Array.from(new Set(PRODUCTS.map(p => p.category)))];
+  useEffect(() => {
+    let active = true;
 
-  const filtered = products.filter(p => {
-    if (search && !p.name.toLowerCase().includes(search.toLowerCase()) && !p.sku.toLowerCase().includes(search.toLowerCase())) return false;
-    if (statusFilter !== "all" && p.status !== statusFilter) return false;
-    if (categoryFilter !== "all" && p.category !== categoryFilter) return false;
-    return true;
-  }).sort((a, b) => {
-    if (sort === "price-asc") return a.price - b.price;
-    if (sort === "price-desc") return b.price - a.price;
-    if (sort === "sales") return b.sales - a.sales;
-    if (sort === "stock") return a.stock - b.stock;
-    return 0;
-  });
+    void (async () => {
+      try {
+        const response = await fetchSellerProducts();
+        if (!active) return;
+        setProducts(response.data);
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
 
-  const toggleSelect = (id: string) => setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  const toggleAll = () => setSelected(selected.length === filtered.length ? [] : filtered.map(p => p.id));
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const categories = useMemo(() => {
+    const names = products.map((product) => product.category?.name).filter((name): name is string => Boolean(name));
+    return ["all", ...Array.from(new Set(names))];
+  }, [products]);
+
+  const filtered = useMemo(() => {
+    return products
+      .filter((product) => {
+        const status = normalizeStatus(product.status, product.stock_quantity);
+        if (search && !product.name.toLowerCase().includes(search.toLowerCase()) && !product.sku?.toLowerCase().includes(search.toLowerCase())) {
+          return false;
+        }
+        if (statusFilter !== "all" && status !== statusFilter) {
+          return false;
+        }
+        if (categoryFilter !== "all" && product.category?.name !== categoryFilter) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        if (sort === "price-asc") return a.price - b.price;
+        if (sort === "price-desc") return b.price - a.price;
+        if (sort === "stock") return a.stock_quantity - b.stock_quantity;
+        return new Date(b.created_at ?? "").getTime() - new Date(a.created_at ?? "").getTime();
+      });
+  }, [products, search, statusFilter, categoryFilter, sort]);
+
+  const selectedSet = new Set(selected);
+
+  const toggleSelect = (id: number) => {
+    setSelected((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
+  };
+
+  const toggleAll = () => {
+    setSelected(selected.length === filtered.length ? [] : filtered.map((product) => product.id));
+  };
 
   const handleBulkAction = (action: BulkAction) => {
     if (action === "delete") {
-      setProducts(prev => prev.filter(p => !selected.includes(p.id)));
+      setProducts((prev) => prev.filter((product) => !selectedSet.has(product.id)));
     } else if (action === "archive") {
-      setProducts(prev => prev.map(p => selected.includes(p.id) ? { ...p, status: "archived" as ProductStatus } : p));
+      setProducts((prev) => prev.map((product) => (selectedSet.has(product.id) ? { ...product, status: "archived" } : product)));
     } else if (action === "publish") {
-      setProducts(prev => prev.map(p => selected.includes(p.id) ? { ...p, status: "active" as ProductStatus } : p));
+      setProducts((prev) => prev.map((product) => (selectedSet.has(product.id) ? { ...product, status: "active" } : product)));
     }
     setSelected([]);
     setShowBulkMenu(false);
   };
 
-  const deleteOne = (id: string) => {
-    setProducts(prev => prev.filter(p => p.id !== id));
+  const deleteOne = (id: number) => {
+    setProducts((prev) => prev.filter((product) => product.id !== id));
     setConfirmDelete(null);
   };
 
   const statusCounts: Record<string, number> = { all: products.length };
-  products.forEach(p => { statusCounts[p.status] = (statusCounts[p.status] ?? 0) + 1; });
+  products.forEach((product) => {
+    const status = normalizeStatus(product.status, product.stock_quantity);
+    statusCounts[status] = (statusCounts[status] ?? 0) + 1;
+  });
+
+  if (loading) {
+    return <div className="p-6 max-w-screen-xl mx-auto text-sm text-[var(--color-ink-muted)]">Loading products...</div>;
+  }
 
   return (
     <div className="p-6 max-w-screen-xl mx-auto">
-      {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div>
           <h1 className="font-[var(--font-display)] text-2xl font-[400] text-[var(--color-ink)]">Products</h1>
-          <p className="text-sm text-[var(--color-ink-muted)]">{products.filter(p => p.status === "active").length} active listings</p>
+          <p className="text-sm text-[var(--color-ink-muted)]">{statusCounts.active ?? 0} active listings</p>
         </div>
         <button
           onClick={() => navigate("/seller-center/products/new")}
@@ -96,36 +134,39 @@ export default function ProductListPage() {
         </button>
       </div>
 
-      {/* Status tabs */}
       <div className="flex gap-1 mb-4 border-b border-[var(--color-border)]">
-        {(["all", "active", "draft", "out-of-stock", "archived"] as const).map(s => (
-          <button key={s} onClick={() => setStatusFilter(s)}
-            className={`px-4 py-2 text-sm font-[500] border-b-2 -mb-px transition-colors cursor-pointer capitalize ${statusFilter === s ? "border-[var(--color-navy)] text-[var(--color-navy)]" : "border-transparent text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"}`}>
-            {s === "all" ? "All" : STATUS_CFG[s].label}
-            <span className="ml-1.5 font-[var(--font-mono)] text-[9px] text-[var(--color-ink-disabled)]">({statusCounts[s] ?? 0})</span>
+        {(["all", "active", "draft", "out-of-stock", "archived"] as const).map((status) => (
+          <button
+            key={status}
+            onClick={() => setStatusFilter(status)}
+            className={`px-4 py-2 text-sm font-[500] border-b-2 -mb-px transition-colors cursor-pointer capitalize ${
+              statusFilter === status
+                ? "border-[var(--color-navy)] text-[var(--color-navy)]"
+                : "border-transparent text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
+            }`}>
+            {status === "all" ? "All" : STATUS_CFG[status].label}
+            <span className="ml-1.5 font-[var(--font-mono)] text-[9px] text-[var(--color-ink-disabled)]">({statusCounts[status] ?? 0})</span>
           </button>
         ))}
       </div>
 
-      {/* Toolbar */}
       <div className="flex flex-wrap gap-3 mb-4">
         <div className="flex items-center gap-2 flex-1 min-w-48 max-w-72 border border-[var(--color-border)] rounded-sm bg-white px-3 py-2 focus-within:border-[var(--color-navy)] transition-colors">
           <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="var(--color-ink-muted)" strokeWidth="1.5" strokeLinecap="round"><circle cx="6" cy="6" r="4.5" /><path d="M10 10l2.5 2.5" /></svg>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or SKU" className="text-sm text-[var(--color-ink)] placeholder-[var(--color-ink-disabled)] focus:outline-none bg-transparent w-full font-[var(--font-body)]" />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name or SKU" className="text-sm text-[var(--color-ink)] placeholder-[var(--color-ink-disabled)] focus:outline-none bg-transparent w-full font-[var(--font-body)]" />
         </div>
-        <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="px-3 py-2 border border-[var(--color-border)] rounded-sm text-sm text-[var(--color-ink)] bg-white focus:outline-none focus:border-[var(--color-navy)] cursor-pointer font-[var(--font-body)]">
-          {categories.map(c => <option key={c} value={c}>{c === "all" ? "All categories" : c}</option>)}
+        <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="px-3 py-2 border border-[var(--color-border)] rounded-sm text-sm text-[var(--color-ink)] bg-white focus:outline-none focus:border-[var(--color-navy)] cursor-pointer font-[var(--font-body)]">
+          {categories.map((category) => <option key={category} value={category}>{category === "all" ? "All categories" : category}</option>)}
         </select>
-        <select value={sort} onChange={e => setSort(e.target.value)} className="px-3 py-2 border border-[var(--color-border)] rounded-sm text-sm text-[var(--color-ink)] bg-white focus:outline-none focus:border-[var(--color-navy)] cursor-pointer font-[var(--font-body)]">
+        <select value={sort} onChange={(event) => setSort(event.target.value)} className="px-3 py-2 border border-[var(--color-border)] rounded-sm text-sm text-[var(--color-ink)] bg-white focus:outline-none focus:border-[var(--color-navy)] cursor-pointer font-[var(--font-body)]">
           <option value="newest">Newest first</option>
-          <option value="sales">Top selling</option>
-          <option value="price-asc">Price: low → high</option>
-          <option value="price-desc">Price: high → low</option>
+          <option value="price-asc">Price: low to high</option>
+          <option value="price-desc">Price: high to low</option>
           <option value="stock">Lowest stock</option>
         </select>
         {selected.length > 0 && (
           <div className="relative ml-auto">
-            <button onClick={() => setShowBulkMenu(!showBulkMenu)} className="flex items-center gap-2 px-3 py-2 bg-[var(--color-amber)] text-white text-sm font-[500] rounded-sm hover:opacity-90 cursor-pointer transition-all">
+            <button onClick={() => setShowBulkMenu((value) => !value)} className="flex items-center gap-2 px-3 py-2 bg-[var(--color-amber)] text-white text-sm font-[500] rounded-sm hover:opacity-90 cursor-pointer transition-all">
               {selected.length} selected
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth="1.5"><path d="M2 4l3 3 3-3" /></svg>
             </button>
@@ -142,7 +183,6 @@ export default function ProductListPage() {
         )}
       </div>
 
-      {/* Table */}
       <div className="bg-white border border-[var(--color-border)] rounded-sm overflow-hidden">
         <table className="w-full text-sm">
           <thead>
@@ -154,59 +194,61 @@ export default function ProductListPage() {
               <th className="px-4 py-3 text-left font-[var(--font-mono)] text-[9px] text-[var(--color-ink-muted)] uppercase tracking-widest hidden lg:table-cell">SKU</th>
               <th className="px-4 py-3 text-right font-[var(--font-mono)] text-[9px] text-[var(--color-ink-muted)] uppercase tracking-widest">Price</th>
               <th className="px-4 py-3 text-right font-[var(--font-mono)] text-[9px] text-[var(--color-ink-muted)] uppercase tracking-widest hidden md:table-cell">Stock</th>
-              <th className="px-4 py-3 text-right font-[var(--font-mono)] text-[9px] text-[var(--color-ink-muted)] uppercase tracking-widest hidden md:table-cell">Sales</th>
+              <th className="px-4 py-3 text-right font-[var(--font-mono)] text-[9px] text-[var(--color-ink-muted)] uppercase tracking-widest hidden md:table-cell">Variants</th>
               <th className="px-4 py-3 text-left font-[var(--font-mono)] text-[9px] text-[var(--color-ink-muted)] uppercase tracking-widest">Status</th>
               <th className="px-4 py-3 w-10"></th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((p, i) => {
-              const cfg = STATUS_CFG[p.status];
-              const isSel = selected.includes(p.id);
+            {filtered.map((product) => {
+              const status = normalizeStatus(product.status, product.stock_quantity);
+              const cfg = STATUS_CFG[status];
+              const isSelected = selectedSet.has(product.id);
+
               return (
-                <tr key={p.id} className={`border-b border-[var(--color-border-subtle)] last:border-0 transition-colors ${isSel ? "bg-[var(--color-navy-surface)]" : "hover:bg-[var(--color-surface)]"}`}>
+                <tr key={product.id} className={`border-b border-[var(--color-border-subtle)] last:border-0 transition-colors ${isSelected ? "bg-[var(--color-navy-surface)]" : "hover:bg-[var(--color-surface)]"}`}>
                   <td className="px-4 py-3">
-                    <input type="checkbox" checked={isSel} onChange={() => toggleSelect(p.id)} className="accent-[var(--color-navy)]" />
+                    <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(product.id)} className="accent-[var(--color-navy)]" />
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-sm overflow-hidden bg-[var(--color-surface)] shrink-0">
-                        <img src={p.image} alt={p.name} className="w-full h-full object-cover" />
+                        <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
                       </div>
                       <div className="min-w-0">
-                        <p className="font-[500] text-[var(--color-ink)] truncate max-w-48">{p.name}</p>
-                        <p className="text-xs text-[var(--color-ink-disabled)]">{p.category}</p>
+                        <p className="font-[500] text-[var(--color-ink)] truncate max-w-48">{product.name}</p>
+                        <p className="text-xs text-[var(--color-ink-disabled)]">{product.category?.name ?? "Uncategorized"}</p>
                       </div>
                     </div>
                   </td>
                   <td className="px-4 py-3 hidden lg:table-cell">
-                    <span className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)]">{p.sku}</span>
+                    <span className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)]">{product.sku ?? "N/A"}</span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    {p.salePrice ? (
+                    {product.sale_price ? (
                       <div>
-                        <span className="font-[var(--font-mono)] text-sm text-[var(--color-red)]">₱{p.salePrice.toLocaleString()}</span>
-                        <span className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-disabled)] line-through ml-1">₱{p.price.toLocaleString()}</span>
+                        <span className="font-[var(--font-mono)] text-sm text-[var(--color-red)]">{formatPrice(product.sale_price)}</span>
+                        <span className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-disabled)] line-through ml-1">{formatPrice(product.price)}</span>
                       </div>
                     ) : (
-                      <span className="font-[var(--font-mono)] text-sm text-[var(--color-ink)]">₱{p.price.toLocaleString()}</span>
+                      <span className="font-[var(--font-mono)] text-sm text-[var(--color-ink)]">{formatPrice(product.price)}</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-right hidden md:table-cell">
-                    <span className={`font-[var(--font-mono)] text-sm ${p.stock === 0 ? "text-[var(--color-red)]" : p.stock <= 5 ? "text-[var(--color-amber)]" : "text-[var(--color-ink)]"}`}>{p.stock}</span>
+                    <span className={`font-[var(--font-mono)] text-sm ${product.stock_quantity === 0 ? "text-[var(--color-red)]" : product.stock_quantity <= product.low_stock_threshold ? "text-[var(--color-amber)]" : "text-[var(--color-ink)]"}`}>{product.stock_quantity}</span>
                   </td>
                   <td className="px-4 py-3 text-right hidden md:table-cell">
-                    <span className="font-[var(--font-mono)] text-sm text-[var(--color-ink-muted)]">{p.sales}</span>
+                    <span className="font-[var(--font-mono)] text-sm text-[var(--color-ink-muted)]">{product.variants.length}</span>
                   </td>
                   <td className="px-4 py-3">
                     <span className="font-[var(--font-mono)] text-[9px] px-2 py-1 rounded" style={{ color: cfg.color, background: cfg.bg }}>{cfg.label}</span>
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
-                      <button onClick={() => navigate(`/seller-center/products/${p.id}/edit`)} className="w-7 h-7 flex items-center justify-center text-[var(--color-ink-muted)] hover:text-[var(--color-navy)] hover:bg-[var(--color-surface)] rounded-sm cursor-pointer transition-colors" title="Edit">
+                      <button onClick={() => navigate(`/seller-center/products/${product.id}/edit`)} className="w-7 h-7 flex items-center justify-center text-[var(--color-ink-muted)] hover:text-[var(--color-navy)] hover:bg-[var(--color-surface)] rounded-sm cursor-pointer transition-colors" title="Edit">
                         <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M9.5 2.5l2 2-7.5 7.5H2V9.5L9.5 2.5z" /></svg>
                       </button>
-                      <button onClick={() => setConfirmDelete(p.id)} className="w-7 h-7 flex items-center justify-center text-[var(--color-ink-muted)] hover:text-[var(--color-red)] hover:bg-[var(--color-red-light)] rounded-sm cursor-pointer transition-colors" title="Delete">
+                      <button onClick={() => setConfirmDelete(product.id)} className="w-7 h-7 flex items-center justify-center text-[var(--color-ink-muted)] hover:text-[var(--color-red)] hover:bg-[var(--color-red-light)] rounded-sm cursor-pointer transition-colors" title="Delete">
                         <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 4h10M5 4V2h4v2M5 6v5M9 6v5" /></svg>
                       </button>
                     </div>
@@ -216,30 +258,31 @@ export default function ProductListPage() {
             })}
           </tbody>
         </table>
+
         {filtered.length === 0 && (
           <div className="py-16 text-center">
             <p className="font-[var(--font-display)] text-lg font-[400] text-[var(--color-ink)] mb-1">No products found</p>
             <p className="text-sm text-[var(--color-ink-muted)]">Try adjusting your search or filters.</p>
           </div>
         )}
+
         {filtered.length > 0 && (
           <div className="px-4 py-3 border-t border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-between">
             <span className="text-xs text-[var(--color-ink-muted)]">Showing {filtered.length} of {products.length} products</span>
             <div className="flex gap-1">
-              {[1].map(pg => (
-                <button key={pg} className="w-7 h-7 text-xs font-[var(--font-mono)] bg-[var(--color-navy)] text-white rounded-sm cursor-pointer">{pg}</button>
+              {[1].map((page) => (
+                <button key={page} className="w-7 h-7 text-xs font-[var(--font-mono)] bg-[var(--color-navy)] text-white rounded-sm cursor-pointer">{page}</button>
               ))}
             </div>
           </div>
         )}
       </div>
 
-      {/* Delete confirm modal */}
-      {confirmDelete && (
+      {confirmDelete !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-sm border border-[var(--color-border)] shadow-xl p-6 max-w-sm w-full">
             <h3 className="font-[600] text-[var(--color-ink)] mb-2">Delete product?</h3>
-            <p className="text-sm text-[var(--color-ink-muted)] mb-5">This will permanently remove the product and all its data. This cannot be undone.</p>
+            <p className="text-sm text-[var(--color-ink-muted)] mb-5">This will remove the product from the current view. Connect a delete endpoint before using this in production.</p>
             <div className="flex gap-3">
               <button onClick={() => setConfirmDelete(null)} className="flex-1 py-2.5 border border-[var(--color-border)] text-sm text-[var(--color-ink-muted)] rounded-sm hover:bg-[var(--color-surface)] cursor-pointer">Cancel</button>
               <button onClick={() => deleteOne(confirmDelete)} className="flex-1 py-2.5 bg-[var(--color-red)] text-white text-sm font-[500] rounded-sm hover:opacity-90 cursor-pointer">Delete</button>

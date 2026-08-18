@@ -8,7 +8,6 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        $this->call(MarketplaceSeeder::class);
+        $this->call(DevelopmentSeeder::class);
     }
 }
-

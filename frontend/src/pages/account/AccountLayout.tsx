@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useAuth } from "../../auth/AuthContext";
 
 export type AccountPage = "profile" | "personal-info" | "addresses" | "security" | "notifications" | "preferences" | "account-status";
 export type AccountStatus = "verified" | "unverified" | "pending" | "suspended" | "restricted";
@@ -117,7 +118,15 @@ interface AccountLayoutProps {
 }
 
 export default function AccountLayout({ children, activePage, user, onNavigate, onPageChange }: AccountLayoutProps) {
+  const { logout } = useAuth();
   const statusCfg = STATUS_CONFIG[user.status];
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } finally {
+      onNavigate("login");
+    }
+  };
 
   return (
     <div className="bg-[var(--color-ground)] min-h-full">
@@ -168,7 +177,7 @@ export default function AccountLayout({ children, activePage, user, onNavigate, 
                 );
               })}
               <div className="border-t border-[var(--color-border)] px-4 py-3">
-                <button className="flex items-center gap-2.5 text-sm text-[var(--color-red)] hover:text-[var(--color-red-hover)] cursor-pointer transition-colors">
+                <button onClick={handleLogout} className="flex items-center gap-2.5 text-sm text-[var(--color-red)] hover:text-[var(--color-red-hover)] cursor-pointer transition-colors">
                   <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M11 9H2M5 6l-3 3 3 3M11 2h5v14h-5" /></svg>
                   Sign out
                 </button>

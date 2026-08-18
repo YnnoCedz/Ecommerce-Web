@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
+import { useAuth } from "../auth/AuthContext";
 import {
   IconDashboard, IconProducts, IconInventory, IconOrders, IconCustomers,
   IconPromotions, IconAnalytics, IconMessages, IconNotifications, IconStore,
@@ -50,6 +51,7 @@ export default function SellerShell({
   onNavChange,
 }: SellerShellProps) {
   const navigate = useNavigate();
+  const { logout } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [activeItem, setActiveItem] = useState(activeNav);
@@ -60,6 +62,14 @@ export default function SellerShell({
   };
   const [notifOpen, setNotifOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } finally {
+      setAccountOpen(false);
+      navigate("/auth/login");
+    }
+  };
 
   useEffect(() => {
     setActiveItem(activeNav);
@@ -161,7 +171,7 @@ export default function SellerShell({
       {/* Bottom nav */}
       <div className="px-2 pb-3 pt-2 border-t border-white/10 space-y-0.5 shrink-0">
         {BOTTOM_NAV.map(item => <SidebarLink key={item.id} item={item} />)}
-        <button className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-sm text-white/40 hover:text-white/80 hover:bg-white/8 transition-all cursor-pointer`}
+        <button onClick={handleLogout} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-sm text-white/40 hover:text-white/80 hover:bg-white/8 transition-all cursor-pointer`}
           title={collapsed ? "Log out" : undefined}>
           <IconLogout size={16} className="shrink-0" />
           {!collapsed && <span className="text-sm">Log out</span>}
@@ -292,7 +302,7 @@ export default function SellerShell({
                     <button key={l} onClick={() => { setAccountOpen(false); navigate(ACCOUNT_ROUTES[l]); }} className="w-full flex items-center px-4 py-2.5 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface)] cursor-pointer">{l}</button>
                   ))}
                   <div className="border-t border-[var(--color-border)]">
-                    <button onClick={() => { setAccountOpen(false); navigate("/auth/login"); }} className="w-full flex items-center px-4 py-2.5 text-sm text-[var(--color-red)] hover:bg-[var(--color-red-light)] cursor-pointer">Log out</button>
+                    <button onClick={handleLogout} className="w-full flex items-center px-4 py-2.5 text-sm text-[var(--color-red)] hover:bg-[var(--color-red-light)] cursor-pointer">Log out</button>
                   </div>
                 </div>
               )}

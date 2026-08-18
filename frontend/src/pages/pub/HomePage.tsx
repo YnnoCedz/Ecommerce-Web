@@ -1,11 +1,10 @@
-import { useState } from "react";
-import { PRODUCTS, SELLERS, CATEGORIES } from "./data";
+import { useEffect, useMemo, useState } from "react";
 import { Rating, Price } from "../../Part03";
 import { IconSearch, IconChevronRight, IconTrendUp, IconBox, IconOrders } from "../../shells/icons";
+import { fetchCatalogCategories, fetchCatalogProducts, fetchCatalogSellers, type CatalogCategory, type CatalogProduct, type CatalogSeller } from "../../api/catalog";
+import { CATEGORY_VISUALS } from "./visuals";
 
 type NavFn = (page: string, params?: Record<string, string>) => void;
-
-// ── Tiny sub-components ──────────────────────────────────────────────────────
 
 function TrustBadge({ icon, title, sub }: { icon: React.ReactNode; title: string; sub: string }) {
   return (
@@ -37,9 +36,9 @@ function SectionHeader({ label, title, cta, onCta }: { label?: string; title: st
   );
 }
 
-function HomeProductCard({ product, onNavigate }: { product: typeof PRODUCTS[0]; onNavigate: NavFn }) {
+function HomeProductCard({ product, onNavigate }: { product: CatalogProduct; onNavigate: NavFn }) {
   const [wished, setWished] = useState(false);
-  const discount = product.originalPrice ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100) : null;
+  const discount = product.original_price ? Math.round(((product.original_price - product.price) / product.original_price) * 100) : null;
   return (
     <div
       className="group bg-white border border-[var(--color-border)] rounded-sm overflow-hidden hover:shadow-[0_4px_20px_rgba(28,27,24,0.10)] hover:border-[var(--color-border-strong)] transition-all cursor-pointer"
@@ -64,9 +63,9 @@ function HomeProductCard({ product, onNavigate }: { product: typeof PRODUCTS[0];
       <div className="p-3.5">
         <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] mb-1 truncate">{product.seller}</p>
         <p className="text-sm font-[500] text-[var(--color-ink)] leading-snug mb-2 line-clamp-2">{product.name}</p>
-        <div className="mb-2"><Rating value={product.rating} count={product.ratingCount} /></div>
-        <Price amount={product.price} original={product.originalPrice} size="sm" />
-        {product.freeShipping && (
+        <div className="mb-2"><Rating value={product.rating} count={product.rating_count} /></div>
+        <Price amount={product.price} original={product.original_price ?? undefined} size="sm" />
+        {product.free_shipping && (
           <p className="text-[10px] font-[var(--font-mono)] text-[var(--color-green)] mt-1">Free Shipping</p>
         )}
       </div>
@@ -74,8 +73,8 @@ function HomeProductCard({ product, onNavigate }: { product: typeof PRODUCTS[0];
   );
 }
 
-function DealCard({ product, onNavigate }: { product: typeof PRODUCTS[0]; onNavigate: NavFn }) {
-  const discount = product.originalPrice ? Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100) : null;
+function DealCard({ product, onNavigate }: { product: CatalogProduct; onNavigate: NavFn }) {
+  const discount = product.original_price ? Math.round(((product.original_price - product.price) / product.original_price) * 100) : null;
   if (!discount) return null;
   return (
     <div
@@ -89,22 +88,38 @@ function DealCard({ product, onNavigate }: { product: typeof PRODUCTS[0]; onNavi
       </div>
       <div className="p-2.5">
         <p className="text-xs font-[500] text-[var(--color-ink)] line-clamp-2 mb-1.5 leading-snug">{product.name}</p>
-        <Price amount={product.price} original={product.originalPrice} size="sm" />
+        <Price amount={product.price} original={product.original_price ?? undefined} size="sm" />
       </div>
     </div>
   );
 }
 
-// ── HomePage ─────────────────────────────────────────────────────────────────
-
 export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
   const [heroSearch, setHeroSearch] = useState("");
-  const deals = PRODUCTS.filter(p => p.originalPrice);
+  const [categories, setCategories] = useState<CatalogCategory[]>([]);
+  const [products, setProducts] = useState<CatalogProduct[]>([]);
+  const [sellers, setSellers] = useState<CatalogSeller[]>([]);
+
+  useEffect(() => {
+    void Promise.all([
+      fetchCatalogCategories(),
+      fetchCatalogProducts(),
+      fetchCatalogSellers(),
+    ]).then(([cats, prods, sellersResponse]) => {
+      setCategories(cats.data);
+      setProducts(prods.data);
+      setSellers(sellersResponse.data);
+    }).catch(() => {
+      setCategories([]);
+      setProducts([]);
+      setSellers([]);
+    });
+  }, []);
+
+  const deals = useMemo(() => products.filter(p => p.original_price), [products]);
 
   return (
     <div>
-
-      {/* ── HERO ─────────────────────────────────────────── */}
       <div className="relative overflow-hidden bg-[var(--color-navy)]" style={{ minHeight: "480px" }}>
         <img
           src="https://images.unsplash.com/photo-1780798464793-be53ffd37b79?w=1400&h=600&fit=crop&auto=format"
@@ -114,7 +129,7 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
         />
         <div className="relative flex flex-col items-center justify-center text-center px-6 py-20 md:py-28">
           <p className="font-[var(--font-mono)] text-[11px] text-white/50 tracking-widest uppercase mb-4">
-            3,200+ Independent Sellers · 280,000+ Products
+            {sellers.length.toLocaleString()} Independent Sellers · {products.length.toLocaleString()} Products
           </p>
           <h1 className="font-[var(--font-display)] text-4xl md:text-6xl font-[300] text-white leading-[1.05] mb-3 max-w-2xl">
             Discover something
@@ -125,7 +140,6 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
             The marketplace for independent creators, artisans, and curated sellers.
           </p>
 
-          {/* Hero search */}
           <div className="w-full max-w-xl">
             <div className="flex bg-white rounded-sm overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.25)]">
               <input
@@ -143,35 +157,23 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
                 <span className="hidden sm:inline">Search</span>
               </button>
             </div>
-            <div className="flex items-center gap-3 justify-center mt-3 flex-wrap">
-              <span className="text-white/40 text-xs">Popular:</span>
-              {["Handmade bags", "Natural skincare", "Chronograph watch", "Ceramic bowls"].map(term => (
-                <button key={term} onClick={() => onNavigate("search", { q: term })}
-                  className="text-xs text-white/60 hover:text-white cursor-pointer transition-colors underline underline-offset-2">
-                  {term}
-                </button>
-              ))}
-            </div>
           </div>
         </div>
-
-        {/* Wave bottom */}
         <div className="absolute bottom-0 left-0 right-0 h-12 bg-[var(--color-ground)]" style={{ clipPath: "ellipse(55% 100% at 50% 100%)" }} />
       </div>
 
-      {/* ── CATEGORIES ───────────────────────────────────── */}
       <section className="bg-[var(--color-ground)] px-4 md:px-8 lg:px-12 py-10">
         <div className="max-w-screen-xl mx-auto">
           <SectionHeader label="Browse" title="Shop by Category" cta="All Categories" onCta={() => onNavigate("category", { cat: "all" })} />
           <div className="grid grid-cols-4 sm:grid-cols-8 gap-3">
-            {CATEGORIES.map(cat => (
+            {categories.map(cat => (
               <button
                 key={cat.slug}
                 onClick={() => onNavigate("category", { cat: cat.slug })}
                 className="group flex flex-col items-center gap-2 cursor-pointer">
                 <div className="w-full aspect-square rounded-sm overflow-hidden bg-[var(--color-surface)] border border-[var(--color-border)] group-hover:border-[var(--color-navy)] group-hover:shadow-[0_4px_16px_rgba(28,27,24,0.10)] transition-all">
                   <img
-                    src={`${cat.image}?w=160&h=160&fit=crop&auto=format`}
+                    src={`${CATEGORY_VISUALS[cat.slug]?.image ?? CATEGORY_VISUALS["home-garden"].image}?w=160&h=160&fit=crop&auto=format`}
                     alt={cat.label}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
@@ -184,7 +186,6 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
         </div>
       </section>
 
-      {/* ── TODAY'S DEALS ─────────────────────────────────── */}
       <section className="bg-white border-y border-[var(--color-border)] px-4 md:px-8 lg:px-12 py-10">
         <div className="max-w-screen-xl mx-auto">
           <div className="flex items-end justify-between mb-6">
@@ -199,11 +200,10 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
           </div>
           <div className="flex gap-3 overflow-x-auto pb-3">
             {deals.map(p => <DealCard key={p.id} product={p} onNavigate={onNavigate} />)}
-            {/* Pad with a "View All" tile */}
             <button
               onClick={() => onNavigate("search", { q: "sale" })}
               className="shrink-0 w-44 bg-[var(--color-navy)] rounded-sm flex flex-col items-center justify-center gap-2 text-white hover:bg-[var(--color-navy-hover)] transition-colors cursor-pointer">
-              <span className="font-[var(--font-display)] text-4xl font-[300]">+{PRODUCTS.length - deals.length}</span>
+              <span className="font-[var(--font-display)] text-4xl font-[300]">+{products.length - deals.length}</span>
               <span className="text-xs text-white/70">more deals</span>
               <span className="flex items-center gap-1 text-xs font-[500]">View All <IconChevronRight size={11} /></span>
             </button>
@@ -211,22 +211,20 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
         </div>
       </section>
 
-      {/* ── FEATURED PRODUCTS ─────────────────────────────── */}
       <section className="bg-[var(--color-ground)] px-4 md:px-8 lg:px-12 py-10">
         <div className="max-w-screen-xl mx-auto">
           <SectionHeader label="Handpicked" title="Featured Products" cta="Browse all" onCta={() => onNavigate("category", { cat: "all" })} />
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            {PRODUCTS.map(p => <HomeProductCard key={p.id} product={p} onNavigate={onNavigate} />)}
+            {products.map(p => <HomeProductCard key={p.id} product={p} onNavigate={onNavigate} />)}
           </div>
         </div>
       </section>
 
-      {/* ── SELLER SPOTLIGHT ──────────────────────────────── */}
       <section className="bg-white border-y border-[var(--color-border)] px-4 md:px-8 lg:px-12 py-10">
         <div className="max-w-screen-xl mx-auto">
           <SectionHeader label="Community" title="Top Sellers" cta="All sellers" onCta={() => onNavigate("search", { q: "" })} />
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-            {SELLERS.map(seller => (
+            {sellers.map(seller => (
               <button
                 key={seller.slug}
                 onClick={() => onNavigate("seller", { slug: seller.slug })}
@@ -248,15 +246,14 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
                     <p className="text-xs text-[var(--color-ink-muted)] truncate">{seller.category}</p>
                   </div>
                 </div>
-                <Rating value={seller.rating} count={seller.ratingCount} />
-                <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] mt-2">{seller.productCount} products</p>
+                <Rating value={seller.rating} count={seller.rating_count} />
+                <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] mt-2">{seller.product_count} products</p>
               </button>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── TRUST INDICATORS ──────────────────────────────── */}
       <section className="bg-[var(--color-navy)] px-4 md:px-8 lg:px-12 py-10">
         <div className="max-w-screen-xl mx-auto">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -271,7 +268,7 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
                 icon: <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M10 2a8 8 0 100 16A8 8 0 0010 2zM7 10l2 2 4-4" /></svg>,
                 title: "Verified Sellers",
                 sub: "Every seller passes identity verification and quality review",
-                stat: "3,200+ Verified",
+                stat: "Approved by Admin",
               },
               {
                 icon: <IconTrendUp size={20} />,
@@ -301,7 +298,6 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
         </div>
       </section>
 
-      {/* ── NEWSLETTER CTA ────────────────────────────────── */}
       <section className="bg-[var(--color-ground)] px-4 md:px-8 lg:px-12 py-12">
         <div className="max-w-screen-xl mx-auto">
           <div className="bg-white border border-[var(--color-border)] rounded-sm px-8 py-10 flex flex-col md:flex-row items-center justify-between gap-6">
@@ -324,13 +320,12 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
         </div>
       </section>
 
-      {/* ── STATS STRIP ───────────────────────────────────── */}
       <div className="bg-[var(--color-surface)] border-t border-[var(--color-border)] px-4 md:px-8 lg:px-12 py-6">
         <div className="max-w-screen-xl mx-auto">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
             {[
-              { value: "280K+", label: "Products Listed" },
-              { value: "3,200+", label: "Active Sellers" },
+              { value: `${products.length.toLocaleString()}+`, label: "Products Listed" },
+              { value: `${sellers.length.toLocaleString()}+`, label: "Active Sellers" },
               { value: "1.2M+", label: "Happy Buyers" },
               { value: "98%", label: "Satisfaction Rate" },
             ].map(({ value, label }) => (
@@ -342,7 +337,6 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
           </div>
         </div>
       </div>
-
     </div>
   );
 }

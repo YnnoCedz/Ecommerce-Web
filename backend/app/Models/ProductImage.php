@@ -8,7 +8,11 @@ class ProductImage extends Model
 {
     protected $fillable = [
         'product_id',
+        'storage_disk',
         'file_path',
+        'original_filename',
+        'mime_type',
+        'file_size',
         'alt_text',
         'sort_order',
         'is_primary',
@@ -19,4 +23,3 @@ class ProductImage extends Model
         return $this->belongsTo(Product::class);
     }
 }
-
