@@ -40,7 +40,17 @@ function BarChart({ data }: { data: number[] }) {
       {data.map((value, index) => {
         const bh = (value / max) * (h - 20);
         const x = 10 + index * ((w - 20) / data.length);
-        return <rect key={index} x={x} y={h - bh - 16} width={bw} height={bh} rx="2" fill={index === data.length - 1 ? "var(--color-navy)" : "var(--color-navy-surface)"} />;
+        return (
+          <rect
+            key={index}
+            x={x}
+            y={h - bh - 16}
+            width={bw}
+            height={bh}
+            rx="2"
+            fill={index === data.length - 1 ? "var(--color-navy)" : "var(--color-navy-surface)"}
+          />
+        );
       })}
     </svg>
   );
@@ -91,6 +101,7 @@ export default function AnalyticsPage() {
 
   const topProducts = dashboard?.top_products ?? [];
   const categoryBreakdown = dashboard?.category_breakdown ?? [];
+  const sellerName = dashboard?.seller?.business_name ?? "Seller";
 
   if (loading) {
     return <div className="p-6 max-w-screen-xl mx-auto text-sm text-[var(--color-ink-muted)]">Loading analytics...</div>;
@@ -101,12 +112,18 @@ export default function AnalyticsPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="font-[var(--font-display)] text-2xl font-[400] text-[var(--color-ink)]">Analytics</h1>
-          <p className="text-sm text-[var(--color-ink-muted)]">{dashboard.seller?.business_name ?? "Seller"} performance overview</p>
+          <p className="text-sm text-[var(--color-ink-muted)]">{sellerName} performance overview</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex gap-1 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-sm p-0.5">
             {(["7d", "30d", "90d"] as Range[]).map((value) => (
-              <button key={value} onClick={() => setRange(value)} className={`font-[var(--font-mono)] text-[10px] px-3 py-1 rounded-sm cursor-pointer transition-colors ${range === value ? "bg-[var(--color-navy)] text-white" : "text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"}`}>{value}</button>
+              <button
+                key={value}
+                onClick={() => setRange(value)}
+                className={`font-[var(--font-mono)] text-[10px] px-3 py-1 rounded-sm cursor-pointer transition-colors ${range === value ? "bg-[var(--color-navy)] text-white" : "text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"}`}
+              >
+                {value}
+              </button>
             ))}
           </div>
         </div>
@@ -117,13 +134,15 @@ export default function AnalyticsPage() {
           { label: "Total revenue", value: `PHP ${totalRevenue.toLocaleString()}`, accent: "var(--color-navy)" },
           { label: "Total orders", value: totalOrders.toString() },
           { label: "Avg. order value", value: `PHP ${averageOrderValue.toLocaleString()}` },
-          { label: "Pending orders", value: `${dashboard.summary.pending_orders}` },
-          { label: "Completed", value: `${dashboard.summary.completed_orders}` },
-          { label: "Store products", value: `${dashboard.summary.total_products}` },
+          { label: "Pending orders", value: `${dashboard?.summary?.pending_orders ?? 0}` },
+          { label: "Completed", value: `${dashboard?.summary?.completed_orders ?? 0}` },
+          { label: "Store products", value: `${dashboard?.summary?.total_products ?? 0}` },
         ].map((card) => (
           <div key={card.label} className="bg-white border border-[var(--color-border)] rounded-sm px-4 py-3.5">
             <p className="text-[11px] text-[var(--color-ink-muted)] mb-1">{card.label}</p>
-            <p className="font-[var(--font-display)] text-xl font-[400] text-[var(--color-ink)]" style={{ color: card.accent ?? "var(--color-ink)" }}>{card.value}</p>
+            <p className="font-[var(--font-display)] text-xl font-[400] text-[var(--color-ink)]" style={{ color: card.accent ?? "var(--color-ink)" }}>
+              {card.value}
+            </p>
           </div>
         ))}
       </div>
@@ -142,17 +161,19 @@ export default function AnalyticsPage() {
         <div className="bg-white border border-[var(--color-border)] rounded-sm p-5">
           <h2 className="text-sm font-[600] text-[var(--color-ink)] mb-4">Revenue by category</h2>
           <div className="space-y-3">
-            {categoryBreakdown.length > 0 ? categoryBreakdown.map((item) => (
-              <div key={item.name}>
-                <div className="flex items-center justify-between text-xs mb-1">
-                  <span className="text-[var(--color-ink-muted)] truncate">{item.name}</span>
-                  <span className="text-[var(--color-ink)] font-[var(--font-mono)]">{item.pct}%</span>
+            {categoryBreakdown.length > 0 ? (
+              categoryBreakdown.map((item) => (
+                <div key={item.name}>
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="text-[var(--color-ink-muted)] truncate">{item.name}</span>
+                    <span className="text-[var(--color-ink)] font-[var(--font-mono)]">{item.pct}%</span>
+                  </div>
+                  <div className="h-2 bg-[var(--color-surface)] rounded-full overflow-hidden">
+                    <div className="h-full bg-[var(--color-navy)] rounded-full" style={{ width: `${Math.max(4, item.pct)}%` }} />
+                  </div>
                 </div>
-                <div className="h-2 bg-[var(--color-surface)] rounded-full overflow-hidden">
-                  <div className="h-full bg-[var(--color-navy)] rounded-full" style={{ width: `${Math.max(4, item.pct)}%` }} />
-                </div>
-              </div>
-            )) : (
+              ))
+            ) : (
               <p className="text-sm text-[var(--color-ink-muted)]">No category data yet.</p>
             )}
           </div>
@@ -175,28 +196,38 @@ export default function AnalyticsPage() {
             <thead>
               <tr className="border-b border-[var(--color-border-subtle)] bg-[var(--color-surface)]">
                 {["#", "Product", "Category", "Revenue", "Orders", "Returns"].map((heading) => (
-                  <th key={heading} className="px-4 py-2.5 text-left font-[var(--font-mono)] text-[9px] text-[var(--color-ink-muted)] uppercase tracking-widest">{heading}</th>
+                  <th key={heading} className="px-4 py-2.5 text-left font-[var(--font-mono)] text-[9px] text-[var(--color-ink-muted)] uppercase tracking-widest">
+                    {heading}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {topProducts.map((product, index) => (
-                <tr key={`${product.name}-${index}`} className="border-b border-[var(--color-border-subtle)] last:border-0 hover:bg-[var(--color-surface)] transition-colors">
-                  <td className="px-4 py-3 font-[var(--font-mono)] text-xs text-[var(--color-ink-disabled)]">{index + 1}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-sm overflow-hidden bg-[var(--color-surface)] shrink-0">
-                        <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
+              {topProducts.length > 0 ? (
+                topProducts.map((product, index) => (
+                  <tr key={`${product.name}-${index}`} className="border-b border-[var(--color-border-subtle)] last:border-0 hover:bg-[var(--color-surface)] transition-colors">
+                    <td className="px-4 py-3 font-[var(--font-mono)] text-xs text-[var(--color-ink-disabled)]">{index + 1}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-sm overflow-hidden bg-[var(--color-surface)] shrink-0">
+                          <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
+                        </div>
+                        <span className="text-sm font-[500] text-[var(--color-ink)] truncate max-w-40">{product.name}</span>
                       </div>
-                      <span className="text-sm font-[500] text-[var(--color-ink)] truncate max-w-40">{product.name}</span>
-                    </div>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-[var(--color-ink-muted)]">{product.category}</td>
+                    <td className="px-4 py-3 font-[var(--font-mono)] text-sm text-[var(--color-ink)]">PHP {product.revenue.toLocaleString()}</td>
+                    <td className="px-4 py-3 font-[var(--font-mono)] text-sm text-[var(--color-ink-muted)]">{product.orders}</td>
+                    <td className="px-4 py-3 font-[var(--font-mono)] text-[10px] text-[var(--color-ink-disabled)]">{product.returns}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-sm text-[var(--color-ink-muted)] text-center">
+                    No products sold yet.
                   </td>
-                  <td className="px-4 py-3 text-xs text-[var(--color-ink-muted)]">{product.category}</td>
-                  <td className="px-4 py-3 font-[var(--font-mono)] text-sm text-[var(--color-ink)]">PHP {product.revenue.toLocaleString()}</td>
-                  <td className="px-4 py-3 font-[var(--font-mono)] text-sm text-[var(--color-ink-muted)]">{product.orders}</td>
-                  <td className="px-4 py-3 font-[var(--font-mono)] text-[10px] text-[var(--color-ink-disabled)]">{product.returns}</td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>

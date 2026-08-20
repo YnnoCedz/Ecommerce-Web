@@ -179,7 +179,7 @@ export function EmptyWishlist() {
           heading="Nothing saved yet"
           body="Tap the heart on any product to save it here. Your wishlist is private and syncs across devices."
           cta={{ label: "Explore products", onClick: () => navigate("/search") }}
-          secondaryCta={{ label: "See recommended picks", onClick: () => navigate("/account/dashboard") }}
+          secondaryCta={{ label: "See recommended picks", onClick: () => navigate("/account/profile") }}
         />
       </div>
     </PublicShell>

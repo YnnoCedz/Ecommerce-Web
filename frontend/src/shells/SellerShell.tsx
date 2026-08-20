@@ -2,6 +2,16 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import {
+  dismissNotification,
+  fetchNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  type NotificationRecord,
+} from "../api/notifications";
+import { fetchSellerDashboard } from "../api/seller";
+import { CONVOS } from "../pages/messaging/MessagingPage";
+import ConfirmDialog from "../components/ConfirmDialog";
+import {
   IconDashboard, IconProducts, IconInventory, IconOrders, IconCustomers,
   IconPromotions, IconAnalytics, IconMessages, IconNotifications, IconStore,
   IconSettings, IconChevronLeft, IconChevronRight, IconBell, IconLogout,
@@ -12,23 +22,74 @@ type NavItem = {
   id: string;
   label: string;
   icon: React.ComponentType<{ size?: number; className?: string }>;
-  badge?: number;
+  badgeKey?: keyof BadgeCounts;
   href?: string;
 };
+
+type BadgeCounts = {
+  orders: number;
+  messages: number;
+  notifications: number;
+};
+
+const getSellerMessageCount = () =>
+  CONVOS.filter((conversation) => conversation.participants.some((participant) => participant.type === "seller"))
+    .reduce((total, conversation) => total + conversation.unread, 0);
+
+function formatRelativeTime(value: string | null) {
+  if (!value) return "Just now";
+
+  const diffMs = Date.now() - new Date(value).getTime();
+  const diffMinutes = Math.max(0, Math.floor(diffMs / 60000));
+
+  if (diffMinutes < 1) return "Just now";
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return new Date(value).toLocaleDateString();
+}
+
+function resolveNotificationRoute(notification: NotificationRecord) {
+  const action = notification.action_type?.toLowerCase() ?? "";
+
+  if (action.includes("order") || notification.order_id) {
+    return "/seller-center/orders";
+  }
+
+  if (action.includes("product") || action.includes("inventory") || notification.product_id) {
+    return "/seller-center/inventory";
+  }
+
+  if (action.includes("message") || notification.conversation_id) {
+    return "/seller-center/messages";
+  }
+
+  if (action.includes("account") || action.includes("seller-application")) {
+    return "/seller-center/settings";
+  }
+
+  if (action.includes("analytics") || action.includes("report")) {
+    return "/seller-center/analytics";
+  }
+
+  return null;
+}
 
 const NAV_ITEMS: NavItem[] = [
   { id: "dashboard",     label: "Dashboard",    icon: IconDashboard },
   { id: "products",      label: "Products",     icon: IconProducts },
   { id: "inventory",     label: "Inventory",    icon: IconInventory },
-  { id: "orders",        label: "Orders",       icon: IconOrders,     badge: 4 },
+  { id: "orders",        label: "Orders",       icon: IconOrders,     badgeKey: "orders" },
   { id: "customers",     label: "Customers",    icon: IconCustomers },
   { id: "promotions",    label: "Promotions",   icon: IconPromotions },
   { id: "analytics",     label: "Analytics",    icon: IconAnalytics },
 ];
 
 const BOTTOM_NAV: NavItem[] = [
-  { id: "messages",      label: "Messages",     icon: IconMessages,      badge: 7 },
-  { id: "notifications", label: "Notifications",icon: IconNotifications, badge: 12 },
+  { id: "messages",      label: "Messages",     icon: IconMessages,      badgeKey: "messages" },
+  { id: "notifications", label: "Notifications",icon: IconNotifications, badgeKey: "notifications" },
   { id: "store",         label: "Store",        icon: IconStore },
   { id: "settings",      label: "Settings",     icon: IconSettings },
 ];
@@ -55,6 +116,14 @@ export default function SellerShell({
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [activeItem, setActiveItem] = useState(activeNav);
+  const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationsBusyId, setNotificationsBusyId] = useState<number | null>(null);
+  const [badgeCounts, setBadgeCounts] = useState<BadgeCounts>({
+    orders: 0,
+    messages: getSellerMessageCount(),
+    notifications: 0,
+  });
   const ACCOUNT_ROUTES: Record<string, string> = {
     "Account Settings": "/seller-center/settings",
     "Billing": "/seller-center/settings",
@@ -62,10 +131,15 @@ export default function SellerShell({
   };
   const [notifOpen, setNotifOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
+  const [logoutLoading, setLogoutLoading] = useState(false);
   const handleLogout = async () => {
+    setLogoutLoading(true);
     try {
       await logout();
     } finally {
+      setLogoutLoading(false);
+      setLogoutConfirmOpen(false);
       setAccountOpen(false);
       navigate("/auth/login");
     }
@@ -75,9 +149,90 @@ export default function SellerShell({
     setActiveItem(activeNav);
   }, [activeNav]);
 
+  useEffect(() => {
+    let active = true;
+
+    void (async () => {
+      try {
+        setNotificationsLoading(true);
+        const [dashboardResponse, notificationsResponse] = await Promise.all([
+          fetchSellerDashboard(),
+          fetchNotifications({ limit: 5 }),
+        ]);
+        if (!active) return;
+        setBadgeCounts((current) => ({
+          ...current,
+          orders: dashboardResponse.data.summary.pending_orders ?? 0,
+          notifications: notificationsResponse.meta.unread_count ?? 0,
+        }));
+        setNotifications(notificationsResponse.data.filter((notification) => !notification.dismissed_at));
+      } catch {
+        if (!active) return;
+      } finally {
+        if (active) {
+          setNotificationsLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const unreadNotificationCount = notifications.filter((notification) => !notification.read_at).length;
+
+  const handleNotificationOpen = async (notification: NotificationRecord) => {
+    try {
+      setNotificationsBusyId(notification.id);
+      const updated = notification.read_at ? notification : (await markNotificationRead(notification.id)).data;
+      setNotifications((current) => current.map((item) => item.id === notification.id ? updated : item));
+      setBadgeCounts((current) => ({
+        ...current,
+        notifications: Math.max(0, current.notifications - (notification.read_at ? 0 : 1)),
+      }));
+
+      const route = resolveNotificationRoute(notification);
+      if (route) {
+        setNotifOpen(false);
+        navigate(route);
+      }
+    } finally {
+      setNotificationsBusyId(null);
+    }
+  };
+
+  const handleNotificationDismiss = async (notification: NotificationRecord) => {
+    try {
+      setNotificationsBusyId(notification.id);
+      await dismissNotification(notification.id);
+      setNotifications((current) => current.filter((item) => item.id !== notification.id));
+      setBadgeCounts((current) => ({
+        ...current,
+        notifications: Math.max(0, current.notifications - (notification.read_at ? 0 : 1)),
+      }));
+    } finally {
+      setNotificationsBusyId(null);
+    }
+  };
+
+  const handleMarkAllNotificationsRead = async () => {
+    if (unreadNotificationCount === 0) return;
+
+    try {
+      setNotificationsLoading(true);
+      await markAllNotificationsRead();
+      setNotifications((current) => current.map((notification) => ({ ...notification, read_at: notification.read_at ?? new Date().toISOString() })));
+      setBadgeCounts((current) => ({ ...current, notifications: 0 }));
+    } finally {
+      setNotificationsLoading(false);
+    }
+  };
+
   const SidebarLink = ({ item }: { item: NavItem }) => {
     const isActive = activeItem === item.id;
     const Icon = item.icon;
+    const badgeValue = item.badgeKey ? badgeCounts[item.badgeKey] : 0;
     return (
       <button
         onClick={() => { setActiveItem(item.id); onNavChange?.(item.id); setMobileOpen(false); }}
@@ -89,23 +244,19 @@ export default function SellerShell({
         title={collapsed ? item.label : undefined}>
         <span className="shrink-0 relative">
           <Icon size={16} />
-          {item.badge && !collapsed && (
-            <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-[var(--color-red)] text-white text-[9px] font-[var(--font-mono)] rounded-full flex items-center justify-center">{item.badge}</span>
-          )}
-          {item.badge && collapsed && (
-            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-[var(--color-red)] rounded-full" />
+          {badgeValue > 0 && collapsed && (
+            <span className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 bg-[var(--color-red)] text-white text-[9px] font-[var(--font-mono)] rounded-full flex items-center justify-center leading-none">
+              {badgeValue}
+            </span>
           )}
         </span>
         {!collapsed && <span className="text-sm font-[500] truncate flex-1 text-left">{item.label}</span>}
-        {!collapsed && item.badge && (
-          <span className="text-[10px] font-[var(--font-mono)] bg-[var(--color-red)] text-white px-1.5 py-0.5 rounded-full shrink-0">{item.badge}</span>
-        )}
 
         {/* Tooltip for collapsed */}
         {collapsed && (
           <div className="absolute left-full ml-2 px-2.5 py-1.5 bg-[var(--color-ink)] text-white text-xs rounded-sm whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 shadow-[0_4px_12px_rgba(0,0,0,0.3)]">
             {item.label}
-            {item.badge && <span className="ml-1.5 bg-[var(--color-red)] text-white text-[9px] px-1 py-0.5 rounded-full">{item.badge}</span>}
+            {badgeValue > 0 && <span className="ml-1.5 bg-[var(--color-red)] text-white text-[9px] px-1 py-0.5 rounded-full">{badgeValue}</span>}
           </div>
         )}
       </button>
@@ -143,12 +294,6 @@ export default function SellerShell({
               <p className="text-xs text-white/50 truncate">{storeCategory}</p>
             </div>
           </div>
-          <div className="mt-3">
-            <a href="#" className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/80 transition-colors cursor-pointer">
-              <IconEye size={11} />
-              View your store
-            </a>
-          </div>
         </div>
       )}
 
@@ -171,7 +316,7 @@ export default function SellerShell({
       {/* Bottom nav */}
       <div className="px-2 pb-3 pt-2 border-t border-white/10 space-y-0.5 shrink-0">
         {BOTTOM_NAV.map(item => <SidebarLink key={item.id} item={item} />)}
-        <button onClick={handleLogout} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-sm text-white/40 hover:text-white/80 hover:bg-white/8 transition-all cursor-pointer`}
+        <button onClick={() => setLogoutConfirmOpen(true)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-sm text-white/40 hover:text-white/80 hover:bg-white/8 transition-all cursor-pointer`}
           title={collapsed ? "Log out" : undefined}>
           <IconLogout size={16} className="shrink-0" />
           {!collapsed && <span className="text-sm">Log out</span>}
@@ -245,34 +390,72 @@ export default function SellerShell({
             <div className="relative">
               <button
                 onClick={() => { setNotifOpen(!notifOpen); setAccountOpen(false); }}
-                aria-label={`Notifications — 12 unread`}
+                aria-label={`Notifications — ${badgeCounts.notifications} unread`}
                 aria-expanded={notifOpen}
                 aria-haspopup="true"
                 className="relative w-8 h-8 flex items-center justify-center text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] hover:bg-[var(--color-surface)] rounded-sm transition-all cursor-pointer">
                 <IconBell size={16} aria-hidden="true" />
-                <span className="absolute top-1 right-1 w-2 h-2 bg-[var(--color-red)] rounded-full" aria-hidden="true" />
+                {badgeCounts.notifications > 0 && (
+                  <span className="absolute top-1 right-1 min-w-2.5 h-2.5 px-0.5 bg-[var(--color-red)] text-white text-[8px] font-[var(--font-mono)] rounded-full flex items-center justify-center leading-none" aria-hidden="true">
+                    {badgeCounts.notifications > 9 ? "9+" : badgeCounts.notifications}
+                  </span>
+                )}
               </button>
               {notifOpen && (
                 <div className="absolute right-0 top-full mt-1 w-80 bg-white border border-[var(--color-border)] rounded-sm shadow-[0_8px_24px_rgba(28,27,24,0.12)] z-50">
                   <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
-                    <p className="text-sm font-[600] text-[var(--color-ink)]">Notifications</p>
-                    <span className="font-[var(--font-mono)] text-[10px] text-[var(--color-amber)] bg-[var(--color-amber-light)] px-2 py-0.5 rounded-full">12 new</span>
-                  </div>
-                  {[
-                    { title: "New order received", body: "Order #ORD-0088 from Maria Santos", time: "2m ago", unread: true },
-                    { title: "Low stock alert", body: "Handmade Rug (Red) — 2 units left", time: "1h ago", unread: true },
-                    { title: "Review received", body: "★★★★★ on Ceramic Bowl Set", time: "3h ago", unread: false },
-                  ].map((n, i) => (
-                    <div key={i} className={`flex gap-3 px-4 py-3 border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-surface)] cursor-pointer ${n.unread ? "bg-[var(--color-navy-surface)]" : ""}`}>
-                      {n.unread && <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-navy)] mt-1.5 shrink-0" />}
-                      {!n.unread && <span className="w-1.5 shrink-0" />}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-[600] text-[var(--color-ink)] mb-0.5">{n.title}</p>
-                        <p className="text-xs text-[var(--color-ink-muted)] truncate">{n.body}</p>
-                        <p className="text-[10px] font-[var(--font-mono)] text-[var(--color-ink-disabled)] mt-1">{n.time}</p>
-                      </div>
+                    <div>
+                      <p className="text-sm font-[600] text-[var(--color-ink)]">Notifications</p>
+                      <p className="text-[10px] text-[var(--color-ink-muted)]">
+                        {notificationsLoading ? "Refreshing from the backend..." : `${badgeCounts.notifications} unread`}
+                      </p>
                     </div>
-                  ))}
+                    {badgeCounts.notifications > 0 && (
+                      <button
+                        onClick={handleMarkAllNotificationsRead}
+                        className="text-[10px] font-[500] text-[var(--color-navy)] hover:underline cursor-pointer"
+                      >
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
+                  {notifications.length === 0 ? (
+                    <div className="px-4 py-6 text-center text-xs text-[var(--color-ink-muted)]">
+                      No notifications yet.
+                    </div>
+                  ) : (
+                    notifications.map((notification) => {
+                      const unread = !notification.read_at;
+                      return (
+                        <div
+                          key={notification.id}
+                          className={`flex gap-3 px-4 py-3 border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-surface)] ${unread ? "bg-[var(--color-navy-surface)]" : ""}`}
+                        >
+                          <button
+                            onClick={() => void handleNotificationOpen(notification)}
+                            disabled={notificationsBusyId === notification.id}
+                            className="flex gap-3 flex-1 min-w-0 text-left cursor-pointer disabled:opacity-60"
+                          >
+                            {unread ? <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-navy)] mt-1.5 shrink-0" /> : <span className="w-1.5 shrink-0" />}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-[600] text-[var(--color-ink)] mb-0.5">{notification.title}</p>
+                              <p className="text-xs text-[var(--color-ink-muted)] truncate">{notification.body}</p>
+                              <p className="text-[10px] font-[var(--font-mono)] text-[var(--color-ink-disabled)] mt-1">
+                                {formatRelativeTime(notification.created_at)}
+                              </p>
+                            </div>
+                          </button>
+                          <button
+                            onClick={() => void handleNotificationDismiss(notification)}
+                            disabled={notificationsBusyId === notification.id}
+                            className="shrink-0 self-start text-[10px] text-[var(--color-ink-disabled)] hover:text-[var(--color-ink)] cursor-pointer disabled:opacity-60"
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
                   <button onClick={() => { setNotifOpen(false); navigate("/seller-center/notifications"); }} className="w-full flex items-center justify-center px-4 py-2.5 text-xs text-[var(--color-navy)] font-[500] hover:bg-[var(--color-surface)] cursor-pointer">View all notifications</button>
                 </div>
               )}
@@ -302,7 +485,7 @@ export default function SellerShell({
                     <button key={l} onClick={() => { setAccountOpen(false); navigate(ACCOUNT_ROUTES[l]); }} className="w-full flex items-center px-4 py-2.5 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface)] cursor-pointer">{l}</button>
                   ))}
                   <div className="border-t border-[var(--color-border)]">
-                    <button onClick={handleLogout} className="w-full flex items-center px-4 py-2.5 text-sm text-[var(--color-red)] hover:bg-[var(--color-red-light)] cursor-pointer">Log out</button>
+                    <button onClick={() => setLogoutConfirmOpen(true)} className="w-full flex items-center px-4 py-2.5 text-sm text-[var(--color-red)] hover:bg-[var(--color-red-light)] cursor-pointer">Log out</button>
                   </div>
                 </div>
               )}
@@ -317,11 +500,23 @@ export default function SellerShell({
       </div>
 
       {/* ── MOBILE BOTTOM TAB BAR ────────────────────────── */}
+      <ConfirmDialog
+        open={logoutConfirmOpen}
+        title="Log out of seller center?"
+        description="You will need to sign in again to access your seller tools."
+        confirmLabel="Log out"
+        cancelLabel="Cancel"
+        danger
+        loading={logoutLoading}
+        onCancel={() => setLogoutConfirmOpen(false)}
+        onConfirm={handleLogout}
+      />
+
       <nav className="lg:hidden fixed bottom-0 inset-x-0 h-16 bg-white border-t border-[var(--color-border)] flex items-stretch z-30 shadow-[0_-1px_8px_rgba(28,27,24,0.06)]">
         {[
           { id: "dashboard", label: "Home",     Icon: IconDashboard },
           { id: "products",  label: "Products", Icon: IconProducts,  badge: undefined },
-          { id: "orders",    label: "Orders",   Icon: IconOrders,    badge: 4 },
+          { id: "orders",    label: "Orders",   Icon: IconOrders,    badge: badgeCounts.orders || undefined },
           { id: "analytics", label: "Analytics",Icon: IconAnalytics },
           { id: "settings",  label: "More",     Icon: IconSettings },
         ].map(({ id, label, Icon, badge }) => (
@@ -333,7 +528,7 @@ export default function SellerShell({
             <span className="relative">
               <Icon size={20} />
               {badge && (
-                <span className="absolute -top-1.5 -right-2 w-4 h-4 bg-[var(--color-red)] text-white text-[8px] font-[var(--font-mono)] rounded-full flex items-center justify-center leading-none">{badge}</span>
+                <span className="absolute -top-1.5 -right-2 min-w-4 h-4 px-1 bg-[var(--color-red)] text-white text-[8px] font-[var(--font-mono)] rounded-full flex items-center justify-center leading-none">{badge}</span>
               )}
             </span>
             <span className={`text-[9px] font-[var(--font-mono)] leading-none ${activeItem === id ? "font-[600]" : ""}`}>{label}</span>

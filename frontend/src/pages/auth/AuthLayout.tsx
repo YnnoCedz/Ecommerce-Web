@@ -1,13 +1,16 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
+import { AlertTriangle, CircleCheck, CircleX, Eye, EyeOff, Info } from "lucide-react";
 
 // ── Shared form field (used across all auth pages) ────────────────────────────
 
 export function Field({
   label, type = "text", value, onChange, error, hint, placeholder, disabled, required,
+  maxLength,
 }: {
   label: string; type?: string; value: string; onChange: (v: string) => void;
   error?: string; hint?: string; placeholder?: string; disabled?: boolean; required?: boolean;
+  maxLength?: number;
 }) {
   const [showPwd, setShowPwd] = useState(false);
   const isPwd = type === "password";
@@ -23,6 +26,7 @@ export function Field({
           value={value}
           onChange={e => onChange(e.target.value)}
           placeholder={placeholder}
+          maxLength={maxLength}
           disabled={disabled}
           className={`w-full px-3.5 py-2.5 text-sm rounded-sm border outline-none transition-all bg-white text-[var(--color-ink)] placeholder:text-[var(--color-ink-disabled)] ${
             error
@@ -33,17 +37,13 @@ export function Field({
         {isPwd && (
           <button type="button" onClick={() => setShowPwd(s => !s)}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer transition-colors">
-            {showPwd ? (
-              <svg width="15" height="15" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 2l14 14M7.5 7.5a2.5 2.5 0 003.5 3.5M5 5.5C3.2 6.8 2 8.5 2 9c0 1 3.2 4.5 7 4.5a7.5 7.5 0 003.2-1M9.5 4.5h.5c3.8 0 7 3.5 7 4.5 0 .6-.9 2.1-2.4 3.2" /></svg>
-            ) : (
-              <svg width="15" height="15" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 9c0-1 3.2-4.5 7-4.5S16 8 16 9s-3.2 4.5-7 4.5S2 10 2 9z" /><circle cx="9" cy="9" r="2.5" /></svg>
-            )}
+            {showPwd ? <EyeOff size={15} aria-hidden="true" /> : <Eye size={15} aria-hidden="true" />}
           </button>
         )}
       </div>
       {error && (
         <p className="text-xs text-[var(--color-red)] mt-1.5 flex items-center gap-1">
-          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="6" cy="6" r="5" /><path d="M6 4v2.5M6 8.5v.5" strokeLinecap="round" /></svg>
+          <CircleX size={11} aria-hidden="true" />
           {error}
         </p>
       )}
@@ -62,17 +62,15 @@ export function AuthAlert({ type, message }: { type: "error" | "warning" | "info
     success: { bg: "var(--color-green-light)",   border: "var(--color-green-border)",   text: "var(--color-green)" },
   }[type];
   const icons = {
-    error:   <path d="M6 4v2.5M6 8.5v.5" strokeLinecap="round" />,
-    warning: <path d="M6 4v2.5M6 8.5v.5" strokeLinecap="round" />,
-    info:    <path d="M6 4v2.5M6 8.5v.5" strokeLinecap="round" />,
-    success: <path d="M3.5 6l2 2 3.5-4" strokeLinecap="round" strokeLinejoin="round" />,
+    error:   <AlertTriangle size={13} aria-hidden="true" />,
+    warning: <AlertTriangle size={13} aria-hidden="true" />,
+    info:    <Info size={13} aria-hidden="true" />,
+    success: <CircleCheck size={13} aria-hidden="true" />,
   }[type];
   return (
     <div className="rounded-sm px-3.5 py-3 text-sm flex items-start gap-2.5 leading-relaxed"
       style={{ background: styles.bg, border: `1px solid ${styles.border}`, color: styles.text }}>
-      <svg width="13" height="13" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" className="shrink-0 mt-0.5">
-        <circle cx="6" cy="6" r="5" />{icons}
-      </svg>
+      <div className="shrink-0 mt-0.5">{icons}</div>
       <span>{message}</span>
     </div>
   );

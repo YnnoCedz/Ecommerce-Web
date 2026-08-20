@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   fetchCurrentUser,
@@ -87,24 +87,32 @@ function extractErrorMessage(error: unknown, fallback: string) {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
+  const userRef = useRef<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingTwoFactor, setPendingTwoFactor] = useState<TwoFactorChallenge | null>(() => readPendingTwoFactor());
 
+  const updateUser = (nextUser: AuthUser | null) => {
+    userRef.current = nextUser;
+    setUser(nextUser);
+  };
+
   const refreshUser = async () => {
     try {
       const response = await fetchCurrentUser();
-      setUser(response.user);
+      updateUser(response.user);
       setError(null);
       return response.user;
     } catch (err) {
-      setUser(null);
       if (err instanceof ApiError && err.status === 401) {
+        updateUser(null);
         setError(null);
       } else {
         setError(extractErrorMessage(err, "Unable to load your session."));
       }
-      return null;
+      // A transport failure is not proof that the Laravel session ended.
+      // Keep any in-memory user and surface the verification failure instead.
+      return userRef.current;
     } finally {
       setLoading(false);
     }
@@ -126,7 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
       setPendingTwoFactor(challenge);
       writePendingTwoFactor(challenge);
-      setUser(null);
+      updateUser(null);
       setError(null);
       return {
         user: response.user as AuthUser,
@@ -135,7 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
     }
 
-    setUser(response.user as AuthUser);
+    updateUser(response.user as AuthUser);
     setError(null);
     return {
       user: response.user as AuthUser,
@@ -146,7 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = async (payload: RegisterPayload) => {
     const response = await registerRequest(payload);
-    setUser(response.user as AuthUser);
+    updateUser(response.user as AuthUser);
     setError(null);
     return {
       user: response.user as AuthUser,
@@ -158,7 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const verifyEmail = async (payload: { email: string; code: string }) => {
     const response = await verifyEmailVerificationRequest(payload);
-    setUser(response.user as AuthUser);
+    updateUser(response.user as AuthUser);
     setError(null);
 
     return {
@@ -170,7 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     await logoutRequest();
-    setUser(null);
+    updateUser(null);
     setError(null);
     setPendingTwoFactor(null);
     writePendingTwoFactor(null);
@@ -183,7 +191,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       code: payload.code,
     });
 
-    setUser(response.user as AuthUser);
+    updateUser(response.user as AuthUser);
     setError(null);
     setPendingTwoFactor(null);
     writePendingTwoFactor(null);

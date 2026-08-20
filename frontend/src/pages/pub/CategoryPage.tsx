@@ -3,6 +3,7 @@ import { Rating, Price } from "../../Part03";
 import { IconChevronRight, IconChevronDown } from "../../shells/icons";
 import { fetchCatalogCategories, fetchCatalogProducts, type CatalogCategory, type CatalogProduct } from "../../api/catalog";
 import { CATEGORY_VISUALS } from "./visuals";
+import { usePersistedWishlist } from "../../hooks/usePersistedWishlist";
 
 type NavFn = (page: string, params?: Record<string, string>) => void;
 
@@ -36,7 +37,7 @@ function FilterSection({ title, open, onToggle, children }: { title: string; ope
 }
 
 function ProductCard({ product, onNavigate }: { product: CatalogProduct; onNavigate: NavFn }) {
-  const [wished, setWished] = useState(false);
+  const { wished, busy, toggle } = usePersistedWishlist(product.id, product.name, () => onNavigate("login"));
   const discount = product.original_price ? Math.round(((product.original_price - product.price) / product.original_price) * 100) : null;
   return (
     <div className="group bg-white border border-[var(--color-border)] rounded-sm overflow-hidden hover:shadow-[0_4px_20px_rgba(28,27,24,0.10)] hover:border-[var(--color-border-strong)] transition-all cursor-pointer" onClick={() => onNavigate("product", { slug: product.slug })}>
@@ -44,7 +45,7 @@ function ProductCard({ product, onNavigate }: { product: CatalogProduct; onNavig
         <img src={`${product.image}?w=400&h=400&fit=crop&auto=format`} alt={product.name} className="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-300" />
         {product.badge && <span className="absolute top-2.5 left-2.5 font-[var(--font-mono)] text-[10px] font-[500] px-2 py-1 rounded-sm bg-[var(--color-navy)] text-white">{product.badge}</span>}
         {discount && <span className="absolute top-2.5 right-2.5 font-[var(--font-mono)] text-[10px] font-[500] px-2 py-1 rounded-sm bg-[var(--color-red)] text-white">-{discount}%</span>}
-        <button onClick={e => { e.stopPropagation(); setWished(w => !w); }} className="absolute bottom-2.5 right-2.5 w-7 h-7 bg-white/90 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white cursor-pointer shadow-sm">
+        <button onClick={e => { e.stopPropagation(); void toggle(); }} disabled={busy} aria-pressed={wished} className="absolute bottom-2.5 right-2.5 w-7 h-7 bg-white/90 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white cursor-pointer shadow-sm disabled:opacity-50">
           <svg width="13" height="13" viewBox="0 0 14 14" fill={wished ? "#8B2C2C" : "none"} stroke={wished ? "#8B2C2C" : "#6B6860"} strokeWidth="1.4">
             <path d="M7 12.5s-5.5-3.2-5.5-7A3 3 0 0 1 7 3.7 3 3 0 0 1 12.5 5.5c0 3.8-5.5 7-5.5 7z" />
           </svg>

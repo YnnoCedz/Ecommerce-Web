@@ -3,16 +3,63 @@ import { Rating, Price, BtnPrimary, BtnSecondary } from "../../Part03";
 import { IconChevronRight, IconChevronLeft, IconHeart, IconCart, IconStore, IconBox, IconOrders } from "../../shells/icons";
 import { fetchCatalogProduct, type CatalogProduct } from "../../api/catalog";
 import { addCartItem } from "../../api/cart";
+import { addWishlistItem, fetchWishlistStatus, removeWishlistItem } from "../../api/buyer";
+import { useAuth } from "../../auth/AuthContext";
+import { useToast } from "../../components/ToastProvider";
 import { WATCH_GALLERY, DEFAULT_PRODUCT_IMAGE } from "./visuals";
 
 type NavFn = (page: string, params?: Record<string, string>) => void;
 
-const SIZES = ["38mm", "40mm", "42mm", "44mm"];
-const COLORS = [
-  { label: "Silver/Black", hex: "#7A7A7A" },
-  { label: "Gold/Tan", hex: "#B8782A" },
-  { label: "Rose Gold", hex: "#C07060" },
-];
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function getCategoryLabel(category: CatalogProduct["category"]): string {
+  if (typeof category === "string") {
+    return category;
+  }
+
+  if (isRecord(category)) {
+    const label = category.label;
+    const name = category.name;
+
+    if (typeof label === "string" && label.trim()) return label;
+    if (typeof name === "string" && name.trim()) return name;
+  }
+
+  return "Uncategorized";
+}
+
+function getSellerName(seller: CatalogProduct["seller"]): string {
+  if (typeof seller === "string") {
+    return seller;
+  }
+
+  if (isRecord(seller)) {
+    const name = seller.name;
+    const businessName = seller.business_name;
+    const tradeName = seller.trade_name;
+
+    if (typeof name === "string" && name.trim()) return name;
+    if (typeof tradeName === "string" && tradeName.trim()) return tradeName;
+    if (typeof businessName === "string" && businessName.trim()) return businessName;
+  }
+
+  return "Maketo Seller";
+}
+
+function getSellerInitials(seller: CatalogProduct["seller"], fallbackName: string): string {
+  if (isRecord(seller) && typeof seller.initials === "string" && seller.initials.trim()) {
+    return seller.initials;
+  }
+
+  return fallbackName
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(part => part[0]?.toUpperCase() ?? "")
+    .slice(0, 2)
+    .join("") || "M";
+}
 
 function ReviewCard({ review }: { review: { user: string; date: string; rating: number; title: string; body: string; helpful: number } }) {
   return (
@@ -48,19 +95,49 @@ function ReviewCard({ review }: { review: { user: string; date: string; rating: 
 }
 
 export default function ProductPage({ slug, onNavigate }: { slug: string; onNavigate: NavFn }) {
+  const { user } = useAuth();
+  const { showToast } = useToast();
   const [product, setProduct] = useState<CatalogProduct | null>(null);
   const [activeImg, setActiveImg] = useState(0);
-  const [selectedSize, setSelectedSize] = useState(SIZES[1]);
-  const [selectedColor, setSelectedColor] = useState(0);
+  const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null);
   const [qty, setQty] = useState(1);
   const [wished, setWished] = useState(false);
   const [activeTab, setActiveTab] = useState("description");
   const [cartBusy, setCartBusy] = useState(false);
-  const [cartMessage, setCartMessage] = useState<string | null>(null);
+  const [wishlistBusy, setWishlistBusy] = useState(false);
 
   useEffect(() => {
     void fetchCatalogProduct(slug).then((response) => setProduct(response.data)).catch(() => setProduct(null));
   }, [slug]);
+
+  useEffect(() => {
+    const variants = product?.variants?.filter((variant) => variant.active) ?? [];
+    const availableVariant = product?.track_inventory
+      ? variants.find((variant) => variant.stock_quantity > 0)
+      : variants[0];
+    setSelectedVariantId(availableVariant?.id ?? variants[0]?.id ?? null);
+    setQty(1);
+  }, [product]);
+
+  useEffect(() => {
+    if (!user || !product) {
+      setWished(false);
+      return;
+    }
+
+    let active = true;
+    void fetchWishlistStatus(product.id)
+      .then((response) => {
+        if (active) setWished(response.data.wishlisted);
+      })
+      .catch(() => {
+        if (active) setWished(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [product, user]);
 
   const images = useMemo(() => {
     if (!product) return [DEFAULT_PRODUCT_IMAGE];
@@ -69,6 +146,13 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
   }, [product]);
 
   const related = product?.related ?? [];
+  const selectedVariant = product?.variants?.find((variant) => variant.id === selectedVariantId) ?? null;
+  const currentPrice = selectedVariant?.price ?? product?.price ?? 0;
+  const currentStock = selectedVariant?.stock_quantity ?? product?.stock_quantity ?? 0;
+  const currentInStock = product ? (product.track_inventory ? currentStock > 0 : true) : false;
+  const categoryLabel = product ? getCategoryLabel(product.category) : "Uncategorized";
+  const sellerName = product ? getSellerName(product.seller) : "Maketo Seller";
+  const sellerInitials = product ? getSellerInitials(product.seller, sellerName) : "M";
   const reviews = [
     { user: "Marco S.", date: "Jul 28, 2026", rating: 5, title: "Exceptional quality and packaging", body: "Arrived well packaged, exactly as described. The dial looks even better in person.", helpful: 42 },
     { user: "Reina C.", date: "Jul 15, 2026", rating: 5, title: "My go-to everyday watch now", body: "Seller was very responsive and shipping was fast.", helpful: 31 },
@@ -76,20 +160,20 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
   ];
 
   const handleAddToCart = async () => {
-    if (!product.in_stock) {
-      setCartMessage("This product is currently out of stock.");
+    if (!currentInStock) {
+      showToast({ kind: "error", title: "Item unavailable", message: "This product is currently out of stock." });
       return;
     }
 
     setCartBusy(true);
-    setCartMessage(null);
 
     try {
       await addCartItem({
         product_id: product.id,
+        product_variant_id: selectedVariant?.id ?? null,
         quantity: qty,
       });
-      setCartMessage("Added to cart.");
+      showToast({ kind: "cart", title: "Added to cart", message: `${product.name} was added successfully.` });
     } catch (error) {
       const status = error && typeof error === "object" && "status" in error ? (error as { status?: number }).status : undefined;
       if (status === 401) {
@@ -97,7 +181,66 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
         return;
       }
 
-      setCartMessage(error instanceof Error ? error.message : "Unable to add this item to your cart.");
+      showToast({
+        kind: "error",
+        title: "Could not update cart",
+        message: error instanceof Error ? error.message : "Unable to add this item to your cart.",
+      });
+    } finally {
+      setCartBusy(false);
+    }
+  };
+
+  const handleWishlist = async () => {
+    if (!user) {
+      onNavigate("login");
+      return;
+    }
+
+    setWishlistBusy(true);
+    try {
+      if (wished) {
+        await removeWishlistItem(product.id);
+        setWished(false);
+        showToast({ kind: "wishlist", title: "Removed from wishlist", message: `${product.name} was removed.` });
+      } else {
+        await addWishlistItem(product.id);
+        setWished(true);
+        showToast({ kind: "wishlist", title: "Saved to wishlist", message: `${product.name} was saved successfully.` });
+      }
+    } catch (error) {
+      showToast({
+        kind: "error",
+        title: "Could not update wishlist",
+        message: error instanceof Error ? error.message : "Unable to update your wishlist.",
+      });
+    } finally {
+      setWishlistBusy(false);
+    }
+  };
+
+  const handleBuyNow = async () => {
+    if (!currentInStock) {
+      showToast({ kind: "error", title: "Item unavailable", message: "This product is currently out of stock." });
+      return;
+    }
+    setCartBusy(true);
+    try {
+      const response = await addCartItem({ product_id: product.id, product_variant_id: selectedVariant?.id ?? null, quantity: qty });
+      const item = response.data.items.find((cartItem) => cartItem.product_id === product.id && cartItem.product_variant_id === (selectedVariant?.id ?? null));
+      showToast({ kind: "cart", title: "Ready for checkout", message: `${product.name} was added to your cart.` });
+      onNavigate("checkout", item ? { items: String(item.id) } : undefined);
+    } catch (error) {
+      const status = error && typeof error === "object" && "status" in error ? (error as { status?: number }).status : undefined;
+      if (status === 401) {
+        onNavigate("login");
+        return;
+      }
+      showToast({
+        kind: "error",
+        title: "Could not start checkout",
+        message: error instanceof Error ? error.message : "Unable to start checkout.",
+      });
     } finally {
       setCartBusy(false);
     }
@@ -118,7 +261,7 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
           <div className="flex items-center gap-1.5 py-3">
             <button onClick={() => onNavigate("home")} className="font-[var(--font-mono)] text-[11px] text-[var(--color-ink-muted)] hover:text-[var(--color-navy)] cursor-pointer">Home</button>
             <IconChevronRight size={9} className="text-[var(--color-ink-disabled)]" />
-            <button onClick={() => onNavigate("category", { cat: product.category_slug ?? "all" })} className="font-[var(--font-mono)] text-[11px] text-[var(--color-ink-muted)] hover:text-[var(--color-navy)] cursor-pointer">{product.category}</button>
+            <button onClick={() => onNavigate("category", { cat: product.category_slug ?? "all" })} className="font-[var(--font-mono)] text-[11px] text-[var(--color-ink-muted)] hover:text-[var(--color-navy)] cursor-pointer">{categoryLabel}</button>
             <IconChevronRight size={9} className="text-[var(--color-ink-disabled)]" />
             <span className="font-[var(--font-mono)] text-[11px] text-[var(--color-ink)] truncate max-w-xs">{product.name}</span>
           </div>
@@ -161,29 +304,20 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
                 <span className="text-xs text-[var(--color-ink-muted)]">·</span>
                 <span className="text-xs text-[var(--color-ink-muted)]">{product.sold_count.toLocaleString()} sold</span>
               </div>
-              <Price amount={product.price} original={product.original_price ?? undefined} size="lg" />
+              <Price amount={currentPrice} original={selectedVariant ? undefined : product.original_price ?? undefined} size="lg" />
               {product.free_shipping && <p className="text-xs text-[var(--color-green)] font-[var(--font-mono)] mt-1.5">Free Standard Shipping</p>}
             </div>
 
-            <div className="mb-4">
-              <p className="text-xs font-[600] text-[var(--color-ink)] mb-2">Color — <span className="font-[400] text-[var(--color-ink-muted)]">{COLORS[selectedColor].label}</span></p>
-              <div className="flex gap-2">
-                {COLORS.map((c, i) => (
-                  <button key={i} onClick={() => setSelectedColor(i)} className={`w-7 h-7 rounded-full border-2 transition-all cursor-pointer ${selectedColor === i ? "border-[var(--color-ink)] ring-2 ring-offset-1 ring-[var(--color-ink)]/30" : "border-white shadow-[0_0_0_1.5px_var(--color-border)]"}`} style={{ background: c.hex }} title={c.label} />
-                ))}
-              </div>
-            </div>
-
-            <div className="mb-5">
-              <p className="text-xs font-[600] text-[var(--color-ink)] mb-2">Case Size</p>
+            {product.variants && product.variants.length > 0 && <div className="mb-5">
+              <p className="text-xs font-[600] text-[var(--color-ink)] mb-2">Product option</p>
               <div className="flex gap-2 flex-wrap">
-                {SIZES.map(s => (
-                  <button key={s} onClick={() => setSelectedSize(s)} className={`px-3.5 py-1.5 rounded-sm text-sm font-[500] border transition-all cursor-pointer ${selectedSize === s ? "bg-[var(--color-navy)] text-white border-[var(--color-navy)]" : "border-[var(--color-border)] text-[var(--color-ink)] hover:border-[var(--color-navy)] hover:text-[var(--color-navy)]"}`}>
-                    {s}
+                {product.variants.map((variant) => (
+                  <button key={variant.id} onClick={() => { setSelectedVariantId(variant.id); setQty(1); }} disabled={product.track_inventory && variant.stock_quantity < 1} className={`px-3.5 py-1.5 rounded-sm text-sm font-[500] border transition-all cursor-pointer disabled:opacity-40 ${selectedVariantId === variant.id ? "bg-[var(--color-navy)] text-white border-[var(--color-navy)]" : "border-[var(--color-border)] text-[var(--color-ink)] hover:border-[var(--color-navy)] hover:text-[var(--color-navy)]"}`}>
+                    {variant.name}
                   </button>
                 ))}
               </div>
-            </div>
+            </div>}
 
             <div className="mb-5">
               <p className="text-xs font-[600] text-[var(--color-ink)] mb-2">Quantity</p>
@@ -192,25 +326,24 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
                   <svg width="12" height="2" viewBox="0 0 12 2" fill="none"><path d="M1 1h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
                 </button>
                 <div className="w-10 h-9 flex items-center justify-center"><span className="text-sm font-[600] text-[var(--color-ink)]">{qty}</span></div>
-                <button onClick={() => setQty(q => Math.min(10, q + 1))} className="w-9 h-9 flex items-center justify-center text-[var(--color-ink-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-ink)] transition-colors cursor-pointer">
+                <button onClick={() => setQty(q => Math.min(10, currentStock || 10, q + 1))} className="w-9 h-9 flex items-center justify-center text-[var(--color-ink-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-ink)] transition-colors cursor-pointer">
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
                 </button>
               </div>
-              <span className="text-xs text-[var(--color-ink-muted)] ml-3">{product.in_stock ? "In stock" : "Out of stock"}</span>
+              <span className="text-xs text-[var(--color-ink-muted)] ml-3">{currentInStock ? (product.track_inventory ? `${currentStock} in stock` : "In stock") : "Out of stock"}</span>
             </div>
 
             <div className="flex gap-2 mb-4">
-              <button onClick={() => void handleAddToCart()} disabled={cartBusy || !product.in_stock} className="flex-1 flex items-center justify-center gap-2 py-3 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] transition-colors cursor-pointer disabled:opacity-60">
+              <button onClick={() => void handleAddToCart()} disabled={cartBusy || !currentInStock} className="flex-1 flex items-center justify-center gap-2 py-3 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] transition-colors cursor-pointer disabled:opacity-60">
                 <IconCart size={15} />
                 {cartBusy ? "Adding..." : "Add to Cart"}
               </button>
-              <button onClick={() => setWished(w => !w)} className={`w-12 h-12 flex items-center justify-center border rounded-sm transition-all cursor-pointer ${wished ? "border-[var(--color-red-border)] bg-[var(--color-red-light)] text-[var(--color-red)]" : "border-[var(--color-border)] text-[var(--color-ink-muted)] hover:border-[var(--color-red-border)] hover:text-[var(--color-red)]"}`}>
+              <button onClick={() => void handleWishlist()} disabled={wishlistBusy} aria-pressed={wished} aria-label={wished ? "Remove from wishlist" : "Add to wishlist"} className={`w-12 h-12 flex items-center justify-center border rounded-sm transition-all cursor-pointer disabled:opacity-60 ${wished ? "border-[var(--color-red-border)] bg-[var(--color-red-light)] text-[var(--color-red)]" : "border-[var(--color-border)] text-[var(--color-ink-muted)] hover:border-[var(--color-red-border)] hover:text-[var(--color-red)]"}`}>
                 <IconHeart size={16} />
               </button>
             </div>
-            {cartMessage && <p className="text-xs text-[var(--color-green)] mb-3">{cartMessage}</p>}
-            <button className="w-full py-3 bg-[var(--color-amber)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-amber-hover)] transition-colors cursor-pointer mb-5">
-              Buy Now — ₱{(product.price * qty).toLocaleString()}
+            <button onClick={() => void handleBuyNow()} disabled={cartBusy || !currentInStock} className="w-full py-3 bg-[var(--color-amber)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-amber-hover)] transition-colors cursor-pointer disabled:opacity-60 mb-5">
+              Buy Now — ₱{(currentPrice * qty).toLocaleString()}
             </button>
 
             <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-sm p-4 mb-4 space-y-3">
@@ -232,11 +365,11 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
             <div className="bg-white border border-[var(--color-border)] rounded-sm p-4">
               <div className="flex items-center gap-3 mb-3">
                 <div className="w-10 h-10 bg-[var(--color-navy)] rounded flex items-center justify-center shrink-0">
-                  <span className="font-[var(--font-display)] text-base text-white">{product.seller_details?.initials ?? (product.seller?.[0] ?? "M")}</span>
+                  <span className="font-[var(--font-display)] text-base text-white">{sellerInitials}</span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <p className="text-sm font-[600] text-[var(--color-ink)] truncate">{product.seller}</p>
+                    <p className="text-sm font-[600] text-[var(--color-ink)] truncate">{sellerName}</p>
                   </div>
                 </div>
               </div>

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
+import { Check, Loader2 } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
 import { ApiError } from "../../api/client";
 import AuthLayout, { Field, AuthAlert, FormDivider } from "./AuthLayout";
@@ -36,7 +37,7 @@ export default function LoginPage({ onNavigate }: { onNavigate: NavFn }) {
         navigate("/auth/two-factor", { replace: true });
         return;
       }
-      const redirectTo = response.redirectTo ?? (response.user.role === "seller" ? "/seller-center" : response.user.role === "admin" ? "/admin" : "/account/dashboard");
+      const redirectTo = response.redirectTo ?? (response.user.role === "seller" ? "/seller-center" : response.user.role === "admin" ? "/admin" : "/");
       navigate(redirectTo);
     } catch (err) {
       if (err instanceof ApiError && err.errors) {
@@ -89,7 +90,7 @@ export default function LoginPage({ onNavigate }: { onNavigate: NavFn }) {
       <label className="flex items-center gap-2.5 cursor-pointer group">
         <div onClick={() => setRemember(r => !r)}
           className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${remember ? "bg-[var(--color-navy)] border-[var(--color-navy)]" : "border-[var(--color-border-strong)] group-hover:border-[var(--color-navy)]"}`}>
-          {remember && <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M1.5 4l2 2L6.5 2" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+          {remember && <Check size={8} className="text-white" aria-hidden="true" />}
         </div>
         <span className="text-sm text-[var(--color-ink-muted)]">Remember me for 30 days</span>
       </label>
@@ -100,7 +101,7 @@ export default function LoginPage({ onNavigate }: { onNavigate: NavFn }) {
         className="w-full py-3 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center justify-center gap-2">
         {loading ? (
           <>
-            <svg className="animate-spin" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="7" cy="7" r="5" strokeOpacity="0.3" /><path d="M7 2a5 5 0 015 5" strokeLinecap="round" /></svg>
+            <Loader2 size={14} className="animate-spin" aria-hidden="true" />
             Signing in...
           </>
         ) : "Sign in"}

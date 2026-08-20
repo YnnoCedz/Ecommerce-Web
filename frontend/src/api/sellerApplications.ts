@@ -1,4 +1,6 @@
-import { apiFetch, ensureCsrfCookie } from "./client";
+import { apiFetch } from "./client";
+import { ensureAuthCsrfCookie } from "./auth";
+import { singleFlight } from "./requestCache";
 
 export type SellerApplicationDocument = {
   id: number;
@@ -95,15 +97,15 @@ export type SellerApplicationPayload = {
 };
 
 export async function fetchCurrentSellerApplication() {
-  return apiFetch<{ data: SellerApplicationSummary | null }>("/seller/application");
+  return singleFlight("seller-application:current", () => apiFetch<{ data: SellerApplicationSummary | null }>("/seller/application"));
 }
 
 export async function fetchSellerApplication(id: number) {
-  return apiFetch<{ data: SellerApplicationSummary }>(`/admin/seller-applications/${id}`);
+  return singleFlight(`seller-application:${id}`, () => apiFetch<{ data: SellerApplicationSummary }>(`/admin/seller-applications/${id}`));
 }
 
 export async function submitSellerApplication(payload: SellerApplicationPayload) {
-  await ensureCsrfCookie();
+  await ensureAuthCsrfCookie();
 
   const formData = new FormData();
   formData.append("first_name", payload.first_name);
@@ -153,18 +155,18 @@ export async function fetchSellerApplications(params?: {
   if (params?.per_page) searchParams.set("per_page", String(params.per_page));
   const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
 
-  return apiFetch<SellerApplicationListResponse>(`/admin/seller-applications${suffix}`);
+  return singleFlight(`seller-applications:${suffix}`, () => apiFetch<SellerApplicationListResponse>(`/admin/seller-applications${suffix}`));
 }
 
 export async function approveSellerApplication(id: number) {
-  await ensureCsrfCookie();
+  await ensureAuthCsrfCookie();
   return apiFetch<{ message: string; data: SellerApplicationSummary }>(`/admin/seller-applications/${id}/approve`, {
     method: "POST",
   });
 }
 
 export async function rejectSellerApplication(id: number, rejection_reason: string) {
-  await ensureCsrfCookie();
+  await ensureAuthCsrfCookie();
   return apiFetch<{ message: string; data: SellerApplicationSummary }>(`/admin/seller-applications/${id}/reject`, {
     method: "POST",
     body: JSON.stringify({ rejection_reason }),

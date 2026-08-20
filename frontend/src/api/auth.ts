@@ -1,4 +1,5 @@
 import { apiFetch, ensureCsrfCookie } from "./client";
+import { singleFlight } from "./requestCache";
 
 export type AuthUser = {
   id: number;
@@ -53,6 +54,12 @@ export type ResetPasswordPayload = {
   password_confirmation: string;
 };
 
+export type UpdatePasswordPayload = {
+  current_password: string;
+  password: string;
+  password_confirmation: string;
+};
+
 export type TwoFactorChallenge = {
   challengeId: number;
   email: string;
@@ -76,12 +83,23 @@ export type RegisterPayload = {
   password_confirmation: string;
 };
 
+let currentUserPromise: Promise<{ user: AuthUser }> | null = null;
+let csrfCookiePromise: Promise<void> | null = null;
+
 export async function fetchCurrentUser() {
-  return apiFetch<{ user: AuthUser }>("/auth/me");
+  return singleFlight("auth:me", () => {
+    if (!currentUserPromise) {
+      currentUserPromise = apiFetch<{ user: AuthUser }>("/auth/me").finally(() => {
+        currentUserPromise = null;
+      });
+    }
+
+    return currentUserPromise;
+  });
 }
 
 export async function loginRequest(payload: LoginPayload) {
-  await ensureCsrfCookie();
+  await ensureAuthCsrfCookie();
   return apiFetch<AuthSessionResponse>("/auth/login", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -89,7 +107,7 @@ export async function loginRequest(payload: LoginPayload) {
 }
 
 export async function registerRequest(payload: RegisterPayload) {
-  await ensureCsrfCookie();
+  await ensureAuthCsrfCookie();
   return apiFetch<AuthSessionResponse>("/auth/register", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -97,13 +115,14 @@ export async function registerRequest(payload: RegisterPayload) {
 }
 
 export async function logoutRequest() {
+  await ensureAuthCsrfCookie();
   await apiFetch<{ message: string }>("/auth/logout", {
     method: "POST",
   });
 }
 
 export async function verifyTwoFactorRequest(payload: { challenge_id?: number; code: string }) {
-  await ensureCsrfCookie();
+  await ensureAuthCsrfCookie();
   return apiFetch<AuthSessionResponse>("/auth/2fa/verify", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -111,7 +130,7 @@ export async function verifyTwoFactorRequest(payload: { challenge_id?: number; c
 }
 
 export async function resendTwoFactorRequest(payload: { challenge_id?: number }) {
-  await ensureCsrfCookie();
+  await ensureAuthCsrfCookie();
   return apiFetch<AuthSessionResponse>("/auth/2fa/resend", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -119,7 +138,7 @@ export async function resendTwoFactorRequest(payload: { challenge_id?: number })
 }
 
 export async function resendEmailVerificationRequest(payload: { email: string }) {
-  await ensureCsrfCookie();
+  await ensureAuthCsrfCookie();
   return apiFetch<EmailVerificationResendResponse>("/auth/email/resend", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -127,7 +146,7 @@ export async function resendEmailVerificationRequest(payload: { email: string })
 }
 
 export async function verifyEmailVerificationRequest(payload: { email: string; code: string }) {
-  await ensureCsrfCookie();
+  await ensureAuthCsrfCookie();
   return apiFetch<AuthSessionResponse>("/auth/email/verify", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -135,7 +154,7 @@ export async function verifyEmailVerificationRequest(payload: { email: string; c
 }
 
 export async function requestPasswordResetLink(payload: { email: string }) {
-  await ensureCsrfCookie();
+  await ensureAuthCsrfCookie();
   return apiFetch<ForgotPasswordResponse>("/auth/password/forgot", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -143,9 +162,27 @@ export async function requestPasswordResetLink(payload: { email: string }) {
 }
 
 export async function resetPasswordRequest(payload: ResetPasswordPayload) {
-  await ensureCsrfCookie();
+  await ensureAuthCsrfCookie();
   return apiFetch<{ message: string; redirect_to?: string }>("/auth/password/reset", {
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function updatePasswordRequest(payload: UpdatePasswordPayload) {
+  await ensureAuthCsrfCookie();
+  return apiFetch<{ message: string }>("/account/password", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function ensureAuthCsrfCookie() {
+  if (!csrfCookiePromise) {
+    csrfCookiePromise = ensureCsrfCookie().finally(() => {
+      csrfCookiePromise = null;
+    });
+  }
+
+  return csrfCookiePromise;
 }

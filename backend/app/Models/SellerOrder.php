@@ -22,6 +22,17 @@ class SellerOrder extends Model
         'delivered_at',
     ];
 
+    protected $casts = [
+        'subtotal' => 'decimal:2',
+        'shipping_fee' => 'decimal:2',
+        'discount_total' => 'decimal:2',
+        'grand_total' => 'decimal:2',
+        'confirmed_at' => 'datetime',
+        'ready_at' => 'datetime',
+        'picked_up_at' => 'datetime',
+        'delivered_at' => 'datetime',
+    ];
+
     public function order()
     {
         return $this->belongsTo(Order::class);
@@ -37,4 +48,3 @@ class SellerOrder extends Model
         return $this->hasOne(Shipment::class);
     }
 }
-

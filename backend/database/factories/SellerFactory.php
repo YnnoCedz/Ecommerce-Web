@@ -48,7 +48,9 @@ class SellerFactory extends Factory
             'bank_name' => 'BDO',
             'account_name' => $business,
             'account_number_last4' => $this->faker->numerify('####'),
+            'return_policy' => 'Returns accepted within 7 days.',
+            'shipping_policy' => 'Orders ship within 1 to 2 business days.',
+            'privacy_policy' => 'Buyer details are handled securely.',
         ];
     }
 }
-

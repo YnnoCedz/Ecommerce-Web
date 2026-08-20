@@ -6,11 +6,17 @@ use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\Seller;
+use App\Services\ProductSearchService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class CatalogController extends Controller
 {
+    public function __construct(private readonly ProductSearchService $searchService)
+    {
+    }
+
     public function categories(): JsonResponse
     {
         $categories = Category::query()
@@ -69,6 +75,67 @@ class CatalogController extends Controller
             ->map(fn (Product $product) => $this->productPayload($product));
 
         return response()->json(['data' => $products]);
+    }
+
+    public function search(Request $request): JsonResponse
+    {
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'max:150'],
+            'category' => ['nullable', 'string', 'max:100'],
+            'seller' => ['nullable', 'string', 'max:100'],
+            'min_price' => ['nullable', 'numeric', 'min:0'],
+            'max_price' => ['nullable', 'numeric', 'min:0', 'gte:min_price'],
+            'min_rating' => ['nullable', 'numeric', 'between:0,5'],
+            'free_shipping' => ['nullable', 'boolean'],
+            'sort' => ['nullable', Rule::in(['relevance', 'price_low_high', 'price_high_low', 'price-asc', 'price-desc', 'newest', 'rating', 'popular', 'sales'])],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:48'],
+        ]);
+
+        $result = $this->searchService->search($filters);
+        $paginator = $result['paginator'];
+
+        return response()->json([
+            'data' => collect($paginator->items())->map(fn (Product $product) => $this->productPayload($product))->values(),
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page' => $paginator->lastPage(),
+                'per_page' => $paginator->perPage(),
+                'total' => $paginator->total(),
+                'from' => $paginator->firstItem(),
+                'to' => $paginator->lastItem(),
+            ],
+            'query' => [
+                'original' => (string) ($filters['q'] ?? ''),
+                'normalized' => $result['normalized_query'],
+                'suggested' => $result['suggested_query'],
+            ],
+        ]);
+    }
+
+    public function searchSuggestions(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'q' => ['required', 'string', 'min:2', 'max:100'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:10'],
+        ]);
+
+        $suggestions = $this->searchService
+            ->suggestions($data['q'], (int) ($data['limit'] ?? 6))
+            ->map(fn (Product $product) => [
+                'id' => $product->id,
+                'type' => 'product',
+                'label' => $product->name,
+                'subtitle' => implode(' · ', array_filter([
+                    $product->category?->name,
+                    $product->seller?->trade_name ?: $product->seller?->business_name,
+                ])),
+                'slug' => $product->slug,
+                'image' => $product->images->first()?->file_path,
+            ])
+            ->values();
+
+        return response()->json(['data' => $suggestions]);
     }
 
     public function product(string $slug): JsonResponse
@@ -181,9 +248,9 @@ class CatalogController extends Controller
             'category' => $product->category?->name ?? 'Uncategorized',
             'price' => (float) ($product->sale_price ?? $product->price),
             'original_price' => $product->sale_price ? (float) $product->price : null,
-            'rating' => 0,
-            'rating_count' => 0,
-            'sold_count' => 0,
+            'rating' => round((float) ($product->rating ?? 0), 1),
+            'rating_count' => (int) ($product->rating_count ?? 0),
+            'sold_count' => (int) ($product->sold_count ?? 0),
             'image' => $primaryImage ?: 'https://images.unsplash.com/photo-1512820790803-83ca734da794',
             'badge' => $product->sale_price ? 'SALE' : null,
             'in_stock' => $product->track_inventory ? $product->stock_quantity > 0 : true,
@@ -214,6 +281,17 @@ class CatalogController extends Controller
                 'sort_order' => $image->sort_order,
                 'is_primary' => (bool) $image->is_primary,
             ])->values()->all(),
+            'variants' => $product->variants
+                ->where('active', true)
+                ->map(fn ($variant) => [
+                    'id' => $variant->id,
+                    'name' => $variant->name,
+                    'sku' => $variant->sku,
+                    'price' => (float) ($variant->sale_price_override ?? $variant->price_override ?? $product->sale_price ?? $product->price),
+                    'stock_quantity' => (int) $variant->stock_quantity,
+                    'active' => (bool) $variant->active,
+                    'options' => $variant->options->pluck('value')->values()->all(),
+                ])->values()->all(),
             'related' => collect($related)->values()->all(),
         ]);
     }

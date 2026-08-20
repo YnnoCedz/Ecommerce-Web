@@ -22,12 +22,14 @@ export default function RegisterPage({ onNavigate }: { onNavigate: NavFn }) {
   const [message, setMessage] = useState<string | null>(null);
   const passwordRequirements = {
     length: password.length >= 8,
+    maxLength: password.length <= 16,
     uppercase: /[A-Z]/.test(password),
     number: /[0-9]/.test(password),
     symbol: /[^A-Za-z0-9]/.test(password),
   };
   const passwordMeetsRequirements =
     passwordRequirements.length &&
+    passwordRequirements.maxLength &&
     passwordRequirements.uppercase &&
     passwordRequirements.number &&
     passwordRequirements.symbol;
@@ -51,7 +53,7 @@ export default function RegisterPage({ onNavigate }: { onNavigate: NavFn }) {
     if (!displayPhone) e.phone = "Phone number is required";
     else if (displayPhone.length !== 10) e.phone = "Enter a 10-digit mobile number";
     if (!password) e.password = "Password is required";
-    else if (!passwordMeetsRequirements) e.password = "Use at least 8 characters with one uppercase letter, one number, and one symbol.";
+    else if (!passwordMeetsRequirements) e.password = "Use 8-16 characters with one uppercase letter, one number, and one symbol.";
     if (password !== confirm) e.confirm = "Passwords do not match";
     if (!agreed) e.agreed = "You must agree to the Terms and Privacy Policy";
     if (Object.keys(e).length) {
@@ -167,12 +169,13 @@ export default function RegisterPage({ onNavigate }: { onNavigate: NavFn }) {
       <div className="space-y-2">
         <Field label="Password" type="password" value={password} onChange={setPassword}
           placeholder="Create a strong password" error={errors.password} required
-          hint={!errors.password ? "Use 8+ characters with uppercase, number, and symbol." : undefined} />
+          hint={!errors.password ? "Use 8-16 characters with uppercase, number, and symbol." : undefined}
+          maxLength={16} />
         <PasswordStrength password={password} />
       </div>
 
       <Field label="Confirm password" type="password" value={confirm} onChange={setConfirm}
-        placeholder="Repeat your password" error={errors.confirm} required />
+        placeholder="Repeat your password" error={errors.confirm} required maxLength={16} />
 
       <div>
         <label className="flex items-start gap-2.5 cursor-pointer group">

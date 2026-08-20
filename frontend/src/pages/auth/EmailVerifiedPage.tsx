@@ -27,7 +27,7 @@ export default function EmailVerifiedPage() {
             ? "/seller-center"
             : user.role === "admin"
               ? "/admin"
-              : "/account/dashboard";
+              : "/account/profile";
 
         navigate(redirectTo, { replace: true });
         return;

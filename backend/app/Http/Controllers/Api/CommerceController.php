@@ -10,12 +10,17 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Seller;
 use App\Models\WishlistItem;
+use App\Services\CheckoutService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class CommerceController extends Controller
 {
+    public function __construct(private readonly CheckoutService $checkoutService)
+    {
+    }
+
     public function cart(Request $request): JsonResponse
     {
         $cart = $this->loadCurrentCart($request);
@@ -46,7 +51,7 @@ class CommerceController extends Controller
                 ->with(['seller', 'images', 'variants'])
                 ->findOrFail($data['product_id']);
 
-            if ($product->status !== 'active') {
+            if ($product->status !== 'active' || ! $product->seller?->isApproved()) {
                 abort(422, 'This product is not available right now.');
             }
 
@@ -56,6 +61,10 @@ class CommerceController extends Controller
 
                 if (! $variant) {
                     abort(422, 'The selected variant does not belong to this product.');
+                }
+
+                if (! $variant->active) {
+                    abort(422, 'The selected variant is not available right now.');
                 }
             }
 
@@ -87,6 +96,11 @@ class CommerceController extends Controller
                 ->firstOrFail();
 
             if (array_key_exists('quantity', $data)) {
+                $item->load(['product', 'variant']);
+                $availableStock = $item->variant?->stock_quantity ?? $item->product?->stock_quantity ?? 0;
+                if ($item->product?->track_inventory && (int) $data['quantity'] > $availableStock) {
+                    abort(422, "Only {$availableStock} unit(s) are available.");
+                }
                 $item->quantity = (int) $data['quantity'];
                 $item->line_total = $item->quantity * (float) $item->unit_price;
             }
@@ -149,9 +163,36 @@ class CommerceController extends Controller
         ]);
     }
 
-    public function checkout(): JsonResponse
+    public function checkout(Request $request): JsonResponse
     {
-        return response()->json(['message' => 'Checkout endpoint scaffolded.']);
+        $data = $request->validate([
+            'address_id' => ['required', 'integer'],
+            'payment_method' => ['required', 'in:cod'],
+            'cart_item_ids' => ['sometimes', 'array', 'min:1'],
+            'cart_item_ids.*' => ['integer', 'distinct'],
+            'buyer_notes' => ['nullable', 'string', 'max:1000'],
+        ], [
+            'payment_method.in' => 'Cash on Delivery is the only payment method currently available.',
+        ]);
+
+        $order = $this->checkoutService->checkout($request->user(), $data);
+
+        return response()->json([
+            'message' => 'Order placed successfully.',
+            'data' => [
+                'id' => $order->id,
+                'order_number' => $order->order_number,
+                'status' => $order->status,
+                'payment_status' => $order->payment_status,
+                'payment_method' => $order->payment_method,
+                'subtotal' => (float) $order->subtotal,
+                'shipping_total' => (float) $order->shipping_total,
+                'discount_total' => (float) $order->discount_total,
+                'grand_total' => (float) $order->grand_total,
+                'seller_order_count' => $order->sellerOrders->count(),
+                'item_count' => (int) $order->items->sum('quantity'),
+            ],
+        ], 201);
     }
 
     public function orders(Request $request): JsonResponse
@@ -159,17 +200,31 @@ class CommerceController extends Controller
         return response()->json([
             'data' => Order::query()
                 ->where('buyer_id', $request->user()->id)
+                ->with(['items.product.images', 'sellerOrders.seller'])
                 ->latest('id')
                 ->limit(25)
                 ->get()
-                ->map(fn (Order $order) => [
-                    'id' => $order->id,
-                    'order_number' => $order->order_number,
-                    'status' => $order->status,
-                    'payment_status' => $order->payment_status,
-                    'grand_total' => $order->grand_total,
-                    'placed_at' => optional($order->placed_at)->toISOString(),
-                ])
+                ->map(function (Order $order) {
+                    $firstItem = $order->items->first();
+                    $primaryImage = $firstItem?->product?->images?->sortBy('sort_order')->first();
+
+                    return [
+                        'id' => $order->id,
+                        'order_number' => $order->order_number,
+                        'status' => $order->status,
+                        'payment_status' => $order->payment_status,
+                        'grand_total' => $order->grand_total,
+                        'placed_at' => optional($order->placed_at)->toISOString(),
+                        'item_count' => (int) $order->items->sum('quantity'),
+                        'main_product' => $firstItem?->product_name,
+                        'main_image' => $primaryImage?->file_path,
+                        'seller_names' => $order->sellerOrders
+                            ->map(fn ($sellerOrder) => $sellerOrder->seller?->trade_name ?? $sellerOrder->seller?->business_name ?? 'Seller')
+                            ->filter()
+                            ->values(),
+                        'tracking_number' => $order->sellerOrders->first()?->tracking_number,
+                    ];
+                })
                 ->values(),
         ]);
     }
@@ -179,6 +234,11 @@ class CommerceController extends Controller
         $order = Order::query()
             ->where('buyer_id', $request->user()->id)
             ->where('order_number', $orderNumber)
+            ->with([
+                'items.product.images',
+                'sellerOrders.seller',
+                'sellerOrders.shipment.courier',
+            ])
             ->first();
 
         if (! $order) {
@@ -189,11 +249,45 @@ class CommerceController extends Controller
 
         return response()->json([
             'data' => [
+                'id' => $order->id,
                 'order_number' => $order->order_number,
                 'status' => $order->status,
                 'payment_status' => $order->payment_status,
+                'payment_method' => $order->payment_method,
                 'grand_total' => $order->grand_total,
                 'placed_at' => optional($order->placed_at)->toISOString(),
+                'shipping_name' => $order->shipping_name,
+                'shipping_phone' => $order->shipping_phone,
+                'shipping_line1' => $order->shipping_line1,
+                'shipping_line2' => $order->shipping_line2,
+                'shipping_city' => $order->shipping_city,
+                'shipping_province' => $order->shipping_province,
+                'shipping_postal_code' => $order->shipping_postal_code,
+                'item_count' => (int) $order->items->sum('quantity'),
+                'items' => $order->items->map(fn ($item) => [
+                    'id' => $item->id,
+                    'product_name' => $item->product_name,
+                    'product_slug' => $item->product_slug,
+                    'variant_name' => $item->variant_name,
+                    'sku' => $item->sku,
+                    'unit_price' => (float) $item->unit_price,
+                    'quantity' => (int) $item->quantity,
+                    'subtotal' => (float) $item->subtotal,
+                    'image' => $item->product?->images?->sortBy('sort_order')->first()?->file_path,
+                    'seller_name' => $item->sellerOrder?->seller?->trade_name ?? $item->sellerOrder?->seller?->business_name ?? 'Seller',
+                ])->values(),
+                'seller_orders' => $order->sellerOrders->map(fn ($sellerOrder) => [
+                    'id' => $sellerOrder->id,
+                    'seller_name' => $sellerOrder->seller?->trade_name ?? $sellerOrder->seller?->business_name ?? 'Seller',
+                    'status' => $sellerOrder->status,
+                    'subtotal' => (float) $sellerOrder->subtotal,
+                    'shipping_fee' => (float) $sellerOrder->shipping_fee,
+                    'discount_total' => (float) $sellerOrder->discount_total,
+                    'grand_total' => (float) $sellerOrder->grand_total,
+                    'tracking_number' => $sellerOrder->tracking_number,
+                    'driver_name' => $sellerOrder->shipment?->driver_name,
+                    'courier_name' => $sellerOrder->shipment?->courier?->name,
+                ])->values(),
             ],
         ]);
     }
@@ -213,15 +307,59 @@ class CommerceController extends Controller
         return response()->json([
             'data' => WishlistItem::query()
                 ->where('user_id', $request->user()->id)
+                ->with(['product.seller', 'product.images'])
                 ->latest('id')
                 ->limit(25)
                 ->get(),
         ]);
     }
 
-    public function storeWishlist(): JsonResponse
+    public function storeWishlist(Request $request): JsonResponse
     {
-        return response()->json(['message' => 'Wishlist updated.'], 201);
+        $data = $request->validate([
+            'product_id' => ['required', 'integer', 'exists:products,id'],
+        ]);
+
+        $product = Product::query()->with('seller')->findOrFail($data['product_id']);
+        if ($product->status !== 'active' || ! $product->seller?->isApproved() || $product->seller->user?->status !== 'active') {
+            abort(422, 'This product cannot be added to a wishlist right now.');
+        }
+
+        $item = WishlistItem::query()->firstOrCreate(
+            ['user_id' => $request->user()->id, 'product_id' => $product->id],
+            ['added_at' => now()],
+        );
+
+        return response()->json([
+            'message' => 'Product added to your wishlist.',
+            'data' => ['wishlisted' => true, 'id' => $item->id, 'product_id' => $product->id],
+        ], $item->wasRecentlyCreated ? 201 : 200);
+    }
+
+    public function wishlistStatus(Request $request, int $productId): JsonResponse
+    {
+        return response()->json([
+            'data' => [
+                'product_id' => $productId,
+                'wishlisted' => WishlistItem::query()
+                    ->where('user_id', $request->user()->id)
+                    ->where('product_id', $productId)
+                    ->exists(),
+            ],
+        ]);
+    }
+
+    public function destroyWishlist(Request $request, int $productId): JsonResponse
+    {
+        WishlistItem::query()
+            ->where('user_id', $request->user()->id)
+            ->where('product_id', $productId)
+            ->delete();
+
+        return response()->json([
+            'message' => 'Product removed from your wishlist.',
+            'data' => ['wishlisted' => false, 'product_id' => $productId],
+        ]);
     }
 
     public function promotions(Request $request): JsonResponse
@@ -278,7 +416,13 @@ class CommerceController extends Controller
             $item->seller_id = $product->seller_id;
         }
 
-        $item->quantity = $item->exists ? $item->quantity + $quantity : $quantity;
+        $nextQuantity = $item->exists ? $item->quantity + $quantity : $quantity;
+        $availableStock = $variant?->stock_quantity ?? $product->stock_quantity;
+        if ($product->track_inventory && $nextQuantity > $availableStock) {
+            abort(422, "Only {$availableStock} unit(s) are available.");
+        }
+
+        $item->quantity = $nextQuantity;
         $item->unit_price = $unitPrice;
         $item->line_total = $item->quantity * $unitPrice;
         $item->save();
@@ -391,6 +535,7 @@ class CommerceController extends Controller
             'seller_slug' => $seller?->slug,
             'seller_name' => $seller?->trade_name ?? $seller?->business_name ?? 'Seller',
             'product_id' => $item->product_id,
+            'product_variant_id' => $item->product_variant_id,
             'product_slug' => $product?->slug,
             'product_name' => $product?->name,
             'variant_name' => $variant?->name,
@@ -406,7 +551,7 @@ class CommerceController extends Controller
     private function unitPriceForProduct(Product $product, ?ProductVariant $variant): float
     {
         if ($variant) {
-            return (float) ($variant->price_override ?? $variant->sale_price_override ?? $product->sale_price ?? $product->price);
+            return (float) ($variant->sale_price_override ?? $variant->price_override ?? $product->sale_price ?? $product->price);
         }
 
         return (float) ($product->sale_price ?? $product->price);

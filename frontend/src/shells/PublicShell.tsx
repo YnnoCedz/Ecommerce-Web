@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
-import { fetchCatalogCategories, type CatalogCategory } from "../api/catalog";
+import { fetchCatalogCategories, fetchSearchSuggestions, type CatalogCategory, type SearchSuggestion } from "../api/catalog";
+import ConfirmDialog from "../components/ConfirmDialog";
 import {
   IconCart, IconHeart, IconSearch, IconMenu, IconClose,
   IconChevronDown, IconChevronRight, IconHome,
@@ -73,9 +74,11 @@ const BASE_ACCOUNT_LINKS: { label: string; href: string }[] = [
 ];
 
 function getAccountLinks(user: ReturnType<typeof useAuth>["user"]) {
-  const sellerLink = user?.seller_approved || user?.role === "seller"
+  const sellerLink = user?.seller_approved
     ? { label: "Switch to Seller", href: "/seller-center" }
-    : { label: "Become a Seller", href: "/seller-center/onboarding" };
+    : user?.role === "seller"
+      ? { label: "Seller Application Status", href: "/seller-center/onboarding/status" }
+      : { label: "Become a Seller", href: "/seller-center/onboarding" };
 
   return [...BASE_ACCOUNT_LINKS.slice(0, 4), sellerLink, BASE_ACCOUNT_LINKS[4]];
 }
@@ -88,13 +91,19 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
 
   const submitSearch = (q: string) => {
     const trimmed = q.trim();
+    setSearchFocused(false);
+    setSearchSuggestions([]);
     navigate(trimmed ? `/search?q=${encodeURIComponent(trimmed)}` : "/search");
   };
   const [megaMenuCategory, setMegaMenuCategory] = useState<string | null>(null);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
+  const [logoutLoading, setLogoutLoading] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchValue, setSearchValue] = useState("");
+  const [searchSuggestions, setSearchSuggestions] = useState<SearchSuggestion[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const megaRef = useRef<HTMLDivElement>(null);
   const accountRef = useRef<HTMLDivElement>(null);
   const hasSession = Boolean(user) || isLoggedIn;
@@ -104,6 +113,19 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
   const accountName = user?.display_name ?? "Guest";
   const accountEmail = user?.email ?? "Sign in to your account";
   const accountLinks = getAccountLinks(user);
+
+  const clearSearchState = () => {
+    setSearchValue("");
+    setSearchFocused(false);
+    setSearchSuggestions([]);
+    setMegaMenuCategory(null);
+    setMoreMenuOpen(false);
+  };
+
+  const navigateToCategory = (href: string) => {
+    clearSearchState();
+    navigate(href);
+  };
 
   // Close menus on outside click
   useEffect(() => {
@@ -120,10 +142,42 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  useEffect(() => {
+    const query = searchValue.trim();
+    if (!searchFocused || query.length < 2) {
+      setSearchSuggestions([]);
+      setSuggestionsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setSuggestionsLoading(true);
+      void fetchSearchSuggestions(query)
+        .then(response => {
+          if (!cancelled) setSearchSuggestions(response.data);
+        })
+        .catch(() => {
+          if (!cancelled) setSearchSuggestions([]);
+        })
+        .finally(() => {
+          if (!cancelled) setSuggestionsLoading(false);
+        });
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [searchFocused, searchValue]);
+
   const handleLogout = async () => {
+    setLogoutLoading(true);
     try {
       await logout();
     } finally {
+      setLogoutLoading(false);
+      setLogoutConfirmOpen(false);
       setAccountMenuOpen(false);
       setMobileMenuOpen(false);
       navigate("/auth/login");
@@ -203,6 +257,40 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
                 </button>
               )}
             </div>
+            {searchFocused && searchValue.trim().length >= 2 && (
+              <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-[var(--color-border)] rounded-sm shadow-[0_10px_28px_rgba(28,27,24,0.14)] overflow-hidden z-50">
+                {suggestionsLoading ? (
+                  <p className="px-4 py-3 text-xs text-[var(--color-ink-muted)]">Finding products...</p>
+                ) : searchSuggestions.length > 0 ? (
+                  searchSuggestions.map(suggestion => (
+                    <button
+                      key={suggestion.id}
+                      type="button"
+                      onMouseDown={event => event.preventDefault()}
+                      onClick={() => {
+                        setSearchFocused(false);
+                        setSearchSuggestions([]);
+                        navigate(`/p/${suggestion.slug}`);
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 text-left border-b last:border-b-0 border-[var(--color-border-subtle)] hover:bg-[var(--color-surface)] cursor-pointer">
+                      {suggestion.image ? (
+                        <img src={suggestion.image} alt="" className="w-9 h-9 rounded-sm object-cover bg-[var(--color-surface)]" />
+                      ) : (
+                        <span className="w-9 h-9 rounded-sm bg-[var(--color-surface)] flex items-center justify-center text-[var(--color-ink-muted)]"><IconSearch size={14} /></span>
+                      )}
+                      <span className="min-w-0">
+                        <span className="block text-sm text-[var(--color-ink)] truncate">{suggestion.label}</span>
+                        <span className="block text-[11px] text-[var(--color-ink-muted)] truncate">{suggestion.subtitle}</span>
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <button type="button" onMouseDown={event => event.preventDefault()} onClick={() => submitSearch(searchValue)} className="w-full px-4 py-3 text-left text-xs text-[var(--color-ink-muted)] hover:bg-[var(--color-surface)] cursor-pointer">
+                    Search all products for “{searchValue.trim()}”
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Right icons cluster */}
@@ -254,10 +342,10 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
                         <p className="text-xs text-[var(--color-ink-muted)]">{accountEmail}</p>
                       </div>
                       {accountLinks.map(({ label, href }) => (
-                        <Link key={label} to={href} onClick={() => setAccountMenuOpen(false)} className={`flex items-center px-4 py-2.5 text-sm hover:bg-[var(--color-surface)] transition-colors cursor-pointer ${label === "Switch to Seller" || label === "Become a Seller" ? "text-[var(--color-navy)] font-[500]" : "text-[var(--color-ink)]"}`}>{label}</Link>
+                        <Link key={label} to={href} onClick={() => setAccountMenuOpen(false)} className={`flex items-center px-4 py-2.5 text-sm hover:bg-[var(--color-surface)] transition-colors cursor-pointer ${label === "Switch to Seller" || label === "Become a Seller" || label === "Seller Application Status" ? "text-[var(--color-navy)] font-[500]" : "text-[var(--color-ink)]"}`}>{label}</Link>
                       ))}
                       <div className="border-t border-[var(--color-border)]">
-                        <button onClick={handleLogout} className="w-full text-left flex items-center px-4 py-2.5 text-sm text-[var(--color-red)] hover:bg-[var(--color-red-light)] transition-colors cursor-pointer">Log out</button>
+                        <button onClick={() => setLogoutConfirmOpen(true)} className="w-full text-left flex items-center px-4 py-2.5 text-sm text-[var(--color-red)] hover:bg-[var(--color-red-light)] transition-colors cursor-pointer">Log out</button>
                       </div>
                     </div>
                   )}
@@ -278,7 +366,7 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
         {/* Category nav bar */}
         <div ref={megaRef} className="relative hidden lg:block border-t border-[var(--color-border-subtle)]">
           <div className="px-8 flex items-center gap-0 h-10">
-            <Link to="/c/all" className="flex items-center gap-1.5 px-4 h-full text-xs font-[500] text-[var(--color-ink-muted)] hover:text-[var(--color-navy)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer border-r border-[var(--color-border-subtle)]">
+            <Link to="/c/all" onClick={clearSearchState} className="flex items-center gap-1.5 px-4 h-full text-xs font-[500] text-[var(--color-ink-muted)] hover:text-[var(--color-navy)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer border-r border-[var(--color-border-subtle)]">
               <IconHome size={13} />All Categories
             </Link>
             {visibleCategories.map(cat => (
@@ -287,10 +375,9 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
                 onMouseEnter={() => openCategoryMenu(cat.label)}
                 onMouseLeave={() => {}}
                 onClick={() => {
-                  setMoreMenuOpen(false);
-                  navigate(`/c/${cat.slug}`);
+                  navigateToCategory(`/c/${cat.slug}`);
                 }}
-                onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate(`/c/${cat.slug}`); } if (e.key === "Escape") setMegaMenuCategory(null); }}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigateToCategory(`/c/${cat.slug}`); } if (e.key === "Escape") setMegaMenuCategory(null); }}
                 aria-expanded={megaMenuCategory === cat.label}
                 aria-haspopup="true"
                 className={`flex items-center gap-1 px-4 h-full text-xs font-[500] transition-colors cursor-pointer whitespace-nowrap ${megaMenuCategory === cat.label ? "text-[var(--color-navy)] bg-[var(--color-navy-surface)]" : "text-[var(--color-ink-muted)] hover:text-[var(--color-navy)] hover:bg-[var(--color-surface)]"}`}>
@@ -326,8 +413,7 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
                         <button
                           key={cat.label}
                           onClick={() => {
-                            navigate(`/c/${cat.slug}`);
-                            setMoreMenuOpen(false);
+                            navigateToCategory(`/c/${cat.slug}`);
                           }}
                           className="flex items-center justify-between gap-3 w-full px-3 py-2 rounded-sm text-left text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface)] hover:text-[var(--color-navy)] transition-colors">
                           <span className="truncate">{cat.label}</span>
@@ -351,14 +437,14 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
                   <p className="font-[var(--font-display)] text-base font-[400] text-[var(--color-ink)] mb-3">{activeCat.label}</p>
                   <div className="grid grid-cols-2 gap-x-8 gap-y-1.5">
                     {activeCat.subs.map(sub => (
-                      <Link key={sub} to={`/c/${activeCat.slug}?sub=${encodeURIComponent(sub)}`} onClick={() => setMegaMenuCategory(null)} className="flex items-center gap-1.5 text-sm text-[var(--color-ink-muted)] hover:text-[var(--color-navy)] transition-colors cursor-pointer py-0.5">
+                      <Link key={sub} to={`/c/${activeCat.slug}?sub=${encodeURIComponent(sub)}`} onClick={clearSearchState} className="flex items-center gap-1.5 text-sm text-[var(--color-ink-muted)] hover:text-[var(--color-navy)] transition-colors cursor-pointer py-0.5">
                         <IconChevronRight size={10} />
                         {sub}
                       </Link>
                     ))}
                   </div>
                   <div className="mt-4 pt-3 border-t border-[var(--color-border-subtle)]">
-                    <Link to={`/c/${activeCat.slug}`} onClick={() => setMegaMenuCategory(null)} className="text-xs font-[600] text-[var(--color-navy)] hover:underline cursor-pointer">View all in {activeCat.label} →</Link>
+                    <Link to={`/c/${activeCat.slug}`} onClick={clearSearchState} className="text-xs font-[600] text-[var(--color-navy)] hover:underline cursor-pointer">View all in {activeCat.label} →</Link>
                   </div>
                 </div>
               </div>
@@ -404,7 +490,7 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
             <div className="flex-1 overflow-y-auto py-2">
               <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] tracking-widest px-4 py-2 uppercase">Categories</p>
               {navCategories.map(cat => (
-                <Link key={cat.label} to={`/c/${cat.slug}`} onClick={() => setMobileMenuOpen(false)} className="flex items-center justify-between px-4 py-3 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface)] border-b border-[var(--color-border-subtle)] cursor-pointer">
+                <Link key={cat.label} to={`/c/${cat.slug}`} onClick={() => { clearSearchState(); setMobileMenuOpen(false); }} className="flex items-center justify-between px-4 py-3 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface)] border-b border-[var(--color-border-subtle)] cursor-pointer">
                   {cat.label}
                   <IconChevronRight size={14} className="text-[var(--color-ink-muted)]" />
                 </Link>
@@ -415,9 +501,9 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
                 {hasSession ? (
                   <>
                     {accountLinks.map(({ label, href }) => (
-                      <Link key={label} to={href} onClick={() => setMobileMenuOpen(false)} className={`flex items-center px-4 py-3 text-sm hover:bg-[var(--color-surface)] cursor-pointer ${label === "Switch to Seller" || label === "Become a Seller" ? "text-[var(--color-navy)] font-[500]" : "text-[var(--color-ink)]"}`}>{label}</Link>
+                      <Link key={label} to={href} onClick={() => setMobileMenuOpen(false)} className={`flex items-center px-4 py-3 text-sm hover:bg-[var(--color-surface)] cursor-pointer ${label === "Switch to Seller" || label === "Become a Seller" || label === "Seller Application Status" ? "text-[var(--color-navy)] font-[500]" : "text-[var(--color-ink)]"}`}>{label}</Link>
                     ))}
-                    <button onClick={handleLogout} className="w-full text-left flex items-center px-4 py-3 text-sm text-[var(--color-red)] hover:bg-[var(--color-red-light)] cursor-pointer">Log out</button>
+                    <button onClick={() => setLogoutConfirmOpen(true)} className="w-full text-left flex items-center px-4 py-3 text-sm text-[var(--color-red)] hover:bg-[var(--color-red-light)] cursor-pointer">Log out</button>
                   </>
                 ) : (
                   <div className="flex gap-2 px-4 py-3">
@@ -437,6 +523,18 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
       </div>
 
       {/* ── FOOTER ──────────────────────────────────────── */}
+      <ConfirmDialog
+        open={logoutConfirmOpen}
+        title="Log out of your account?"
+        description="You will be returned to the sign-in page."
+        confirmLabel="Log out"
+        cancelLabel="Cancel"
+        danger
+        loading={logoutLoading}
+        onCancel={() => setLogoutConfirmOpen(false)}
+        onConfirm={handleLogout}
+      />
+
       <footer className="bg-[var(--color-ink)] text-white mt-auto">
         <div className="px-6 md:px-8 lg:px-12 py-12">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-8 mb-10">

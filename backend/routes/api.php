@@ -28,6 +28,8 @@ Route::prefix('auth')->group(function () {
 });
 
 Route::get('/categories', [CatalogController::class, 'categories']);
+Route::get('/search', [CatalogController::class, 'search']);
+Route::get('/search/suggestions', [CatalogController::class, 'searchSuggestions'])->middleware('throttle:60,1');
 Route::get('/products', [CatalogController::class, 'products']);
 Route::get('/products/{slug}', [CatalogController::class, 'product']);
 Route::get('/sellers', [CatalogController::class, 'sellers']);
@@ -36,6 +38,9 @@ Route::get('/sellers/{slug}', [CatalogController::class, 'seller']);
 Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
     Route::get('/account/addresses', [AccountController::class, 'addresses']);
     Route::post('/account/addresses', [AccountController::class, 'storeAddress']);
+    Route::patch('/account/addresses/{addressId}', [AccountController::class, 'updateAddress']);
+    Route::delete('/account/addresses/{addressId}', [AccountController::class, 'destroyAddress']);
+    Route::patch('/account/password', [AccountController::class, 'updatePassword']);
     Route::get('/seller/application', [SellerApplicationController::class, 'current']);
     Route::post('/seller/applications', [SellerApplicationController::class, 'store']);
     Route::get('/cart', [CommerceController::class, 'cart']);
@@ -53,8 +58,13 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
     Route::get('/reports', [ModerationController::class, 'reports']);
     Route::post('/reports', [ModerationController::class, 'storeReport']);
     Route::get('/notifications', [ModerationController::class, 'notifications']);
+    Route::patch('/notifications/{notification}/read', [ModerationController::class, 'markNotificationRead']);
+    Route::patch('/notifications/{notification}/dismiss', [ModerationController::class, 'dismissNotification']);
+    Route::post('/notifications/mark-all-read', [ModerationController::class, 'markAllNotificationsRead']);
     Route::get('/wishlists', [CommerceController::class, 'wishlists']);
     Route::post('/wishlists', [CommerceController::class, 'storeWishlist']);
+    Route::get('/wishlists/{productId}/status', [CommerceController::class, 'wishlistStatus']);
+    Route::delete('/wishlists/{productId}', [CommerceController::class, 'destroyWishlist']);
     Route::get('/promotions', [CommerceController::class, 'promotions']);
 });
 
@@ -63,8 +73,14 @@ Route::prefix('seller')
     ->group(function () {
     Route::get('/dashboard', [SellerController::class, 'dashboard']);
     Route::get('/me', [SellerController::class, 'me']);
+    Route::patch('/me', [SellerController::class, 'updateMe']);
     Route::get('/orders', [SellerController::class, 'orders']);
     Route::get('/products', [SellerController::class, 'products']);
+    Route::get('/products/{product}', [SellerController::class, 'show']);
+    Route::post('/products', [SellerController::class, 'store']);
+    Route::patch('/products/{product}', [SellerController::class, 'update']);
+    Route::patch('/products/{product}/inventory', [SellerController::class, 'updateInventory']);
+    Route::delete('/products/{product}', [SellerController::class, 'destroy']);
     Route::get('/customers', [SellerController::class, 'customers']);
     Route::get('/promotions', [SellerController::class, 'promotions']);
 });

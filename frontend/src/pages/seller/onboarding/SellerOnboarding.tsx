@@ -584,19 +584,20 @@ export default function SellerOnboarding({ view = "form" }: SellerOnboardingProp
           {step === 2 && (
             <FormSection title="Select your product categories" desc="Choose up to 5 categories that best describe what you sell. You can update these later.">
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
-                {CATEGORIES.map(category => {
-                  const selected = selectedCategories.includes(category);
+                {CATEGORIES.map((category) => {
+                  const categoryLabel = typeof category === "string" ? category : category.label;
+                  const selected = selectedCategories.includes(categoryLabel);
                   const disabled = !selected && selectedCategories.length >= 5;
 
                   return (
                     <button
-                      key={category}
+                      key={categoryLabel}
                       onClick={() =>
                         setSelectedCategories(prev =>
-                          prev.includes(category)
-                            ? prev.filter(value => value !== category)
+                          prev.includes(categoryLabel)
+                            ? prev.filter(value => value !== categoryLabel)
                             : prev.length < 5
-                              ? [...prev, category]
+                              ? [...prev, categoryLabel]
                               : prev,
                         )
                       }
@@ -610,7 +611,7 @@ export default function SellerOnboarding({ view = "form" }: SellerOnboardingProp
                       }`}
                     >
                       {selected && <span className="mr-1">OK</span>}
-                      {category}
+                      {categoryLabel}
                     </button>
                   );
                 })}

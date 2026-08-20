@@ -37,8 +37,15 @@ class MediaStorageService
     {
         try {
             $diskInstance = Storage::disk($disk);
+            $url = method_exists($diskInstance, 'url') ? $diskInstance->url($path) : null;
 
-            return method_exists($diskInstance, 'url') ? $diskInstance->url($path) : null;
+            if (is_string($url) && $url !== '' && ! Str::startsWith($url, ['/'])) {
+                return $url;
+            }
+
+            return method_exists($diskInstance, 'temporaryUrl')
+                ? $diskInstance->temporaryUrl($path, now()->addHours(12))
+                : $url;
         } catch (\Throwable $e) {
             return null;
         }

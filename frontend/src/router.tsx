@@ -1,20 +1,20 @@
-import { createBrowserRouter, Navigate, Outlet, useParams, useSearchParams } from "react-router";
 import { lazy } from "react";
+import { createBrowserRouter, Navigate, Outlet, useParams, useSearchParams } from "react-router";
 
-// ── Layouts ───────────────────────────────────────────────────
+import { useAuth } from "./auth/AuthContext";
+import type { AccountUser } from "./pages/account/AccountLayout";
 import PublicLayout, { useNav } from "./layouts/PublicLayout";
-const SellerLayout = lazy(() => import("./layouts/SellerLayout"));
-const AdminLayout = lazy(() => import("./layouts/AdminLayout"));
 import SpecLayout from "./layouts/SpecLayout";
 
-// ── Public pages ──────────────────────────────────────────────
+const SellerLayout = lazy(() => import("./layouts/SellerLayout"));
+const AdminLayout = lazy(() => import("./layouts/AdminLayout"));
+
 const HomePage = lazy(() => import("./pages/pub/HomePage"));
 const CategoryPage = lazy(() => import("./pages/pub/CategoryPage"));
 const SearchPage = lazy(() => import("./pages/pub/SearchPage"));
 const ProductPage = lazy(() => import("./pages/pub/ProductPage"));
 const SellerStorePage = lazy(() => import("./pages/pub/SellerStorePage"));
 
-// ── Auth pages ────────────────────────────────────────────────
 const LoginPage = lazy(() => import("./pages/auth/LoginPage"));
 const RegisterPage = lazy(() => import("./pages/auth/RegisterPage"));
 const ForgotPasswordPage = lazy(() => import("./pages/auth/ForgotPasswordPage"));
@@ -23,10 +23,8 @@ const EmailVerifiedPage = lazy(() => import("./pages/auth/EmailVerifiedPage"));
 const ResetPasswordPage = lazy(() => import("./pages/auth/ResetPasswordPage"));
 const TwoFactorPage = lazy(() => import("./pages/auth/TwoFactorPage"));
 
-// ── Buyer / account pages ─────────────────────────────────────
 const CartPage = lazy(() => import("./pages/buyer/CartPage"));
 const WishlistPage = lazy(() => import("./pages/buyer/WishlistPage"));
-const BuyerDashboardPage = lazy(() => import("./pages/buyer/BuyerDashboardPage"));
 const CheckoutFlow = lazy(() => import("./pages/checkout/CheckoutFlow"));
 const OrderHistoryPage = lazy(() => import("./pages/orders/OrderHistoryPage"));
 const OrderDetailPage = lazy(() => import("./pages/orders/OrderDetailPage"));
@@ -36,10 +34,7 @@ const ProfilePage = lazy(() => import("./pages/account/ProfilePage"));
 const SecurityPage = lazy(() => import("./pages/account/SecurityPage"));
 const AddressesPage = lazy(() => import("./pages/account/AddressesPage"));
 const PreferencesPage = lazy(() => import("./pages/account/PreferencesPage"));
-import { useAuth } from "./auth/AuthContext";
-import type { AccountUser } from "./pages/account/AccountLayout";
 
-// ── Seller pages ──────────────────────────────────────────────
 const SellerDashboard = lazy(() => import("./pages/seller/SellerDashboard"));
 const ProductListPage = lazy(() => import("./pages/seller/ProductListPage"));
 const ProductCreationPage = lazy(() => import("./pages/seller/ProductCreationPage"));
@@ -52,7 +47,6 @@ const StoreManagementPage = lazy(() => import("./pages/seller/StoreManagementPag
 const SellerSettingsPage = lazy(() => import("./pages/seller/SellerSettingsPage"));
 const SellerOnboarding = lazy(() => import("./pages/seller/onboarding/SellerOnboarding"));
 
-// ── Admin pages ───────────────────────────────────────────────
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const UserManagementPage = lazy(() => import("./pages/admin/UserManagementPage"));
 const SellerManagementPage = lazy(() => import("./pages/admin/SellerManagementPage"));
@@ -63,9 +57,7 @@ const ReportsModerationPage = lazy(() => import("./pages/admin/ReportsModeration
 const AdminAnalyticsPage = lazy(() => import("./pages/admin/AdminAnalyticsPage"));
 const AdminSettingsPage = lazy(() => import("./pages/admin/AdminSettingsPage"));
 
-// ── Route bridge components ───────────────────────────────────
-// These bridge existing onNavigate-based pages into the React Router context.
-// All components here must be inside a PublicLayout route so they can call useNav().
+const ForbiddenPage = lazy(() => import("./pages/errors/ForbiddenPage"));
 
 function HomeRoute() {
   const nav = useNav();
@@ -120,28 +112,6 @@ function EmailVerifiedRoute() {
   return <EmailVerifiedPage />;
 }
 
-function RequireVerifiedAccount() {
-  const { user, loading } = useAuth();
-
-  if (loading) {
-    return (
-      <div className="px-4 md:px-8 lg:px-12 max-w-screen-xl mx-auto py-10 text-sm text-[var(--color-ink-muted)]">
-        Loading your account...
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <Navigate to="/auth/login" replace />;
-  }
-
-  if (!user.email_verified_at) {
-    return <Navigate to={`/auth/verify-email?email=${encodeURIComponent(user.email)}`} replace />;
-  }
-
-  return <Outlet />;
-}
-
 function ResetPasswordRoute() {
   const nav = useNav();
   return <ResetPasswordPage onNavigate={nav} />;
@@ -153,7 +123,7 @@ function TwoFactorRoute() {
 
 function OrderDetailRoute() {
   const { id } = useParams<{ id: string }>();
-  return <OrderDetailPage deliveryState={id === "in-transit" ? "in-transit" : "delivered"} />;
+  return <OrderDetailPage orderNumber={id ?? ""} />;
 }
 
 function OrderHistoryRoute() {
@@ -198,33 +168,145 @@ function ProfileRoute() {
     joinedDate: user.joined_at ? new Date(user.joined_at).toLocaleString("en-US", { month: "long", year: "numeric" }) : "New member",
     orderCount: user.order_count ?? 0,
     wishlistCount: user.wishlist_count ?? 0,
+    emailVerifiedAt: user.email_verified_at,
+    twoFactorEnabled: user.two_factor_enabled,
+    lastActiveAt: user.last_active_at,
   };
 
-  return (
-    <ProfilePage
-      user={accountUser}
-      onNavigate={nav}
-      onPageChange={(page) => nav(page)}
-    />
-  );
+  return <ProfilePage user={accountUser} onNavigate={nav} onPageChange={(page) => nav(page)} />;
 }
 
-// ── Not found ─────────────────────────────────────────────────
-function NotFoundRoute() {
+function LoadingState({ label }: { label: string }) {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-[var(--color-ground)] text-center px-6">
-      <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] tracking-widest uppercase mb-4">404 · Page not found</p>
-      <h1 className="font-[var(--font-display)] text-4xl text-[var(--color-ink)] font-[400] mb-4">This page doesn't exist.</h1>
-      <p className="text-sm text-[var(--color-ink-muted)] mb-8 max-w-sm">The URL may have been mistyped or the page may have been moved.</p>
-      <a href="/" className="bg-[var(--color-navy)] text-white text-sm font-[500] px-6 py-3 rounded-sm hover:opacity-90 transition-opacity">Back to Home</a>
+    <div className="px-4 md:px-8 lg:px-12 max-w-screen-xl mx-auto py-10 text-sm text-[var(--color-ink-muted)]">
+      {label}
     </div>
   );
 }
 
-// ── Router ────────────────────────────────────────────────────
-export const router = createBrowserRouter([
+function SessionVerificationFailure() {
+  const { error, refreshUser } = useAuth();
 
-  // ── Design Spec viewer ─────────────────────────────────────
+  return (
+    <div className="px-4 md:px-8 lg:px-12 max-w-screen-xl mx-auto py-10 text-sm text-[var(--color-ink-muted)]">
+      <p>{error ?? "Unable to verify your session."}</p>
+      <button
+        type="button"
+        className="mt-4 text-[var(--color-navy)] underline underline-offset-4"
+        onClick={() => void refreshUser()}
+      >
+        Try again
+      </button>
+    </div>
+  );
+}
+
+function RequireVerifiedAccount() {
+  const { user, loading, error } = useAuth();
+
+  if (loading) {
+    return <LoadingState label="Loading your account..." />;
+  }
+
+  if (error && !user) {
+    return <SessionVerificationFailure />;
+  }
+
+  if (!user) {
+    return <Navigate to="/auth/login" replace />;
+  }
+
+  if (!user.email_verified_at) {
+    return <Navigate to={`/auth/verify-email?email=${encodeURIComponent(user.email)}`} replace />;
+  }
+
+  return <Outlet />;
+}
+
+function RequireSellerAccess() {
+  const { user, loading, error } = useAuth();
+
+  if (loading) {
+    return <LoadingState label="Loading seller access..." />;
+  }
+
+  if (error && !user) {
+    return <SessionVerificationFailure />;
+  }
+
+  if (!user) {
+    return <Navigate to="/auth/login" replace />;
+  }
+
+  if (!user.email_verified_at) {
+    return <Navigate to={`/auth/verify-email?email=${encodeURIComponent(user.email)}`} replace />;
+  }
+
+  if (user.status !== "active") {
+    return <Navigate to="/403" replace />;
+  }
+
+  if (user.role !== "seller") {
+    return <Navigate to="/403" replace />;
+  }
+
+  if (!user.seller_approved) {
+    return <Navigate to="/seller-center/onboarding/status" replace />;
+  }
+
+  return <Outlet />;
+}
+
+function RequireAdminAccess() {
+  const { user, loading, error } = useAuth();
+
+  if (loading) {
+    return <LoadingState label="Loading admin access..." />;
+  }
+
+  if (error && !user) {
+    return <SessionVerificationFailure />;
+  }
+
+  if (!user) {
+    return <Navigate to="/auth/login" replace />;
+  }
+
+  if (!user.email_verified_at) {
+    return <Navigate to={`/auth/verify-email?email=${encodeURIComponent(user.email)}`} replace />;
+  }
+
+  if (user.status !== "active") {
+    return <Navigate to="/403" replace />;
+  }
+
+  if (user.role !== "admin") {
+    return <Navigate to="/403" replace />;
+  }
+
+  return <Outlet />;
+}
+
+function NotFoundRoute() {
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[var(--color-ground)] text-center px-6">
+      <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] tracking-widest uppercase mb-4">
+        404 · Page not found
+      </p>
+      <h1 className="font-[var(--font-display)] text-4xl text-[var(--color-ink)] font-[400] mb-4">
+        This page doesn't exist.
+      </h1>
+      <p className="text-sm text-[var(--color-ink-muted)] mb-8 max-w-sm">
+        The URL may have been mistyped or the page may have been moved.
+      </p>
+      <a href="/" className="bg-[var(--color-navy)] text-white text-sm font-[500] px-6 py-3 rounded-sm hover:opacity-90 transition-opacity">
+        Back to Home
+      </a>
+    </div>
+  );
+}
+
+export const router = createBrowserRouter([
   {
     path: "/spec",
     children: [
@@ -232,75 +314,75 @@ export const router = createBrowserRouter([
       { path: ":partId", Component: SpecLayout },
     ],
   },
-
-  // ── Checkout (no nav shell — clean funnel) ─────────────────
-  { path: "/checkout", element: <CheckoutFlow /> },
-  { path: "/checkout/confirmation", element: <CheckoutFlow simulatePayment="success" /> },
-
-  // ── Seller application (standalone — no seller sidebar shell) ─
   { path: "/seller-center/onboarding", Component: SellerOnboarding },
   { path: "/seller-center/onboarding/status", element: <SellerOnboarding view="status" /> },
-
-  // ── Seller Center ──────────────────────────────────────────
   {
     path: "/seller-center",
-    Component: SellerLayout,
+    element: <RequireSellerAccess />,
     children: [
-      { index: true, Component: SellerDashboard },
-      { path: "products", Component: ProductListPage },
-      { path: "products/new", Component: ProductCreationPage },
-      { path: "products/:id/edit", Component: ProductCreationPage },
-      { path: "inventory", Component: InventoryPage },
-      { path: "orders", Component: SellerOrdersPage },
-      { path: "customers", Component: CustomersPage },
-      { path: "promotions", Component: PromotionsPage },
-      { path: "analytics", Component: AnalyticsPage },
-      { path: "store", Component: StoreManagementPage },
-      { path: "messages", Component: MessagingPage },
-      { path: "notifications", Component: NotificationCenter },
-      { path: "settings", Component: SellerSettingsPage },
+      {
+        element: <SellerLayout />,
+        children: [
+          { index: true, Component: SellerDashboard },
+          { path: "products", Component: ProductListPage },
+          { path: "products/new", Component: ProductCreationPage },
+          { path: "products/:id/edit", Component: ProductCreationPage },
+          { path: "inventory", Component: InventoryPage },
+          { path: "orders", Component: SellerOrdersPage },
+          { path: "customers", Component: CustomersPage },
+          { path: "promotions", Component: PromotionsPage },
+          { path: "analytics", Component: AnalyticsPage },
+          { path: "store", Component: StoreManagementPage },
+          { path: "messages", Component: MessagingPage },
+          { path: "notifications", Component: NotificationCenter },
+          { path: "settings", Component: SellerSettingsPage },
+        ],
+      },
     ],
   },
-
-  // ── Admin ──────────────────────────────────────────────────
   {
     path: "/admin",
-    Component: AdminLayout,
+    element: <RequireAdminAccess />,
     children: [
-      { index: true, Component: AdminDashboard },
-      { path: "users", Component: UserManagementPage },
-      { path: "sellers", Component: SellerManagementPage },
-      { path: "products", Component: AdminProductsPage },
-      { path: "orders", Component: AdminOrdersPage },
-      { path: "categories", Component: CategoryManagementPage },
-      { path: "reports", Component: ReportsModerationPage },
-      { path: "moderation", element: <Navigate to="/admin/reports" replace /> },
-      { path: "analytics", Component: AdminAnalyticsPage },
-      { path: "settings", Component: AdminSettingsPage },
+      {
+        element: <AdminLayout />,
+        children: [
+          { index: true, Component: AdminDashboard },
+          { path: "users", Component: UserManagementPage },
+          { path: "sellers", Component: SellerManagementPage },
+          { path: "products", Component: AdminProductsPage },
+          { path: "orders", Component: AdminOrdersPage },
+          { path: "categories", Component: CategoryManagementPage },
+          { path: "reports", Component: ReportsModerationPage },
+          { path: "moderation", element: <Navigate to="/admin/reports" replace /> },
+          { path: "notifications", Component: NotificationCenter },
+          { path: "analytics", Component: AdminAnalyticsPage },
+          { path: "settings", Component: AdminSettingsPage },
+        ],
+      },
     ],
   },
-
-  // ── Public storefront — all routes inside PublicLayout ─────
-  // Auth routes are nested here so they share the NavCtx from PublicLayout
   {
     path: "/",
     Component: PublicLayout,
     children: [
-      // Storefront
       { index: true, Component: HomeRoute },
       { path: "search", Component: SearchRoute },
       { path: "c/:slug", Component: CategoryRoute },
       { path: "p/:id", Component: ProductRoute },
       { path: "s/:id", Component: SellerStoreRoute },
       { path: "cart", Component: CartPage },
-
-      // Buyer account
+      {
+        path: "checkout",
+        element: <RequireVerifiedAccount />,
+        children: [{ index: true, Component: CheckoutFlow }],
+      },
+      { path: "checkout/confirmation", element: <Navigate to="/account/orders" replace /> },
       {
         path: "account",
         element: <RequireVerifiedAccount />,
         children: [
-          { index: true, element: <Navigate to="/account/dashboard" replace /> },
-          { path: "dashboard", Component: BuyerDashboardPage },
+          { index: true, element: <Navigate to="/account/profile" replace /> },
           { path: "orders", Component: OrderHistoryRoute },
           { path: "orders/:id", Component: OrderDetailRoute },
           { path: "wishlist", Component: WishlistPage },
@@ -312,8 +394,6 @@ export const router = createBrowserRouter([
           { path: "preferences", Component: PreferencesPage },
         ],
       },
-
-      // Auth — nested under PublicLayout so NavCtx is available
       {
         path: "auth",
         children: [
@@ -329,7 +409,6 @@ export const router = createBrowserRouter([
       },
     ],
   },
-
-  // ── 404 ───────────────────────────────────────────────────
+  { path: "/403", Component: ForbiddenPage },
   { path: "*", Component: NotFoundRoute },
 ]);

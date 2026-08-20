@@ -1,4 +1,5 @@
 import { apiFetch } from "./client";
+import { singleFlight } from "./requestCache";
 
 export type CartItem = {
   id: number;
@@ -6,6 +7,7 @@ export type CartItem = {
   seller_slug: string | null;
   seller_name: string;
   product_id: number;
+  product_variant_id: number | null;
   product_slug: string | null;
   product_name: string | null;
   variant_name: string | null;
@@ -47,7 +49,7 @@ type CartResponse = {
 };
 
 export async function fetchCart() {
-  return apiFetch<CartResponse>("/cart");
+  return singleFlight("cart:current", () => apiFetch<CartResponse>("/cart"));
 }
 
 export async function addCartItem(payload: {

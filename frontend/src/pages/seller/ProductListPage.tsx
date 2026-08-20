@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { fetchSellerProducts, type SellerProduct } from "../../api/seller";
+import { Pencil, Plus, Search, Trash2, ChevronDown } from "lucide-react";
+import { deleteSellerProduct, fetchSellerProducts, updateSellerProduct, type SellerProduct, type SellerProductSubmission } from "../../api/seller";
 
 type ProductStatus = "active" | "draft" | "archived" | "out-of-stock";
 type BulkAction = "publish" | "archive" | "delete";
@@ -35,6 +36,7 @@ export default function ProductListPage() {
   const [selected, setSelected] = useState<number[]>([]);
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   const [showBulkMenu, setShowBulkMenu] = useState(false);
+  const [savingId, setSavingId] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -84,6 +86,41 @@ export default function ProductListPage() {
 
   const selectedSet = new Set(selected);
 
+  const buildSubmission = (product: SellerProduct, nextStatus: SellerProduct["status"]): SellerProductSubmission => ({
+    name: product.name,
+    description: product.description ?? null,
+    category_id: product.category?.id ?? 0,
+    tags: product.tags ?? [],
+    sku: product.sku ?? "",
+    barcode: product.barcode ?? null,
+    price: product.price,
+    sale_price: product.sale_price,
+    cost_price: product.cost_price,
+    status: nextStatus as "draft" | "active" | "archived",
+    delivery_type: (product.delivery_type ?? "both") as SellerProductSubmission["delivery_type"],
+    track_inventory: product.track_inventory,
+    stock_quantity: product.stock_quantity,
+    low_stock_threshold: product.low_stock_threshold,
+    weight_grams: product.weight_grams ?? null,
+    length_cm: product.dimensions?.length_cm ?? null,
+    width_cm: product.dimensions?.width_cm ?? null,
+    height_cm: product.dimensions?.height_cm ?? null,
+    free_shipping: product.free_shipping,
+    variants: product.variants.map((variant) => ({
+      server_id: variant.id,
+      name: variant.name,
+      sku: variant.sku,
+      barcode: variant.barcode,
+      options: variant.options ?? [],
+      price_override: variant.price_override ?? null,
+      sale_price_override: variant.sale_price_override ?? null,
+      stock_quantity: variant.stock_quantity,
+      low_stock_threshold: variant.low_stock_threshold,
+      active: variant.active,
+    })),
+    keep_image_ids: product.images.map((image) => image.id),
+  });
+
   const toggleSelect = (id: number) => {
     setSelected((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
   };
@@ -92,21 +129,41 @@ export default function ProductListPage() {
     setSelected(selected.length === filtered.length ? [] : filtered.map((product) => product.id));
   };
 
-  const handleBulkAction = (action: BulkAction) => {
-    if (action === "delete") {
-      setProducts((prev) => prev.filter((product) => !selectedSet.has(product.id)));
-    } else if (action === "archive") {
-      setProducts((prev) => prev.map((product) => (selectedSet.has(product.id) ? { ...product, status: "archived" } : product)));
-    } else if (action === "publish") {
-      setProducts((prev) => prev.map((product) => (selectedSet.has(product.id) ? { ...product, status: "active" } : product)));
-    }
-    setSelected([]);
+  const handleBulkAction = async (action: BulkAction) => {
     setShowBulkMenu(false);
+    setSavingId(null);
+
+    try {
+      if (action === "delete") {
+        for (const productId of selected) {
+          await deleteSellerProduct(productId);
+        }
+        setProducts((prev) => prev.filter((product) => !selectedSet.has(product.id)));
+      } else {
+        const nextStatus = action === "archive" ? "archived" : "active";
+        for (const productId of selected) {
+          const product = products.find((item) => item.id === productId);
+          if (!product) continue;
+          setSavingId(productId);
+          const response = await updateSellerProduct(productId, buildSubmission(product, nextStatus));
+          setProducts((prev) => prev.map((item) => (item.id === productId ? response.data : item)));
+        }
+      }
+      setSelected([]);
+    } finally {
+      setSavingId(null);
+    }
   };
 
-  const deleteOne = (id: number) => {
-    setProducts((prev) => prev.filter((product) => product.id !== id));
-    setConfirmDelete(null);
+  const deleteOne = async (id: number) => {
+    setSavingId(id);
+    try {
+      await deleteSellerProduct(id);
+      setProducts((prev) => prev.filter((product) => product.id !== id));
+    } finally {
+      setSavingId(null);
+      setConfirmDelete(null);
+    }
   };
 
   const statusCounts: Record<string, number> = { all: products.length };
@@ -129,7 +186,7 @@ export default function ProductListPage() {
         <button
           onClick={() => navigate("/seller-center/products/new")}
           className="flex items-center gap-2 px-4 py-2.5 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] cursor-pointer transition-colors">
-          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round"><path d="M7 2v10M2 7h10" /></svg>
+          <Plus size={13} strokeWidth={1.9} />
           Add product
         </button>
       </div>
@@ -152,11 +209,14 @@ export default function ProductListPage() {
 
       <div className="flex flex-wrap gap-3 mb-4">
         <div className="flex items-center gap-2 flex-1 min-w-48 max-w-72 border border-[var(--color-border)] rounded-sm bg-white px-3 py-2 focus-within:border-[var(--color-navy)] transition-colors">
-          <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="var(--color-ink-muted)" strokeWidth="1.5" strokeLinecap="round"><circle cx="6" cy="6" r="4.5" /><path d="M10 10l2.5 2.5" /></svg>
+          <Search size={13} strokeWidth={1.5} className="text-[var(--color-ink-muted)]" />
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name or SKU" className="text-sm text-[var(--color-ink)] placeholder-[var(--color-ink-disabled)] focus:outline-none bg-transparent w-full font-[var(--font-body)]" />
         </div>
         <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="px-3 py-2 border border-[var(--color-border)] rounded-sm text-sm text-[var(--color-ink)] bg-white focus:outline-none focus:border-[var(--color-navy)] cursor-pointer font-[var(--font-body)]">
-          {categories.map((category) => <option key={category} value={category}>{category === "all" ? "All categories" : category}</option>)}
+          {categories.map((category) => {
+            const label = typeof category === "string" ? category : (category as { label?: string; name?: string }).label ?? (category as { label?: string; name?: string }).name ?? "Unknown";
+            return <option key={label} value={label}>{label === "all" ? "All categories" : label}</option>;
+          })}
         </select>
         <select value={sort} onChange={(event) => setSort(event.target.value)} className="px-3 py-2 border border-[var(--color-border)] rounded-sm text-sm text-[var(--color-ink)] bg-white focus:outline-none focus:border-[var(--color-navy)] cursor-pointer font-[var(--font-body)]">
           <option value="newest">Newest first</option>
@@ -168,14 +228,14 @@ export default function ProductListPage() {
           <div className="relative ml-auto">
             <button onClick={() => setShowBulkMenu((value) => !value)} className="flex items-center gap-2 px-3 py-2 bg-[var(--color-amber)] text-white text-sm font-[500] rounded-sm hover:opacity-90 cursor-pointer transition-all">
               {selected.length} selected
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth="1.5"><path d="M2 4l3 3 3-3" /></svg>
+              <ChevronDown size={10} strokeWidth={1.5} />
             </button>
             {showBulkMenu && (
               <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-[var(--color-border)] rounded-sm shadow-[0_4px_16px_rgba(0,0,0,0.1)] z-20">
-                <button onClick={() => handleBulkAction("publish")} className="w-full px-4 py-2.5 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface)] text-left cursor-pointer">Publish selected</button>
-                <button onClick={() => handleBulkAction("archive")} className="w-full px-4 py-2.5 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface)] text-left cursor-pointer">Archive selected</button>
+                <button onClick={() => void handleBulkAction("publish")} className="w-full px-4 py-2.5 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface)] text-left cursor-pointer">Publish selected</button>
+                <button onClick={() => void handleBulkAction("archive")} className="w-full px-4 py-2.5 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface)] text-left cursor-pointer">Archive selected</button>
                 <div className="border-t border-[var(--color-border)]">
-                  <button onClick={() => handleBulkAction("delete")} className="w-full px-4 py-2.5 text-sm text-[var(--color-red)] hover:bg-[var(--color-red-light)] text-left cursor-pointer">Delete selected</button>
+                  <button onClick={() => void handleBulkAction("delete")} className="w-full px-4 py-2.5 text-sm text-[var(--color-red)] hover:bg-[var(--color-red-light)] text-left cursor-pointer">Delete selected</button>
                 </div>
               </div>
             )}
@@ -246,10 +306,10 @@ export default function ProductListPage() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
                       <button onClick={() => navigate(`/seller-center/products/${product.id}/edit`)} className="w-7 h-7 flex items-center justify-center text-[var(--color-ink-muted)] hover:text-[var(--color-navy)] hover:bg-[var(--color-surface)] rounded-sm cursor-pointer transition-colors" title="Edit">
-                        <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M9.5 2.5l2 2-7.5 7.5H2V9.5L9.5 2.5z" /></svg>
+                        <Pencil size={12} strokeWidth={1.6} />
                       </button>
                       <button onClick={() => setConfirmDelete(product.id)} className="w-7 h-7 flex items-center justify-center text-[var(--color-ink-muted)] hover:text-[var(--color-red)] hover:bg-[var(--color-red-light)] rounded-sm cursor-pointer transition-colors" title="Delete">
-                        <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M2 4h10M5 4V2h4v2M5 6v5M9 6v5" /></svg>
+                        <Trash2 size={12} strokeWidth={1.6} />
                       </button>
                     </div>
                   </td>
@@ -285,7 +345,7 @@ export default function ProductListPage() {
             <p className="text-sm text-[var(--color-ink-muted)] mb-5">This will remove the product from the current view. Connect a delete endpoint before using this in production.</p>
             <div className="flex gap-3">
               <button onClick={() => setConfirmDelete(null)} className="flex-1 py-2.5 border border-[var(--color-border)] text-sm text-[var(--color-ink-muted)] rounded-sm hover:bg-[var(--color-surface)] cursor-pointer">Cancel</button>
-              <button onClick={() => deleteOne(confirmDelete)} className="flex-1 py-2.5 bg-[var(--color-red)] text-white text-sm font-[500] rounded-sm hover:opacity-90 cursor-pointer">Delete</button>
+              <button onClick={() => void deleteOne(confirmDelete)} className="flex-1 py-2.5 bg-[var(--color-red)] text-white text-sm font-[500] rounded-sm hover:opacity-90 cursor-pointer">Delete</button>
             </div>
           </div>
         </div>

@@ -18,6 +18,14 @@ class ProductVariant extends Model
         'active',
     ];
 
+    protected $casts = [
+        'price_override' => 'decimal:2',
+        'sale_price_override' => 'decimal:2',
+        'stock_quantity' => 'integer',
+        'low_stock_threshold' => 'integer',
+        'active' => 'boolean',
+    ];
+
     public function product()
     {
         return $this->belongsTo(Product::class);

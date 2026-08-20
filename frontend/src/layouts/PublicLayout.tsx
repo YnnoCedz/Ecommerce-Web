@@ -20,7 +20,7 @@ function buildNavFn(navigate: ReturnType<typeof useNavigate>): NavFn {
       case "product":        return navigate(`/p/${params?.slug ?? params?.id ?? ""}`);
       case "seller":         return navigate(`/s/${params?.slug ?? params?.id ?? ""}`);
       case "cart":           return navigate("/cart");
-      case "checkout":       return navigate("/checkout");
+      case "checkout":       return navigate(params?.items ? `/checkout?items=${encodeURIComponent(params.items)}` : "/checkout");
       case "login":          return navigate("/auth/login");
       case "register":       return navigate("/auth/register");
       case "forgot-password":return navigate("/auth/forgot-password");
@@ -31,7 +31,7 @@ function buildNavFn(navigate: ReturnType<typeof useNavigate>): NavFn {
       case "wishlist":       return navigate("/account/wishlist");
       case "messages":       return navigate("/account/messages");
       case "profile":        return navigate("/account/profile");
-      case "buyer-dashboard":return navigate("/account/dashboard");
+      case "buyer-dashboard":return navigate("/account/profile");
       case "security":       return navigate("/account/security");
       case "addresses":      return navigate("/account/addresses");
       case "notifications":  return navigate("/account/notifications");

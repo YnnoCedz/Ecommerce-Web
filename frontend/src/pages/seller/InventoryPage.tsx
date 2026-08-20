@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchSellerProducts, type SellerProduct } from "../../api/seller";
+import { fetchSellerProducts, updateSellerInventory, type SellerProduct } from "../../api/seller";
 
 type StockStatus = "in-stock" | "low-stock" | "out-of-stock";
 
@@ -70,6 +70,7 @@ export default function InventoryPage() {
   const [filter, setFilter] = useState<StockStatus | "all">("all");
   const [search, setSearch] = useState("");
   const [adjustTarget, setAdjustTarget] = useState<InventoryItem | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -104,25 +105,40 @@ export default function InventoryPage() {
     "out-of-stock": items.filter((item) => getStatus(item) === "out-of-stock").length,
   };
 
-  const handleSave = (id: string, newQty: number) => {
-    setProducts((prev) =>
-      prev.map((product) => {
-        const productVariant = product.variants.find((variant) => `${product.id}-${variant.id}` === id);
-        if (productVariant) {
-          return {
-            ...product,
-            variants: product.variants.map((variant) => (variant.id === productVariant.id ? { ...variant, stock_quantity: newQty } : variant)),
-          };
-        }
+  const handleSave = async (item: InventoryItem, newQty: number) => {
+    setSavingId(item.id);
 
-        if (String(product.id) === id) {
-          return { ...product, stock_quantity: newQty };
-        }
+    try {
+      const response = await updateSellerInventory(item.productId, {
+        quantity: newQty,
+        variant_id: item.variant ? Number(item.id.split("-").slice(-1)[0]) : null,
+        low_stock_threshold: item.threshold,
+      });
 
-        return product;
-      }),
-    );
-    setAdjustTarget(null);
+      setProducts((prev) =>
+        prev.map((product) => {
+          const productVariant = product.variants.find((variant) => `${product.id}-${variant.id}` === item.id);
+          if (productVariant) {
+            return {
+              ...product,
+              variants: product.variants.map((variant) => (variant.id === productVariant.id ? { ...variant, stock_quantity: response.data.quantity } : variant)),
+              stock_quantity: product.variants
+                .map((variant) => (variant.id === productVariant.id ? response.data.quantity : variant.stock_quantity))
+                .reduce((sum, qty) => sum + qty, 0),
+            };
+          }
+
+          if (String(product.id) === item.id) {
+            return { ...product, stock_quantity: response.data.quantity };
+          }
+
+          return product;
+        }),
+      );
+      setAdjustTarget(null);
+    } finally {
+      setSavingId(null);
+    }
   };
 
   if (loading) {
@@ -283,7 +299,7 @@ function AdjustDialog({ item, onClose, onSave }: { item: InventoryItem; onClose:
 
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 py-2.5 border border-[var(--color-border)] text-sm text-[var(--color-ink-muted)] rounded-sm hover:bg-[var(--color-surface)] cursor-pointer">Cancel</button>
-          <button onClick={() => onSave(item.id, preview())} className="flex-1 py-2.5 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] cursor-pointer">Save adjustment</button>
+          <button onClick={() => void onSave(item, preview())} className="flex-1 py-2.5 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] cursor-pointer">Preview adjustment</button>
         </div>
       </div>
     </div>

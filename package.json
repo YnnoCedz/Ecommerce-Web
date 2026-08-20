@@ -2,8 +2,13 @@
   "name": "ecommerce-web",
   "private": true,
   "scripts": {
-    "dev": "npm --prefix frontend run dev",
+    "dev:backend": "cd backend && php artisan serve --host=192.168.1.8 --port=8000",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev": "concurrently -k -n backend,frontend -c blue,green \"npm run dev:backend\" \"npm run dev:frontend\"",
     "build": "npm --prefix frontend run build",
     "preview": "npm --prefix frontend run preview"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
   }
 }

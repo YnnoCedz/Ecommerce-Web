@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Rating, Price } from "../../Part03";
 import { IconSearch, IconChevronRight } from "../../shells/icons";
-import { fetchCatalogProducts, type CatalogProduct } from "../../api/catalog";
+import { searchMarketplace, type CatalogProduct, type MarketplaceSearchResponse } from "../../api/catalog";
+import { usePersistedWishlist } from "../../hooks/usePersistedWishlist";
 
 type NavFn = (page: string, params?: Record<string, string>) => void;
 
@@ -23,7 +24,7 @@ const SORT_OPTIONS = [
 ];
 
 function ProductCard({ product, onNavigate }: { product: CatalogProduct; onNavigate: NavFn }) {
-  const [wished, setWished] = useState(false);
+  const { wished, busy, toggle } = usePersistedWishlist(product.id, product.name, () => onNavigate("login"));
   const discount = product.original_price ? Math.round(((product.original_price - product.price) / product.original_price) * 100) : null;
   return (
     <div
@@ -39,8 +40,10 @@ function ProductCard({ product, onNavigate }: { product: CatalogProduct; onNavig
           <span className="absolute top-2.5 right-2.5 font-[var(--font-mono)] text-[10px] font-[500] px-2 py-1 rounded-sm bg-[var(--color-red)] text-white">-{discount}%</span>
         )}
         <button
-          onClick={e => { e.stopPropagation(); setWished(w => !w); }}
-          className="absolute bottom-2.5 right-2.5 w-7 h-7 bg-white/90 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white cursor-pointer shadow-sm">
+          onClick={e => { e.stopPropagation(); void toggle(); }}
+          disabled={busy}
+          aria-pressed={wished}
+          className="absolute bottom-2.5 right-2.5 w-7 h-7 bg-white/90 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white cursor-pointer shadow-sm disabled:opacity-50">
           <svg width="13" height="13" viewBox="0 0 14 14" fill={wished ? "#8B2C2C" : "none"} stroke={wished ? "#8B2C2C" : "#6B6860"} strokeWidth="1.4">
             <path d="M7 12.5s-5.5-3.2-5.5-7A3 3 0 0 1 7 3.7 3 3 0 0 1 12.5 5.5c0 3.8-5.5 7-5.5 7z" />
           </svg>
@@ -64,81 +67,84 @@ export default function SearchPage({
   query?: string;
   onNavigate: NavFn;
 }) {
-  const [query, setQuery] = useState(initialQuery);
-  const [inputValue, setInputValue] = useState(initialQuery);
   const [sort, setSort] = useState("relevance");
   const [selectedPrice, setSelectedPrice] = useState<number | null>(null);
   const [minRating, setMinRating] = useState<number | null>(null);
   const [freeShipping, setFreeShipping] = useState(false);
   const [page, setPage] = useState(1);
   const [products, setProducts] = useState<CatalogProduct[]>([]);
+  const [meta, setMeta] = useState<MarketplaceSearchResponse["meta"]>({
+    current_page: 1,
+    last_page: 1,
+    per_page: 24,
+    total: 0,
+    from: null,
+    to: null,
+  });
+  const [suggestedQuery, setSuggestedQuery] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const query = initialQuery;
 
   useEffect(() => {
-    void fetchCatalogProducts({ search: query }).then((response) => setProducts(response.data)).catch(() => setProducts([]));
-  }, [query]);
+    setPage(1);
+  }, [initialQuery]);
 
-  const filtered = useMemo(() => {
-    let results = [...products];
-    if (selectedPrice !== null) {
-      const r = PRICE_RANGES[selectedPrice];
-      results = results.filter(p => p.price >= r.min && p.price <= r.max);
-    }
-    if (minRating !== null) results = results.filter(p => p.rating >= minRating);
-    if (freeShipping) results = results.filter(p => p.free_shipping);
-    if (sort === "price-asc") results = results.sort((a, b) => a.price - b.price);
-    if (sort === "price-desc") results = results.sort((a, b) => b.price - a.price);
-    if (sort === "rating") results = results.sort((a, b) => b.rating - a.rating);
-    if (sort === "sales") results = results.sort((a, b) => b.sold_count - a.sold_count);
-    return results;
-  }, [products, selectedPrice, minRating, freeShipping, sort]);
+  useEffect(() => {
+    let cancelled = false;
 
-  const doSearch = () => { setQuery(inputValue); setPage(1); };
-  const SUGGESTED = ["Leather bag", "Natural skincare", "Handmade ceramics", "Chronograph watch", "Canvas sneakers"];
+    const priceRange = selectedPrice === null ? null : PRICE_RANGES[selectedPrice];
+    setLoading(true);
+
+    void searchMarketplace({
+      q: query,
+      min_price: priceRange?.min,
+      max_price: priceRange && Number.isFinite(priceRange.max) ? priceRange.max : undefined,
+      min_rating: minRating ?? undefined,
+      free_shipping: freeShipping || undefined,
+      sort,
+      page,
+      per_page: 24,
+    })
+      .then((response) => {
+        if (!cancelled) {
+          setProducts(response.data);
+          setMeta(response.meta);
+          setSuggestedQuery(response.query.suggested);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setProducts([]);
+          setMeta(current => ({ ...current, current_page: 1, last_page: 1, total: 0, from: null, to: null }));
+          setSuggestedQuery(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [freeShipping, minRating, page, query, selectedPrice, sort]);
 
   return (
     <div className="bg-[var(--color-ground)] min-h-full">
       <div className="bg-white border-b border-[var(--color-border)] px-4 md:px-8 lg:px-12 py-5">
         <div className="max-w-screen-xl mx-auto">
-          <div className="flex gap-2 max-w-2xl">
-            <div className="flex-1 flex items-center bg-[var(--color-surface)] border border-[var(--color-border)] rounded-sm overflow-hidden focus-within:border-[var(--color-navy)] focus-within:ring-2 focus-within:ring-[var(--color-navy)]/10 transition-all">
-              <IconSearch size={15} className="ml-3.5 text-[var(--color-ink-muted)] shrink-0" />
-              <input
-                type="text"
-                value={inputValue}
-                onChange={e => setInputValue(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && doSearch()}
-                placeholder="Search products, sellers, categories…"
-                className="flex-1 px-3 py-2.5 bg-transparent text-sm text-[var(--color-ink)] placeholder:text-[var(--color-ink-disabled)] outline-none"
-              />
-              {inputValue && (
-                <button onClick={() => { setInputValue(""); setQuery(""); }}
-                  className="mr-2 text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer">
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M1 1l10 10M11 1L1 11" /></svg>
+          {query ? (
+            <div className="flex items-center gap-2">
+              <p className="text-sm text-[var(--color-ink-muted)]">
+                <span className="font-[500] text-[var(--color-ink)]">{meta.total.toLocaleString()}</span> results for <span className="font-[500] text-[var(--color-ink)]">"{query}"</span>
+              </p>
+              {suggestedQuery && (
+                <button onClick={() => onNavigate("search", { q: suggestedQuery })} className="text-xs text-[var(--color-navy)] hover:underline cursor-pointer">
+                  Did you mean <span className="font-[600]">{suggestedQuery}</span>?
                 </button>
               )}
             </div>
-            <button onClick={doSearch}
-              className="px-5 py-2.5 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] transition-colors cursor-pointer">
-              Search
-            </button>
-          </div>
-
-          {query ? (
-            <div className="flex items-center gap-2 mt-3">
-              <p className="text-sm text-[var(--color-ink-muted)]">
-                <span className="font-[500] text-[var(--color-ink)]">{filtered.length.toLocaleString()}</span> results for <span className="font-[500] text-[var(--color-ink)]">"{query}"</span>
-              </p>
-            </div>
           ) : (
-            <div className="flex items-center gap-2 mt-3 flex-wrap">
-              <span className="text-xs text-[var(--color-ink-muted)]">Try:</span>
-              {SUGGESTED.map(s => (
-                <button key={s} onClick={() => { setInputValue(s); setQuery(s); }}
-                  className="text-xs px-2.5 py-1 border border-[var(--color-border)] rounded-full text-[var(--color-ink)] hover:border-[var(--color-navy)] hover:text-[var(--color-navy)] cursor-pointer transition-colors">
-                  {s}
-                </button>
-              ))}
-            </div>
+            <p className="text-sm text-[var(--color-ink-muted)]">Browse all available products</p>
           )}
         </div>
       </div>
@@ -152,7 +158,7 @@ export default function SearchPage({
                 <p className="text-xs font-[600] text-[var(--color-ink)] mb-2.5">Price Range</p>
                 <div className="space-y-2">
                   {PRICE_RANGES.map((r, i) => (
-                    <label key={i} className="flex items-center gap-2.5 cursor-pointer group" onClick={() => setSelectedPrice(selectedPrice === i ? null : i)}>
+                    <label key={i} className="flex items-center gap-2.5 cursor-pointer group" onClick={() => { setSelectedPrice(selectedPrice === i ? null : i); setPage(1); }}>
                       <div className={`w-4 h-4 rounded border-2 flex items-center justify-center ${selectedPrice === i ? "bg-[var(--color-navy)] border-[var(--color-navy)]" : "border-[var(--color-border-strong)] group-hover:border-[var(--color-navy)]"}`}>
                         {selectedPrice === i && <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M1.5 4l2 2L6.5 2" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                       </div>
@@ -164,7 +170,7 @@ export default function SearchPage({
               <div className="px-4 py-3 border-b border-[var(--color-border)]">
                 <p className="text-xs font-[600] text-[var(--color-ink)] mb-2.5">Min. Rating</p>
                 {[4, 3, 2].map(r => (
-                  <button key={r} onClick={() => setMinRating(minRating === r ? null : r)}
+                  <button key={r} onClick={() => { setMinRating(minRating === r ? null : r); setPage(1); }}
                     className={`flex items-center gap-2 text-sm cursor-pointer px-2 py-1.5 rounded-sm w-full mb-0.5 transition-colors ${minRating === r ? "bg-[var(--color-amber-light)]" : "hover:bg-[var(--color-surface)]"}`}>
                     <div className="flex">
                       {Array.from({ length: 5 }).map((_, i) => (
@@ -176,7 +182,7 @@ export default function SearchPage({
                 ))}
               </div>
               <div className="px-4 py-3">
-                <label className="flex items-center gap-2.5 cursor-pointer" onClick={() => setFreeShipping(f => !f)}>
+                <label className="flex items-center gap-2.5 cursor-pointer" onClick={() => { setFreeShipping(f => !f); setPage(1); }}>
                   <div className={`w-8 h-4 rounded-full relative transition-colors ${freeShipping ? "bg-[var(--color-navy)]" : "bg-[var(--color-border-strong)]"}`}>
                     <span className={`absolute top-0.5 w-3 h-3 bg-white rounded-full shadow transition-all ${freeShipping ? "left-4" : "left-0.5"}`} />
                   </div>
@@ -187,15 +193,17 @@ export default function SearchPage({
           </aside>
 
           <div className="flex-1 min-w-0">
-            {filtered.length > 0 ? (
+            {loading ? (
+              <div className="py-20 text-center text-sm text-[var(--color-ink-muted)]">Searching the marketplace...</div>
+            ) : products.length > 0 ? (
               <>
                 <div className="flex items-center justify-between mb-5">
                   <p className="text-sm text-[var(--color-ink-muted)]">
-                    <span className="font-[500] text-[var(--color-ink)]">{filtered.length}</span> products
+                    Showing <span className="font-[500] text-[var(--color-ink)]">{meta.from}-{meta.to}</span> of {meta.total} products
                   </p>
                   <div className="flex items-center gap-2">
                     <label className="text-xs text-[var(--color-ink-muted)]">Sort:</label>
-                    <select value={sort} onChange={e => setSort(e.target.value)}
+                    <select value={sort} onChange={e => { setSort(e.target.value); setPage(1); }}
                       className="text-sm border border-[var(--color-border)] bg-white rounded-sm px-2.5 py-1.5 text-[var(--color-ink)] cursor-pointer outline-none focus:border-[var(--color-navy)] transition-colors">
                       {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
@@ -203,17 +211,17 @@ export default function SearchPage({
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {filtered.map(p => <ProductCard key={p.id} product={p} onNavigate={onNavigate} />)}
+                  {products.map(p => <ProductCard key={p.id} product={p} onNavigate={onNavigate} />)}
                 </div>
 
                 <div className="mt-8 flex items-center justify-center gap-1.5">
-                  {[1, 2, 3, 4, 5].map(p => (
+                  {Array.from({ length: meta.last_page }, (_, index) => index + 1).map(p => (
                     <button key={p} onClick={() => setPage(p)}
                       className={`w-8 h-8 flex items-center justify-center rounded-sm text-sm font-[500] transition-colors cursor-pointer ${page === p ? "bg-[var(--color-navy)] text-white" : "border border-[var(--color-border)] text-[var(--color-ink)] hover:border-[var(--color-navy)]"}`}>
                       {p}
                     </button>
                   ))}
-                  <button onClick={() => setPage(p => Math.min(5, p + 1))}
+                  <button onClick={() => setPage(p => Math.min(meta.last_page, p + 1))} disabled={page >= meta.last_page}
                     className="w-8 h-8 flex items-center justify-center border border-[var(--color-border)] rounded-sm text-[var(--color-ink-muted)] hover:border-[var(--color-navy)] cursor-pointer">
                     <IconChevronRight size={12} />
                   </button>
@@ -233,15 +241,6 @@ export default function SearchPage({
                   <p>• Use fewer or more general keywords</p>
                   <p>• Check for typos or try alternate spellings</p>
                   <p>• Try browsing by category instead</p>
-                </div>
-                <div className="flex flex-wrap gap-2 justify-center mb-6">
-                  <p className="w-full text-xs text-[var(--color-ink-muted)] mb-1">Try searching for:</p>
-                  {["Leather bag", "Skincare", "Watches", "Ceramics"].map(s => (
-                    <button key={s} onClick={() => { setInputValue(s); setQuery(s); }}
-                      className="px-3 py-1.5 border border-[var(--color-border)] rounded-full text-xs text-[var(--color-ink)] hover:border-[var(--color-navy)] cursor-pointer transition-colors">
-                      {s}
-                    </button>
-                  ))}
                 </div>
                 <button onClick={() => onNavigate("home")}
                   className="px-5 py-2.5 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] cursor-pointer transition-colors">

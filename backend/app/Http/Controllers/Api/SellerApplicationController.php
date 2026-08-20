@@ -8,6 +8,7 @@ use App\Models\Seller;
 use App\Models\SellerApplication;
 use App\Models\SellerDocument;
 use App\Models\User;
+use App\Models\MarketplaceNotification;
 use App\Notifications\SellerApplicationReviewedNotification;
 use App\Services\MediaStorageService;
 use Illuminate\Http\JsonResponse;
@@ -401,6 +402,26 @@ class SellerApplicationController extends Controller
 
         try {
             Notification::send($user, new SellerApplicationReviewedNotification($application, $decision, $reason));
+
+            $title = $decision === 'approved'
+                ? 'Seller application approved'
+                : 'Seller application reviewed';
+
+            $body = $decision === 'approved'
+                ? 'Your seller application has been approved. You can now access your seller dashboard.'
+                : ($reason
+                    ? 'Your seller application was not approved. Reason: ' . $reason
+                    : 'Your seller application was not approved. Please review the details and try again.');
+
+            MarketplaceNotification::create([
+                'user_id' => $user->id,
+                'category' => 'account',
+                'title' => $title,
+                'body' => $body,
+                'action_type' => 'seller-application',
+                'action_label' => $decision === 'approved' ? 'Open seller dashboard' : 'Review application',
+                'read_at' => null,
+            ]);
         } catch (\Throwable $e) {
             report($e);
         }

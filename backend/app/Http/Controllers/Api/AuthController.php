@@ -532,6 +532,7 @@ class AuthController extends Controller
     public function logout(Request $request): JsonResponse
     {
         Auth::guard('web')->logout();
+        Auth::guard('sanctum')->forgetUser();
 
         $request->session()->invalidate();
         $request->session()->regenerateToken();
@@ -589,7 +590,7 @@ class AuthController extends Controller
             'seller' => $user->hasApprovedSellerProfile()
                 ? '/seller-center'
                 : '/seller-center/onboarding/status',
-            default => '/account/dashboard',
+            default => '/',
         };
     }
 

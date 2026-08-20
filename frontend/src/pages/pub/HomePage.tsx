@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Rating, Price } from "../../Part03";
-import { IconSearch, IconChevronRight, IconTrendUp, IconBox, IconOrders } from "../../shells/icons";
+import { IconChevronRight, IconTrendUp, IconBox, IconOrders } from "../../shells/icons";
 import { fetchCatalogCategories, fetchCatalogProducts, fetchCatalogSellers, type CatalogCategory, type CatalogProduct, type CatalogSeller } from "../../api/catalog";
 import { CATEGORY_VISUALS } from "./visuals";
+import { usePersistedWishlist } from "../../hooks/usePersistedWishlist";
 
 type NavFn = (page: string, params?: Record<string, string>) => void;
 
@@ -37,7 +38,7 @@ function SectionHeader({ label, title, cta, onCta }: { label?: string; title: st
 }
 
 function HomeProductCard({ product, onNavigate }: { product: CatalogProduct; onNavigate: NavFn }) {
-  const [wished, setWished] = useState(false);
+  const { wished, busy, toggle } = usePersistedWishlist(product.id, product.name, () => onNavigate("login"));
   const discount = product.original_price ? Math.round(((product.original_price - product.price) / product.original_price) * 100) : null;
   return (
     <div
@@ -53,8 +54,10 @@ function HomeProductCard({ product, onNavigate }: { product: CatalogProduct; onN
           <span className="absolute top-2.5 right-2.5 font-[var(--font-mono)] text-[10px] font-[500] px-2 py-1 rounded-sm bg-[var(--color-red)] text-white">-{discount}%</span>
         )}
         <button
-          onClick={e => { e.stopPropagation(); setWished(w => !w); }}
-          className="absolute bottom-2.5 right-2.5 w-7 h-7 bg-white/90 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white cursor-pointer shadow-sm">
+          onClick={e => { e.stopPropagation(); void toggle(); }}
+          disabled={busy}
+          aria-pressed={wished}
+          className="absolute bottom-2.5 right-2.5 w-7 h-7 bg-white/90 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white cursor-pointer shadow-sm disabled:opacity-50">
           <svg width="13" height="13" viewBox="0 0 14 14" fill={wished ? "#8B2C2C" : "none"} stroke={wished ? "#8B2C2C" : "#6B6860"} strokeWidth="1.4">
             <path d="M7 12.5s-5.5-3.2-5.5-7A3 3 0 0 1 7 3.7 3 3 0 0 1 12.5 5.5c0 3.8-5.5 7-5.5 7z" />
           </svg>
@@ -95,7 +98,6 @@ function DealCard({ product, onNavigate }: { product: CatalogProduct; onNavigate
 }
 
 export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
-  const [heroSearch, setHeroSearch] = useState("");
   const [categories, setCategories] = useState<CatalogCategory[]>([]);
   const [products, setProducts] = useState<CatalogProduct[]>([]);
   const [sellers, setSellers] = useState<CatalogSeller[]>([]);
@@ -136,28 +138,9 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
             <br />
             <em className="italic font-[300]">genuinely original.</em>
           </h1>
-          <p className="text-white/60 text-base font-[300] mb-8 max-w-md">
+          <p className="text-white/60 text-base font-[300] max-w-md">
             The marketplace for independent creators, artisans, and curated sellers.
           </p>
-
-          <div className="w-full max-w-xl">
-            <div className="flex bg-white rounded-sm overflow-hidden shadow-[0_8px_32px_rgba(0,0,0,0.25)]">
-              <input
-                type="text"
-                value={heroSearch}
-                onChange={e => setHeroSearch(e.target.value)}
-                placeholder="Search for products, sellers, or categories…"
-                className="flex-1 px-5 py-3.5 text-sm text-[var(--color-ink)] bg-transparent outline-none placeholder:text-[var(--color-ink-disabled)]"
-                onKeyDown={e => e.key === "Enter" && onNavigate("search", { q: heroSearch })}
-              />
-              <button
-                onClick={() => onNavigate("search", { q: heroSearch })}
-                className="px-5 bg-[var(--color-amber)] text-white font-[500] text-sm flex items-center gap-2 hover:bg-[var(--color-amber-hover)] transition-colors cursor-pointer">
-                <IconSearch size={14} />
-                <span className="hidden sm:inline">Search</span>
-              </button>
-            </div>
-          </div>
         </div>
         <div className="absolute bottom-0 left-0 right-0 h-12 bg-[var(--color-ground)]" style={{ clipPath: "ellipse(55% 100% at 50% 100%)" }} />
       </div>

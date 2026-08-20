@@ -14,7 +14,7 @@ type Report = {
   severity: "low" | "medium" | "high" | "critical";
 };
 
-const REPORTS: Report[] = [
+export const REPORTS: Report[] = [
   { id: "RPT-0018", createdAt: "2026-08-15T10:21:00", status: "pending", targetType: "seller", targetId: "S-441", targetName: "GlowLab PH", reporterName: "Maria Santos", reporterId: "U-2811", reason: "fraud", description: "Received a product that is clearly counterfeit. The packaging looks fake and the seller refused to issue a refund even after I sent photos.", hasEvidence: true, evidenceCount: 4, severity: "critical" },
   { id: "RPT-0017", createdAt: "2026-08-15T08:55:00", status: "pending", targetType: "product", targetId: "PRD-8820", targetName: "Premium Korean Serum Set (24-piece)", reporterName: "Josie Cruz", reporterId: "U-1402", reason: "counterfeit", description: "These are obvious counterfeits of Laneige brand products. No authentic branding, different scent.", hasEvidence: true, evidenceCount: 2, severity: "high" },
   { id: "RPT-0016", createdAt: "2026-08-14T17:30:00", status: "reviewing", targetType: "buyer", targetId: "U-3120", targetName: "buyer_alex99", reporterName: "NaturalGlow Store", reporterId: "S-502", reason: "fraud", description: "This buyer filed a false chargeback after receiving the item. Tracking confirms delivery.", hasEvidence: true, evidenceCount: 3, severity: "high" },

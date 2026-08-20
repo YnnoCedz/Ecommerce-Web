@@ -21,6 +21,11 @@ class Payment extends Model
         'failure_reason',
     ];
 
+    protected $casts = [
+        'amount' => 'decimal:2',
+        'paid_at' => 'datetime',
+    ];
+
     public function order()
     {
         return $this->belongsTo(Order::class);

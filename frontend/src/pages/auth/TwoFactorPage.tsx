@@ -115,7 +115,7 @@ export default function TwoFactorPage() {
       });
       setSuccess(true);
       clearPendingTwoFactor();
-      navigate(response.redirectTo ?? "/account/dashboard", { replace: true });
+      navigate(response.redirectTo ?? "/", { replace: true });
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
@@ -165,7 +165,7 @@ export default function TwoFactorPage() {
             </svg>
           </div>
           <p className="text-sm text-[var(--color-ink-muted)] leading-relaxed">
-            You were successfully signed in. Redirecting to your dashboard now.
+            You were successfully signed in. Redirecting to the homepage now.
           </p>
         </div>
       </AuthLayout>

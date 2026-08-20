@@ -29,6 +29,15 @@ class Order extends Model
         'placed_at',
     ];
 
+    protected $casts = [
+        'subtotal' => 'decimal:2',
+        'shipping_total' => 'decimal:2',
+        'discount_total' => 'decimal:2',
+        'tax_total' => 'decimal:2',
+        'grand_total' => 'decimal:2',
+        'placed_at' => 'datetime',
+    ];
+
     public function buyer()
     {
         return $this->belongsTo(User::class, 'buyer_id');

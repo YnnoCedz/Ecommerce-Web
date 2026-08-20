@@ -1,4 +1,12 @@
 import { useState, useRef } from "react";
+import {
+  AlertTriangle,
+  ArrowUp,
+  Check,
+  FileText,
+  Info,
+  X,
+} from "lucide-react";
 
 export type ReportTargetType = "seller" | "buyer" | "courier" | "product" | "conversation";
 
@@ -100,10 +108,7 @@ export default function ReportDialog({ targetType, targetName, onClose }: Report
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)] shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-sm bg-[var(--color-red-light)] border border-[var(--color-red-border)] flex items-center justify-center">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--color-red)" strokeWidth="1.5" strokeLinecap="round">
-                <path d="M8 2v6M8 11v1.5" />
-                <circle cx="8" cy="8" r="6" />
-              </svg>
+              <AlertTriangle size={14} className="text-[var(--color-red)]" aria-hidden="true" />
             </div>
             <div>
               <p className="text-sm font-[600] text-[var(--color-ink)]">Report {targetType}</p>
@@ -112,7 +117,7 @@ export default function ReportDialog({ targetType, targetName, onClose }: Report
           </div>
           {step !== "success" && (
             <button onClick={onClose} className="text-[var(--color-ink-disabled)] hover:text-[var(--color-ink)] cursor-pointer transition-colors">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M3 3l10 10M13 3L3 13" /></svg>
+              <X size={16} aria-hidden="true" />
             </button>
           )}
         </div>
@@ -168,7 +173,7 @@ export default function ReportDialog({ targetType, targetName, onClose }: Report
           {step === "details" && (
             <div className="space-y-5">
               <div className="flex items-center gap-2 px-3 py-2.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-sm">
-                <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="var(--color-navy)" strokeWidth="1.5" strokeLinecap="round"><circle cx="7" cy="7" r="5.5" /><path d="M7 4.5v3M7 9.5v.5" /></svg>
+                <Info size={12} className="text-[var(--color-navy)]" aria-hidden="true" />
                 <span className="text-xs text-[var(--color-ink-muted)]">Reason: <span className="font-[500] text-[var(--color-ink)]">{selectedReasonObj?.label}</span></span>
               </div>
 
@@ -205,11 +210,11 @@ export default function ReportDialog({ targetType, targetName, onClose }: Report
                   <div className="space-y-1.5 mb-2">
                     {files.map((f, i) => (
                       <div key={i} className="flex items-center gap-2 px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-sm">
-                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--color-navy)" strokeWidth="1.3" strokeLinecap="round"><rect x="3" y="1" width="10" height="14" rx="1.5" /><path d="M6 5h4M6 8h4M6 11h2" /></svg>
+                        <FileText size={14} className="text-[var(--color-navy)] shrink-0" aria-hidden="true" />
                         <span className="flex-1 text-xs text-[var(--color-ink)] truncate">{f.name}</span>
                         <span className="font-[var(--font-mono)] text-[9px] text-[var(--color-ink-disabled)]">{(f.size / 1024).toFixed(0)}KB</span>
                         <button onClick={() => removeFile(i)} className="text-[var(--color-ink-disabled)] hover:text-[var(--color-red)] cursor-pointer transition-colors">
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M2 2l8 8M10 2L2 10" /></svg>
+                          <X size={12} aria-hidden="true" />
                         </button>
                       </div>
                     ))}
@@ -221,7 +226,7 @@ export default function ReportDialog({ targetType, targetName, onClose }: Report
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-dashed border-[var(--color-border)] rounded-sm text-sm text-[var(--color-ink-muted)] hover:border-[var(--color-navy)] hover:text-[var(--color-navy)] hover:bg-[var(--color-navy-surface)] cursor-pointer transition-all">
-                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M8 2v9M4.5 6L8 2l3.5 4" /><path d="M2 12h12" /></svg>
+                      <ArrowUp size={14} aria-hidden="true" />
                       Attach files
                     </button>
                   </>
@@ -261,7 +266,7 @@ export default function ReportDialog({ targetType, targetName, onClose }: Report
               </div>
 
               <div className="flex items-start gap-2.5 px-4 py-3 bg-[var(--color-amber-light)] border border-[var(--color-amber-border)] rounded-sm">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--color-amber)" strokeWidth="1.5" strokeLinecap="round" className="shrink-0 mt-0.5"><path d="M8 2L1.5 13h13L8 2z" /><path d="M8 7v3M8 11.5v.5" /></svg>
+                <AlertTriangle size={14} className="shrink-0 mt-0.5 text-[var(--color-amber)]" aria-hidden="true" />
                 <p className="text-xs text-[var(--color-amber)] leading-relaxed">
                   False or malicious reports may result in action against your account. Only submit if you believe this is a genuine violation.
                 </p>
@@ -273,7 +278,7 @@ export default function ReportDialog({ targetType, targetName, onClose }: Report
           {step === "success" && (
             <div className="flex flex-col items-center gap-5 py-6 text-center">
               <div className="w-16 h-16 rounded-full bg-[var(--color-green-light)] border-2 border-[var(--color-green-border)] flex items-center justify-center">
-                <svg width="28" height="28" viewBox="0 0 32 32" fill="none" stroke="var(--color-green)" strokeWidth="2.5" strokeLinecap="round"><path d="M6 16l7 7 13-13" /></svg>
+                <Check size={28} className="text-[var(--color-green)]" aria-hidden="true" />
               </div>
               <div>
                 <p className="font-[var(--font-display)] text-xl font-[400] text-[var(--color-ink)] mb-1">Report submitted</p>

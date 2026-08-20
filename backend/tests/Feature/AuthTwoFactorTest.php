@@ -19,8 +19,8 @@ class AuthTwoFactorTest extends TestCase
         return [
             'Accept' => 'application/json',
             'X-Requested-With' => 'XMLHttpRequest',
-            'Origin' => 'http://127.0.0.1:8443',
-            'Referer' => 'http://127.0.0.1:8443/auth/login',
+            'Origin' => 'http://192.168.1.8:8443',
+            'Referer' => 'http://192.168.1.8:8443/auth/login',
         ];
     }
 
@@ -68,7 +68,7 @@ class AuthTwoFactorTest extends TestCase
 
         $verifyResponse
             ->assertOk()
-            ->assertJsonPath('redirect_to', '/account/dashboard')
+            ->assertJsonPath('redirect_to', '/')
             ->assertJsonPath('user.email', $user->email);
 
         $this->withHeaders($this->browserHeaders())->getJson('/api/auth/me')

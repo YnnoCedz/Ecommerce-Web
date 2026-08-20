@@ -9,6 +9,7 @@ import {
   type CartItem,
   type CartSellerGroup,
 } from "../../api/cart";
+import { useToast, type ToastInput } from "../../components/ToastProvider";
 
 function QuantityStepper({ qty, max, onChange, disabled = false }: { qty: number; max: number; onChange: (v: number) => void; disabled?: boolean }) {
   return (
@@ -62,6 +63,7 @@ function DeliveryInfo({ seller, subtotal }: { seller: CartSellerGroup; subtotal:
 
 export default function CartPage() {
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [cart, setCart] = useState<CartData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -95,11 +97,22 @@ export default function CartPage() {
     [sellers]
   );
 
-  const handleItemAction = async (itemId: number, action: () => Promise<unknown>) => {
+  const handleItemAction = async (
+    itemId: number,
+    action: () => Promise<{ data: CartData }>,
+    successToast: ToastInput,
+  ) => {
     setActionBusyId(itemId);
     try {
-      await action();
-      await loadCart();
+      const response = await action();
+      setCart(response.data);
+      setPromoCode(response.data.promo_code ?? "");
+      setError(null);
+      showToast(successToast);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to update your cart.";
+      setError(message);
+      showToast({ kind: "error", title: "Could not update cart", message });
     } finally {
       setActionBusyId(null);
     }
@@ -112,8 +125,11 @@ export default function CartPage() {
       setCart(response.data);
       setPromoCode(response.data.promo_code ?? "");
       setError(null);
+      showToast({ kind: "success", title: "Promo applied", message: `${response.data.promo_code} was applied to your cart.` });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to apply promo code.");
+      const message = err instanceof Error ? err.message : "Unable to apply promo code.";
+      setError(message);
+      showToast({ kind: "error", title: "Could not apply promo", message });
     } finally {
       setPromoBusy(false);
     }
@@ -126,16 +142,21 @@ export default function CartPage() {
       setCart(response.data);
       setPromoCode("");
       setError(null);
+      showToast({ kind: "success", title: "Promo removed", message: "The promo code was removed from your cart." });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to remove promo code.");
+      const message = err instanceof Error ? err.message : "Unable to remove promo code.";
+      setError(message);
+      showToast({ kind: "error", title: "Could not remove promo", message });
     } finally {
       setPromoBusy(false);
     }
   };
 
   const handleAddSavedToCart = async (item: CartItem) => {
-    await handleItemAction(item.id, () =>
-      updateCartItem(item.id, { saved_for_later: false, quantity: item.quantity })
+    await handleItemAction(
+      item.id,
+      () => updateCartItem(item.id, { saved_for_later: false, quantity: item.quantity }),
+      { kind: "cart", title: "Moved to cart", message: `${item.product_name ?? "Item"} is ready in your cart.` },
     );
   };
 
@@ -251,19 +272,31 @@ export default function CartPage() {
                             qty={item.quantity}
                             max={item.stock}
                             disabled={actionBusyId === item.id}
-                            onChange={(qty) => handleItemAction(item.id, () => updateCartItem(item.id, { quantity: qty }))}
+                            onChange={(qty) => void handleItemAction(
+                              item.id,
+                              () => updateCartItem(item.id, { quantity: qty }),
+                              { kind: "cart", title: "Cart updated", message: `${item.product_name ?? "Item"} quantity is now ${qty}.` },
+                            )}
                           />
                           <span className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-disabled)]">PHP {item.unit_price.toLocaleString()} ea.</span>
                           <div className="flex items-center gap-2 ml-auto">
                             <button
-                              onClick={() => handleItemAction(item.id, () => updateCartItem(item.id, { saved_for_later: true }))}
+                              onClick={() => void handleItemAction(
+                                item.id,
+                                () => updateCartItem(item.id, { saved_for_later: true }),
+                                { kind: "cart", title: "Saved for later", message: `${item.product_name ?? "Item"} was moved out of your active cart.` },
+                              )}
                               disabled={actionBusyId === item.id}
                               className="text-xs text-[var(--color-navy)] hover:underline disabled:opacity-50 cursor-pointer transition-colors whitespace-nowrap">
                               Save for later
                             </button>
                             <span className="text-[var(--color-border-strong)]">·</span>
                             <button
-                              onClick={() => handleItemAction(item.id, () => removeCartItem(item.id))}
+                              onClick={() => void handleItemAction(
+                                item.id,
+                                () => removeCartItem(item.id),
+                                { kind: "cart", title: "Removed from cart", message: `${item.product_name ?? "Item"} was removed.` },
+                              )}
                               disabled={actionBusyId === item.id}
                               className="text-xs text-[var(--color-ink-muted)] hover:text-[var(--color-red)] disabled:opacity-50 cursor-pointer transition-colors">
                               Remove
@@ -300,14 +333,18 @@ export default function CartPage() {
                         </div>
                         <div className="flex items-center gap-3 mt-2">
                           <button
-                            onClick={() => handleAddSavedToCart(item)}
+                            onClick={() => void handleAddSavedToCart(item)}
                             disabled={actionBusyId === item.id}
                             className="text-xs font-[500] text-[var(--color-navy)] hover:underline disabled:opacity-50 cursor-pointer">
                             Move to cart
                           </button>
                           <span className="text-[var(--color-border-strong)]">·</span>
                           <button
-                            onClick={() => handleItemAction(item.id, () => removeCartItem(item.id))}
+                            onClick={() => void handleItemAction(
+                              item.id,
+                              () => removeCartItem(item.id),
+                              { kind: "cart", title: "Removed saved item", message: `${item.product_name ?? "Item"} was removed.` },
+                            )}
                             disabled={actionBusyId === item.id}
                             className="text-xs text-[var(--color-ink-muted)] hover:text-[var(--color-red)] disabled:opacity-50 cursor-pointer">
                             Remove

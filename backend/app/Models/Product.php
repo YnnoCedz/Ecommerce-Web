@@ -15,6 +15,7 @@ class Product extends Model
         'name',
         'slug',
         'description',
+        'tags',
         'sku',
         'barcode',
         'price',
@@ -31,6 +32,16 @@ class Product extends Model
         'height_cm',
         'free_shipping',
         'published_at',
+    ];
+
+    protected $casts = [
+        'tags' => 'array',
+        'price' => 'decimal:2',
+        'sale_price' => 'decimal:2',
+        'cost_price' => 'decimal:2',
+        'track_inventory' => 'boolean',
+        'free_shipping' => 'boolean',
+        'published_at' => 'datetime',
     ];
 
     public function seller()
@@ -56,5 +67,10 @@ class Product extends Model
     public function orderItems()
     {
         return $this->hasMany(OrderItem::class);
+    }
+
+    public function reviews()
+    {
+        return $this->hasMany(Review::class);
     }
 }

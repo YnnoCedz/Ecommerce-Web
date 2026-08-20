@@ -1,46 +1,7 @@
-import { useMemo, useState } from "react";
-
-type Address = {
-  id: string;
-  label: string;
-  name: string;
-  phone: string;
-  line1: string;
-  line2: string;
-  city: string;
-  province: string;
-  postal: string;
-  isDefault: boolean;
-};
+import { useEffect, useMemo, useState } from "react";
+import { fetchAccountAddresses, removeAccountAddress, storeAccountAddress, updateAccountAddress, type BuyerAddress } from "../../api/buyer";
 
 type LocationOption = { name: string; postal: string };
-
-const INITIAL: Address[] = [
-  {
-    id: "a1",
-    label: "Home",
-    name: "Ana Reyes",
-    phone: "+63 917 555 0182",
-    line1: "24 Sampaguita Street, Brgy. San Antonio",
-    line2: "Green Village Subdivision",
-    city: "Quezon City",
-    province: "Metro Manila",
-    postal: "1100",
-    isDefault: true,
-  },
-  {
-    id: "a2",
-    label: "Office",
-    name: "Ana Reyes",
-    phone: "+63 917 555 0182",
-    line1: "32F Octagon Tower, Ayala Avenue",
-    line2: "",
-    city: "Makati",
-    province: "Metro Manila",
-    postal: "1226",
-    isDefault: false,
-  },
-];
 
 const ADDRESS_LOCATIONS: Record<string, LocationOption[]> = {
   "Metro Manila": [
@@ -58,52 +19,58 @@ const ADDRESS_LOCATIONS: Record<string, LocationOption[]> = {
   Cavite: [
     { name: "Bacoor", postal: "4102" },
     { name: "Imus", postal: "4103" },
-    { name: "Dasmarinas", postal: "4114" },
+    { name: "Dasmariñas", postal: "4114" },
   ],
   Laguna: [
     { name: "Santa Rosa", postal: "4026" },
     { name: "Calamba", postal: "4027" },
-    { name: "Binan", postal: "4024" },
-  ],
-  Rizal: [
-    { name: "Antipolo", postal: "1870" },
-    { name: "Cainta", postal: "1900" },
-    { name: "Taytay", postal: "1920" },
-  ],
-  Bulacan: [
-    { name: "Meycauayan", postal: "3020" },
-    { name: "Malolos", postal: "3000" },
-    { name: "San Jose del Monte", postal: "3023" },
-  ],
-  Pampanga: [
-    { name: "San Fernando", postal: "2000" },
-    { name: "Angeles", postal: "2009" },
-    { name: "Mabalacat", postal: "2010" },
-  ],
-  "Davao del Sur": [
-    { name: "Davao City", postal: "8000" },
-    { name: "Digos", postal: "8002" },
+    { name: "Biñan", postal: "4024" },
   ],
 };
 
 const ADDRESS_REGIONS = Object.keys(ADDRESS_LOCATIONS);
 const LABELS = ["Home", "Office", "Other"];
 
-function Field({
-  label,
-  value,
-  onChange,
-  placeholder,
-  readOnly = false,
-  disabled = false,
-}: {
+type AddressDraft = {
   label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  readOnly?: boolean;
-  disabled?: boolean;
-}) {
+  recipient_name: string;
+  phone: string;
+  line1: string;
+  line2: string;
+  city: string;
+  province: string;
+  postal_code: string;
+  is_default: boolean;
+};
+
+const BLANK_ADDRESS: AddressDraft = {
+  label: "Home",
+  recipient_name: "",
+  phone: "",
+  line1: "",
+  line2: "",
+  city: "",
+  province: "",
+  postal_code: "",
+  is_default: false,
+};
+
+function mapAddress(address: BuyerAddress) {
+  return {
+    id: address.id,
+    label: address.label,
+    name: address.recipient_name,
+    phone: address.phone,
+    line1: address.line1,
+    line2: address.line2 ?? "",
+    city: address.city,
+    province: address.province,
+    postal: address.postal_code,
+    isDefault: address.is_default,
+  };
+}
+
+function Field({ label, value, onChange, placeholder, readOnly = false, disabled = false }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; readOnly?: boolean; disabled?: boolean; }) {
   return (
     <div>
       <label className="block text-xs font-[600] text-[var(--color-ink)] mb-1.5">{label}</label>
@@ -119,21 +86,7 @@ function Field({
   );
 }
 
-function SelectField({
-  label,
-  value,
-  onChange,
-  options,
-  placeholder,
-  disabled = false,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: string[];
-  placeholder?: string;
-  disabled?: boolean;
-}) {
+function SelectField({ label, value, onChange, options, placeholder, disabled = false }: { label: string; value: string; onChange: (v: string) => void; options: string[]; placeholder?: string; disabled?: boolean; }) {
   return (
     <div>
       <label className="block text-xs font-[600] text-[var(--color-ink)] mb-1.5">{label}</label>
@@ -144,134 +97,162 @@ function SelectField({
         className="w-full px-3.5 py-2.5 text-sm border border-[var(--color-border)] rounded-sm bg-white text-[var(--color-ink)] outline-none focus:border-[var(--color-navy)] focus:ring-2 focus:ring-[var(--color-navy)]/10 cursor-pointer transition-all disabled:bg-[var(--color-surface)] disabled:text-[var(--color-ink-disabled)]"
       >
         {placeholder && <option value="">{placeholder}</option>}
-        {options.map(o => (
-          <option key={o} value={o}>
-            {o}
-          </option>
-        ))}
+        {options.map(o => <option key={o} value={o}>{o}</option>)}
       </select>
     </div>
   );
 }
 
-const BLANK_ADDRESS: Omit<Address, "id"> = {
-  label: "Home",
-  name: "",
-  phone: "",
-  line1: "",
-  line2: "",
-  city: "",
-  province: "",
-  postal: "",
-  isDefault: false,
-};
-
 export default function AddressesPage() {
-  const [addresses, setAddresses] = useState<Address[]>(INITIAL);
-  const [modal, setModal] = useState<{ mode: "add" | "edit"; draft: Omit<Address, "id">; editId?: string } | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [addresses, setAddresses] = useState<ReturnType<typeof mapAddress>[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState<{ id: number | null; draft: AddressDraft } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const openAdd = () => setModal({ mode: "add", draft: { ...BLANK_ADDRESS } });
-  const openEdit = (addr: Address) => setModal({ mode: "edit", draft: { ...addr }, editId: addr.id });
+  useEffect(() => {
+    let active = true;
 
-  const save = () => {
-    if (!modal) return;
-
-    if (modal.mode === "add") {
-      const newAddr: Address = {
-        ...modal.draft,
-        id: `a${Date.now()}`,
-      };
-
-      const list = modal.draft.isDefault
-        ? addresses.map(a => ({ ...a, isDefault: false }))
-        : addresses;
-
-      setAddresses([...list, newAddr]);
-    } else {
-      setAddresses(
-        addresses.map(a => {
-          if (a.id === modal.editId) {
-            return {
-              ...modal.draft,
-              id: a.id,
-            };
-          }
-
-          if (modal.draft.isDefault) {
-            return {
-              ...a,
-              isDefault: false,
-            };
-          }
-
-          return a;
-        })
-      );
-    }
-
-    setModal(null);
-  };
-
-  const deleteAddr = (id: string) => {
-    setAddresses(a => a.filter(x => x.id !== id));
-    setConfirmDelete(null);
-  };
-
-  const setDefault = (id: string) =>
-    setAddresses(a => a.map(x => ({ ...x, isDefault: x.id === id })));
-
-  const updateDraft = (key: keyof Omit<Address, "id">) => (val: string | boolean) =>
-    setModal(m => {
-      if (!m) return null;
-      if (key === "province" && typeof val === "string") {
-        return { ...m, draft: { ...m.draft, province: val, city: "", postal: "" } };
+    void (async () => {
+      try {
+        const response = await fetchAccountAddresses();
+        if (!active) return;
+        setAddresses(response.data.map(mapAddress));
+      } catch (err) {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "Unable to load addresses.");
+        setAddresses([]);
+      } finally {
+        if (active) setLoading(false);
       }
-      if (key === "city" && typeof val === "string") {
-        const postal = (ADDRESS_LOCATIONS[m.draft.province] ?? []).find(loc => loc.name === val)?.postal ?? "";
-        return { ...m, draft: { ...m.draft, city: val, postal } };
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const selectedCityOptions = useMemo(() => modal?.draft.province ? ADDRESS_LOCATIONS[modal.draft.province] ?? [] : [], [modal?.draft.province]);
+
+  const openAdd = () => setModal({ id: null, draft: { ...BLANK_ADDRESS } });
+  const openEdit = (address: ReturnType<typeof mapAddress>) => setModal({
+    id: address.id,
+    draft: {
+      label: address.label,
+      recipient_name: address.name,
+      phone: address.phone,
+      line1: address.line1,
+      line2: address.line2,
+      city: address.city,
+      province: address.province,
+      postal_code: address.postal,
+      is_default: address.isDefault,
+    },
+  });
+  const updateDraft = (key: keyof AddressDraft) => (value: string | boolean) => {
+    setModal((current) => {
+      if (!current) return null;
+      if (key === "province" && typeof value === "string") {
+        return { ...current, draft: { ...current.draft, province: value, city: "", postal_code: "" } };
       }
-      return { ...m, draft: { ...m.draft, [key]: val } };
+      if (key === "city" && typeof value === "string") {
+        const postal_code = (ADDRESS_LOCATIONS[current.draft.province] ?? []).find(loc => loc.name === value)?.postal ?? "";
+        return { ...current, draft: { ...current.draft, city: value, postal_code } };
+      }
+      return { ...current, draft: { ...current.draft, [key]: value } };
     });
+  };
 
-  const selectedCityOptions = useMemo(() => {
-    if (!modal?.draft.province) return [];
-    return ADDRESS_LOCATIONS[modal.draft.province] ?? [];
-  }, [modal?.draft.province]);
+  const save = async () => {
+    if (!modal) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const payload = {
+        ...modal.draft,
+        line2: modal.draft.line2 || null,
+      };
+      const response = modal.id
+        ? await updateAccountAddress(modal.id, payload)
+        : await storeAccountAddress(payload);
+
+      setAddresses((current) => {
+        const next = current
+          .filter((address) => address.id !== response.data.id)
+          .map((address) => response.data.is_default ? { ...address, isDefault: false } : address);
+        return [...next, mapAddress(response.data)];
+      });
+      setModal(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save address.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (addressId: number) => {
+    setSaving(true);
+    setError(null);
+    try {
+      await removeAccountAddress(addressId);
+      const response = await fetchAccountAddresses();
+      setAddresses(response.data.map(mapAddress));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to remove address.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const makeDefault = async (address: ReturnType<typeof mapAddress>) => {
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await updateAccountAddress(address.id, {
+        label: address.label,
+        recipient_name: address.name,
+        phone: address.phone,
+        line1: address.line1,
+        line2: address.line2 || null,
+        city: address.city,
+        province: address.province,
+        postal_code: address.postal,
+        is_default: true,
+      });
+      setAddresses((current) => current.map((entry) => entry.id === address.id ? mapAddress(response.data) : { ...entry, isDefault: false }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to set the default address.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="bg-[var(--color-ground)] min-h-full p-6 max-w-screen-xl mx-auto text-sm text-[var(--color-ink-muted)]">Loading addresses...</div>;
+  }
 
   return (
     <div className="bg-[var(--color-ground)] min-h-full">
       <div className="max-w-screen-xl mx-auto px-4 md:px-8 lg:px-12 py-6">
-        <div className="flex items-center gap-2 mb-5">
-          <button className="font-[var(--font-mono)] text-[11px] text-[var(--color-ink-muted)] hover:text-[var(--color-navy)] cursor-pointer">Home</button>
-          <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" strokeWidth="1.3" className="text-[var(--color-ink-disabled)]">
-            <path d="M3 2l3 2.5-3 2.5" />
-          </svg>
-          <span className="font-[var(--font-mono)] text-[11px] text-[var(--color-ink)]">Addresses</span>
-        </div>
-
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="font-[var(--font-display)] text-2xl font-[400] text-[var(--color-ink)]">Saved Addresses</h1>
-            <p className="text-sm text-[var(--color-ink-muted)] mt-1">{addresses.length} of 5 addresses saved</p>
+            <p className="text-sm text-[var(--color-ink-muted)] mt-1">{addresses.length} address{addresses.length === 1 ? "" : "es"} loaded from the backend</p>
           </div>
-          <button
-            onClick={openAdd}
-            className="flex items-center gap-2 px-4 py-2.5 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] transition-colors cursor-pointer"
-          >
-            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-              <path d="M6 2v8M2 6h8" />
-            </svg>
+          <button onClick={openAdd} className="flex items-center gap-2 px-4 py-2.5 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] transition-colors cursor-pointer">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M6 2v8M2 6h8" /></svg>
             Add address
           </button>
         </div>
 
+        {error && (
+          <div className="mb-4 bg-[var(--color-red-light)] border border-[var(--color-red-border)] text-[var(--color-red)] text-sm rounded-sm px-4 py-3">
+            {error}
+          </div>
+        )}
+
         {addresses.length === 0 ? (
           <div className="bg-white border border-[var(--color-border)] rounded-sm p-16 text-center">
-            <svg width="48" height="48" viewBox="0 0 18 18" fill="none" stroke="var(--color-ink-muted)" strokeWidth="1.4" strokeLinecap="round" className="mx-auto mb-4">
-              <path d="M9 2C6.2 2 4 4.2 4 7c0 4 5 9 5 9s5-5 5-9c0-2.8-2.2-5-5-5z" />
-              <circle cx="9" cy="7" r="1.5" />
-            </svg>
             <p className="font-[var(--font-display)] text-lg font-[400] text-[var(--color-ink)] mb-1">No addresses yet</p>
             <p className="text-sm text-[var(--color-ink-muted)] mb-4">Add your first shipping address to speed up checkout.</p>
             <button onClick={openAdd} className="px-4 py-2.5 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] cursor-pointer">
@@ -281,118 +262,66 @@ export default function AddressesPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {addresses.map(addr => (
-              <div key={addr.id} className={`bg-white border rounded-sm p-5 relative ${addr.isDefault ? "border-[var(--color-navy)]" : "border-[var(--color-border)]"}`}>
+              <div key={addr.id} className={`bg-white border rounded-sm p-5 ${addr.isDefault ? "border-[var(--color-navy)]" : "border-[var(--color-border)]"}`}>
                 <div className="flex items-center gap-2 mb-3">
                   <span className="font-[var(--font-mono)] text-[10px] font-[500] px-2 py-0.5 rounded-sm bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-ink-muted)]">
                     {addr.label}
                   </span>
-                  {addr.isDefault && (
-                    <span className="font-[var(--font-mono)] text-[10px] font-[500] px-2 py-0.5 rounded-sm bg-[var(--color-navy)] text-white">
-                      Default
-                    </span>
-                  )}
+                  {addr.isDefault && <span className="font-[var(--font-mono)] text-[10px] font-[500] px-2 py-0.5 rounded-sm bg-[var(--color-navy)] text-white">Default</span>}
                 </div>
                 <p className="text-sm font-[600] text-[var(--color-ink)] mb-0.5">{addr.name}</p>
                 <p className="text-sm text-[var(--color-ink-muted)] leading-relaxed mb-0.5">{addr.line1}</p>
                 {addr.line2 && <p className="text-sm text-[var(--color-ink-muted)]">{addr.line2}</p>}
-                <p className="text-sm text-[var(--color-ink-muted)]">
-                  {addr.city}, {addr.province} {addr.postal}
-                </p>
+                <p className="text-sm text-[var(--color-ink-muted)]">{addr.city}, {addr.province} {addr.postal}</p>
                 <p className="text-sm text-[var(--color-ink-muted)] mt-0.5">{addr.phone}</p>
-
-                <div className="flex items-center gap-3 mt-4 pt-3 border-t border-[var(--color-border-subtle)]">
-                  <button onClick={() => openEdit(addr)} className="text-xs font-[500] text-[var(--color-navy)] hover:underline cursor-pointer">Edit</button>
-                  {!addr.isDefault && (
-                    <>
-                      <span className="text-[var(--color-border-strong)]">·</span>
-                      <button onClick={() => setDefault(addr.id)} className="text-xs font-[500] text-[var(--color-ink-muted)] hover:text-[var(--color-navy)] hover:underline cursor-pointer">Set as default</button>
-                    </>
-                  )}
-                  <span className="text-[var(--color-border-strong)]">·</span>
-                  <button onClick={() => setConfirmDelete(addr.id)} className="text-xs font-[500] text-[var(--color-red)] hover:underline cursor-pointer">Delete</button>
+                <div className="flex flex-wrap gap-3 mt-4 pt-3 border-t border-[var(--color-border-subtle)]">
+                  <button type="button" onClick={() => openEdit(addr)} className="text-xs font-[500] text-[var(--color-navy)]">Edit</button>
+                  {!addr.isDefault && <button type="button" onClick={() => void makeDefault(addr)} disabled={saving} className="text-xs font-[500] text-[var(--color-ink-muted)] disabled:opacity-50">Set default</button>}
+                  <button type="button" onClick={() => void remove(addr.id)} disabled={saving} className="text-xs font-[500] text-[var(--color-red)] disabled:opacity-50">Delete</button>
                 </div>
               </div>
             ))}
           </div>
         )}
       </div>
-      
-      {confirmDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="bg-white rounded-sm shadow-xl max-w-sm w-full p-6">
-            <h3 className="font-[var(--font-display)] text-lg font-[400] text-[var(--color-ink)] mb-2">Delete address?</h3>
-            <p className="text-sm text-[var(--color-ink-muted)] mb-5 leading-relaxed">This address will be permanently removed from your account.</p>
-            <div className="flex gap-3">
-              <button onClick={() => setConfirmDelete(null)} className="flex-1 py-2.5 border border-[var(--color-border)] text-sm font-[500] text-[var(--color-ink-muted)] rounded-sm hover:bg-[var(--color-surface)] cursor-pointer">Cancel</button>
-              <button onClick={() => deleteAddr(confirmDelete)} className="flex-1 py-2.5 bg-[var(--color-red)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-red-hover)] cursor-pointer">Delete</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-0 sm:px-4">
           <div className="bg-white rounded-t-sm sm:rounded-sm shadow-xl w-full sm:max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
-              <h3 className="font-[var(--font-display)] text-lg font-[400] text-[var(--color-ink)]">
-                {modal.mode === "add" ? "Add new address" : "Edit address"}
-              </h3>
+              <h3 className="font-[var(--font-display)] text-lg font-[400] text-[var(--color-ink)]">{modal.id ? "Edit address" : "Add new address"}</h3>
               <button onClick={() => setModal(null)} className="w-8 h-8 flex items-center justify-center text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-                  <path d="M2 2l10 10M12 2L2 12" />
-                </svg>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M2 2l10 10M12 2L2 12" /></svg>
               </button>
             </div>
             <div className="px-6 py-5 space-y-4">
               <SelectField label="Address type" value={modal.draft.label} onChange={updateDraft("label")} options={LABELS} />
-
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Full name" value={modal.draft.name} onChange={updateDraft("name") as (v: string) => void} placeholder="Ana Reyes" />
+                <Field label="Full name" value={modal.draft.recipient_name} onChange={updateDraft("recipient_name") as (v: string) => void} placeholder="Ana Reyes" />
                 <Field label="Phone number" value={modal.draft.phone} onChange={updateDraft("phone") as (v: string) => void} placeholder="+63 9XX XXX XXXX" />
               </div>
               <Field label="Address line 1" value={modal.draft.line1} onChange={updateDraft("line1") as (v: string) => void} placeholder="Street / Building / House no." />
               <Field label="Address line 2 (optional)" value={modal.draft.line2} onChange={updateDraft("line2") as (v: string) => void} placeholder="Subdivision / Barangay" />
               <div className="grid grid-cols-2 gap-3">
-                <SelectField
-                  label="Province / Region"
-                  value={modal.draft.province}
-                  onChange={updateDraft("province") as (v: string) => void}
-                  options={ADDRESS_REGIONS}
-                  placeholder="Select province / region"
-                />
+                <SelectField label="Province / Region" value={modal.draft.province} onChange={updateDraft("province") as (v: string) => void} options={ADDRESS_REGIONS} placeholder="Select province / region" />
                 <div>
                   <label className="block text-xs font-[600] text-[var(--color-ink)] mb-1.5">City / Municipality</label>
                   <select
                     value={modal.draft.city}
                     onChange={e => updateDraft("city")(e.target.value)}
                     disabled={!modal.draft.province}
-                    className="w-full px-3.5 py-2.5 text-sm border border-[var(--color-border)] rounded-sm bg-white text-[var(--color-ink)] outline-none focus:border-[var(--color-navy)] focus:ring-2 focus:ring-[var(--color-navy)]/10 cursor-pointer transition-all disabled:bg-[var(--color-surface)] disabled:text-[var(--color-ink-disabled)]"
-                  >
+                    className="w-full px-3.5 py-2.5 text-sm border border-[var(--color-border)] rounded-sm bg-white text-[var(--color-ink)] outline-none focus:border-[var(--color-navy)] focus:ring-2 focus:ring-[var(--color-navy)]/10 cursor-pointer transition-all disabled:bg-[var(--color-surface)] disabled:text-[var(--color-ink-disabled)]">
                     <option value="">{modal.draft.province ? "Select city / municipality" : "Select province first"}</option>
-                    {selectedCityOptions.map(city => (
-                      <option key={city.name} value={city.name}>
-                        {city.name}
-                      </option>
-                    ))}
+                    {selectedCityOptions.map(city => <option key={city.name} value={city.name}>{city.name}</option>)}
                   </select>
                 </div>
               </div>
-              <Field label="Postal code" value={modal.draft.postal} onChange={updateDraft("postal") as (v: string) => void} placeholder="Auto-filled" readOnly />
-
-              <label className="flex items-center gap-3 cursor-pointer py-2">
-                <button
-                  onClick={() => updateDraft("isDefault")(!modal.draft.isDefault)}
-                  className={`w-10 h-5 rounded-full relative transition-colors ${modal.draft.isDefault ? "bg-[var(--color-navy)]" : "bg-[var(--color-border-strong)]"}`}
-                >
-                  <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${modal.draft.isDefault ? "left-5" : "left-0.5"}`} />
-                </button>
-                <span className="text-sm text-[var(--color-ink)]">Set as default shipping address</span>
-              </label>
+              <Field label="Postal code" value={modal.draft.postal_code} onChange={updateDraft("postal_code") as (v: string) => void} placeholder="Auto-filled" readOnly />
             </div>
             <div className="sticky bottom-0 bg-white flex gap-3 px-6 py-4 border-t border-[var(--color-border)]">
               <button onClick={() => setModal(null)} className="flex-1 py-2.5 border border-[var(--color-border)] text-sm font-[500] text-[var(--color-ink-muted)] rounded-sm hover:bg-[var(--color-surface)] cursor-pointer">Cancel</button>
-              <button onClick={save} className="flex-1 py-2.5 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] cursor-pointer">
-                {modal.mode === "add" ? "Save address" : "Update address"}
+              <button onClick={save} disabled={saving} className="flex-1 py-2.5 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] cursor-pointer disabled:opacity-60">
+                {saving ? "Saving..." : "Save address"}
               </button>
             </div>
           </div>

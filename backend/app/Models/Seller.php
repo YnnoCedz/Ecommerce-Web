@@ -44,7 +44,26 @@ class Seller extends Model
         'payout_schedule',
         'bank_name',
         'account_name',
+        'account_type',
+        'bank_account_number',
+        'gcash_number',
+        'maya_number',
         'account_number_last4',
+        'operating_hours',
+        'return_policy',
+        'shipping_policy',
+        'privacy_policy',
+        'brand_colors',
+    ];
+
+    protected $casts = [
+        'verified' => 'boolean',
+        'response_rate' => 'decimal:2',
+        'follower_count' => 'integer',
+        'product_count' => 'integer',
+        'joined_year' => 'integer',
+        'operating_hours' => 'array',
+        'brand_colors' => 'array',
     ];
 
     public function user()
