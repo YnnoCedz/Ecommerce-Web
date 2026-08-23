@@ -30,15 +30,17 @@ RUN composer install \
     --no-scripts
 
 COPY . .
-RUN rm -f bootstrap/cache/*.php \
-    && composer dump-autoload --optimize --no-dev
+
 RUN mkdir -p \
+    bootstrap/cache \
     storage/framework/cache \
     storage/framework/sessions \
     storage/framework/views \
     storage/logs \
-    bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache
+
+RUN rm -f bootstrap/cache/*.php \
+    && composer dump-autoload --optimize --no-dev
 
 EXPOSE 10000
 
