@@ -15,4 +15,13 @@ class ReportAttachment extends Model
         'mime_type',
         'file_size',
     ];
+
+    protected $casts = [
+        'file_size' => 'integer',
+    ];
+
+    public function report()
+    {
+        return $this->belongsTo(Report::class);
+    }
 }

@@ -14,6 +14,10 @@ class TrackingEvent extends Model
         'occurred_at',
     ];
 
+    protected $casts = [
+        'occurred_at' => 'datetime',
+    ];
+
     public function shipment()
     {
         return $this->belongsTo(Shipment::class);

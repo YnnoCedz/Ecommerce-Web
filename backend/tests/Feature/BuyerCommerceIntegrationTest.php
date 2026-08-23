@@ -134,7 +134,7 @@ class BuyerCommerceIntegrationTest extends TestCase
         $this->assertDatabaseHas('payments', [
             'order_id' => $orderId,
             'method' => 'cod',
-            'status' => 'pending',
+            'status' => 'unpaid',
         ]);
         $this->assertDatabaseHas('products', ['id' => $firstProduct->id, 'stock_quantity' => 3]);
         $this->assertDatabaseHas('products', ['id' => $secondProduct->id, 'stock_quantity' => 7]);
@@ -222,6 +222,38 @@ class BuyerCommerceIntegrationTest extends TestCase
         ]);
         $this->assertDatabaseHas('product_variants', ['id' => $variant->id, 'stock_quantity' => 1]);
         $this->assertDatabaseHas('products', ['id' => $product->id, 'stock_quantity' => 99]);
+    }
+
+    public function test_checkout_rolls_back_every_item_when_one_product_or_seller_is_inactive(): void
+    {
+        $buyer = User::factory()->create();
+        $address = Address::create(['user_id' => $buyer->id, ...$this->addressPayload(), 'is_default' => true]);
+        $available = $this->product('rollback-available', 400, 4);
+        $unavailable = $this->product('rollback-unavailable', 600, 6);
+        $unavailable->seller->user->update(['status' => 'suspended']);
+        $cart = Cart::create(['user_id' => $buyer->id, 'status' => 'active']);
+
+        foreach ([$available, $unavailable] as $product) {
+            CartItem::create([
+                'cart_id' => $cart->id,
+                'seller_id' => $product->seller_id,
+                'product_id' => $product->id,
+                'quantity' => 1,
+                'unit_price' => 1,
+                'line_total' => 1,
+                'saved_for_later' => false,
+            ]);
+        }
+
+        $this->actingAs($buyer)->postJson('/api/checkout', [
+            'address_id' => $address->id,
+            'payment_method' => 'cod',
+        ])->assertUnprocessable();
+
+        $this->assertDatabaseCount('orders', 0);
+        $this->assertDatabaseHas('products', ['id' => $available->id, 'stock_quantity' => 4]);
+        $this->assertDatabaseHas('products', ['id' => $unavailable->id, 'stock_quantity' => 6]);
+        $this->assertDatabaseCount('cart_items', 2);
     }
 
     private function addressPayload(): array

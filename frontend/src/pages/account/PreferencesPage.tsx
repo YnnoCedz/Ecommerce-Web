@@ -1,73 +1,48 @@
-function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="bg-white border border-[var(--color-border)] rounded-sm overflow-hidden shadow-[0_1px_10px_rgba(28,27,24,0.04)]">
-      <div className="px-6 py-4 border-b border-[var(--color-border)]">
-        <h3 className="text-sm font-[600] text-[var(--color-ink)]">{title}</h3>
-      </div>
-      <div className="px-6 py-5">{children}</div>
-    </div>
-  );
-}
+import { useEffect, useState } from "react";
+import { fetchAccountPreferences, updateAccountPreferences, type AccountPreferences } from "../../api/account";
+import { useToast } from "../../components/ToastProvider";
 
-function PrefRow({ label, description, value }: { label: string; description?: string; value: React.ReactNode }) {
-  return (
-    <div className="flex items-start justify-between gap-6 py-4 border-b border-[var(--color-border-subtle)] last:border-0">
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-[500] text-[var(--color-ink)]">{label}</p>
-        {description && <p className="text-xs text-[var(--color-ink-muted)] mt-0.5 leading-relaxed">{description}</p>}
-      </div>
-      <div className="shrink-0 text-sm text-[var(--color-ink-muted)]">{value}</div>
-    </div>
-  );
+const defaults: AccountPreferences = { language: "en-PH", currency: "PHP", number_format: "1,000.00", recommendations_enabled: true, recently_viewed_enabled: true, price_drop_alerts_enabled: true, analytics_cookies_enabled: true, marketing_cookies_enabled: false };
+
+function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (checked: boolean) => void; label: string }) {
+  return <button type="button" role="switch" aria-checked={checked} aria-label={label} onClick={() => onChange(!checked)} className={`flex h-6 w-11 items-center rounded-full p-0.5 transition-colors ${checked ? "bg-[var(--color-navy)]" : "bg-[var(--color-border)]"}`}><span className={`h-5 w-5 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-5" : ""}`} /></button>;
 }
 
 export default function PreferencesPage() {
+  const { showToast } = useToast();
+  const [prefs, setPrefs] = useState<AccountPreferences>(defaults);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { void fetchAccountPreferences().then((response) => setPrefs(response.data)).catch((error) => showToast({ kind: "error", title: "Preferences unavailable", message: error instanceof Error ? error.message : "Please try again." })).finally(() => setLoading(false)); }, [showToast]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const response = await updateAccountPreferences(prefs);
+      setPrefs(response.data);
+      showToast({ title: "Preferences saved", message: response.message });
+    } catch (error) {
+      showToast({ kind: "error", title: "Preferences not saved", message: error instanceof Error ? error.message : "Please try again." });
+    } finally { setSaving(false); }
+  };
+
+  const booleanRow = (key: keyof AccountPreferences, label: string, description: string) => (
+    <div className="flex items-center justify-between gap-5 border-b border-[var(--color-border-subtle)] py-4 last:border-0"><div><p className="text-sm font-[500]">{label}</p><p className="mt-0.5 text-xs text-[var(--color-ink-muted)]">{description}</p></div><Toggle label={label} checked={Boolean(prefs[key])} onChange={(checked) => setPrefs({ ...prefs, [key]: checked })} /></div>
+  );
+
   return (
-    <div className="bg-[var(--color-ground)] min-h-full">
-      <div className="max-w-screen-xl mx-auto px-4 md:px-8 lg:px-12 py-6 space-y-5">
-        <div className="flex items-center gap-2 mb-5">
-          <span className="font-[var(--font-mono)] text-[11px] text-[var(--color-ink-muted)]">Home</span>
-          <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" strokeWidth="1.3" className="text-[var(--color-ink-disabled)]">
-            <path d="M3 2l3 2.5-3 2.5" />
-          </svg>
-          <span className="font-[var(--font-mono)] text-[11px] text-[var(--color-ink)]">Preferences</span>
-        </div>
-
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h1 className="font-[var(--font-display)] text-2xl font-[400] text-[var(--color-ink)]">Preferences</h1>
-            <p className="text-sm text-[var(--color-ink-muted)] mt-1">
-              These values are currently UI-only. The backend does not yet store account preference records.
-            </p>
-          </div>
-        </div>
-
-        <div className="bg-[var(--color-warning-light)] border border-[var(--color-warning-border)] rounded-sm px-4 py-3 text-sm text-[var(--color-warning)]">
-          We removed the fake save confirmation so this page no longer pretends preferences are persisted server-side.
-        </div>
-
-        <SectionCard title="Display">
-          <PrefRow label="Theme" value="Light" description="Theme selection is currently local to the UI." />
-          <PrefRow label="Display density" value="Comfortable" description="Density changes are not persisted yet." />
-        </SectionCard>
-
-        <SectionCard title="Language & Region">
-          <PrefRow label="Language" value="English (Philippines)" />
-          <PrefRow label="Currency" value="PHP - Philippine Peso" description="Currency formatting follows the frontend defaults." />
-          <PrefRow label="Number format" value="1,000.00" />
-        </SectionCard>
-
-        <SectionCard title="Shopping Preferences">
-          <PrefRow label="Personalized recommendations" value="Enabled" />
-          <PrefRow label="Recently viewed" value="Enabled" />
-          <PrefRow label="Price drop alerts" value="Enabled" />
-        </SectionCard>
-
-        <SectionCard title="Privacy & Data">
-          <PrefRow label="Analytics cookies" value="Enabled" />
-          <PrefRow label="Marketing cookies" value="Disabled" />
-        </SectionCard>
-      </div>
+    <div className="mx-auto max-w-screen-xl px-4 py-6 md:px-8 lg:px-12">
+      <div className="mb-5 flex items-end justify-between gap-4"><div><h1 className="font-[var(--font-display)] text-2xl">Preferences</h1><p className="mt-1 text-sm text-[var(--color-ink-muted)]">Your choices are saved to your account in the database.</p></div><button onClick={() => void save()} disabled={loading || saving} className="rounded-sm bg-[var(--color-navy)] px-5 py-2.5 text-sm font-[500] text-white disabled:opacity-50">{saving ? "Saving..." : "Save preferences"}</button></div>
+      {loading ? <div className="rounded-sm border border-[var(--color-border)] bg-white p-8 text-sm text-[var(--color-ink-muted)]">Loading preferences...</div> : <div className="space-y-5">
+        <section className="rounded-sm border border-[var(--color-border)] bg-white p-6"><h2 className="mb-4 text-sm font-[600]">Language and region</h2><div className="grid gap-4 md:grid-cols-3">
+          <label className="text-sm">Language<select value={prefs.language} onChange={(e) => setPrefs({ ...prefs, language: e.target.value as AccountPreferences["language"] })} className="mt-1.5 w-full rounded-sm border border-[var(--color-border)] px-3 py-2.5"><option value="en-PH">English (Philippines)</option><option value="fil-PH">Filipino</option><option value="ceb-PH">Cebuano</option></select></label>
+          <label className="text-sm">Currency<select value={prefs.currency} disabled className="mt-1.5 w-full rounded-sm border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5"><option value="PHP">PHP - Philippine Peso</option></select></label>
+          <label className="text-sm">Number format<select value={prefs.number_format} onChange={(e) => setPrefs({ ...prefs, number_format: e.target.value as AccountPreferences["number_format"] })} className="mt-1.5 w-full rounded-sm border border-[var(--color-border)] px-3 py-2.5"><option value="1,000.00">1,000.00</option><option value="1.000,00">1.000,00</option></select></label>
+        </div></section>
+        <section className="rounded-sm border border-[var(--color-border)] bg-white px-6 py-2"><h2 className="pt-4 text-sm font-[600]">Shopping</h2>{booleanRow("recommendations_enabled", "Personalized recommendations", "Use your shopping activity to improve product suggestions.")}{booleanRow("recently_viewed_enabled", "Recently viewed", "Keep a history of products you recently opened.")}{booleanRow("price_drop_alerts_enabled", "Price drop alerts", "Allow alerts for saved products whose prices change.")}</section>
+        <section className="rounded-sm border border-[var(--color-border)] bg-white px-6 py-2"><h2 className="pt-4 text-sm font-[600]">Privacy and data</h2>{booleanRow("analytics_cookies_enabled", "Analytics cookies", "Help improve Maketo using aggregated usage data.")}{booleanRow("marketing_cookies_enabled", "Marketing cookies", "Allow personalized marketing measurement.")}</section>
+      </div>}
     </div>
   );
 }

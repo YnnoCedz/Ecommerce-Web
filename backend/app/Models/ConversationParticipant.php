@@ -16,6 +16,13 @@ class ConversationParticipant extends Model
         'archived',
     ];
 
+    protected $casts = [
+        'unread_count' => 'integer',
+        'last_read_at' => 'datetime',
+        'muted' => 'boolean',
+        'archived' => 'boolean',
+    ];
+
     public function conversation()
     {
         return $this->belongsTo(Conversation::class);

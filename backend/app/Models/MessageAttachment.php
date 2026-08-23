@@ -16,4 +16,11 @@ class MessageAttachment extends Model
         'file_size',
         'kind',
     ];
+
+    protected $casts = ['file_size' => 'integer'];
+
+    public function message()
+    {
+        return $this->belongsTo(Message::class);
+    }
 }

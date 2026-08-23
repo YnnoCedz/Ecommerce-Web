@@ -31,10 +31,13 @@ function buildNavFn(navigate: ReturnType<typeof useNavigate>): NavFn {
       case "wishlist":       return navigate("/account/wishlist");
       case "messages":       return navigate("/account/messages");
       case "profile":        return navigate("/account/profile");
+      case "personal-info":  return navigate("/account/personal-info");
       case "buyer-dashboard":return navigate("/account/profile");
       case "security":       return navigate("/account/security");
       case "addresses":      return navigate("/account/addresses");
       case "notifications":  return navigate("/account/notifications");
+      case "preferences":    return navigate("/account/preferences");
+      case "reviews":        return navigate("/account/reviews");
       default:               return navigate("/");
     }
   };

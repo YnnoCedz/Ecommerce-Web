@@ -6,6 +6,8 @@ const NAV_ROUTES: Record<string, string> = {
   products:      "/seller-center/products",
   inventory:     "/seller-center/inventory",
   orders:        "/seller-center/orders",
+  returns:       "/seller-center/returns",
+  reviews:       "/seller-center/reviews",
   customers:     "/seller-center/customers",
   promotions:    "/seller-center/promotions",
   analytics:     "/seller-center/analytics",

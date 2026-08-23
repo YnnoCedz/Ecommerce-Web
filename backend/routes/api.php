@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AccountController;
+use App\Http\Controllers\Api\AdminDisputeController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\CatalogController;
@@ -8,6 +9,7 @@ use App\Http\Controllers\Api\CommerceController;
 use App\Http\Controllers\Api\HealthController;
 use App\Http\Controllers\Api\ModerationController;
 use App\Http\Controllers\Api\MessagingController;
+use App\Http\Controllers\Api\OrderResolutionController;
 use App\Http\Controllers\Api\SellerApplicationController;
 use App\Http\Controllers\Api\SellerController;
 use Illuminate\Support\Facades\Route;
@@ -31,11 +33,15 @@ Route::get('/categories', [CatalogController::class, 'categories']);
 Route::get('/search', [CatalogController::class, 'search']);
 Route::get('/search/suggestions', [CatalogController::class, 'searchSuggestions'])->middleware('throttle:60,1');
 Route::get('/products', [CatalogController::class, 'products']);
+Route::get('/products/{slug}/reviews', [CatalogController::class, 'productReviews']);
 Route::get('/products/{slug}', [CatalogController::class, 'product']);
 Route::get('/sellers', [CatalogController::class, 'sellers']);
 Route::get('/sellers/{slug}', [CatalogController::class, 'seller']);
 
 Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
+    Route::patch('/account/profile', [AccountController::class, 'updateProfile']);
+    Route::get('/account/preferences', [AccountController::class, 'preferences']);
+    Route::patch('/account/preferences', [AccountController::class, 'updatePreferences']);
     Route::get('/account/addresses', [AccountController::class, 'addresses']);
     Route::post('/account/addresses', [AccountController::class, 'storeAddress']);
     Route::patch('/account/addresses/{addressId}', [AccountController::class, 'updateAddress']);
@@ -51,10 +57,25 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
     Route::post('/checkout', [CommerceController::class, 'checkout']);
     Route::get('/orders', [CommerceController::class, 'orders']);
     Route::get('/orders/{orderNumber}', [CommerceController::class, 'order']);
+    Route::post('/orders/{orderNumber}/seller-orders/{sellerOrder}/complete', [CommerceController::class, 'completeSellerOrder']);
+    Route::post('/orders/{orderNumber}/payments/retry', [CommerceController::class, 'retryPayment']);
+    Route::post('/orders/{orderNumber}/seller-orders/{sellerOrder}/cancel', [OrderResolutionController::class, 'cancel']);
+    Route::post('/orders/{orderNumber}/seller-orders/{sellerOrder}/returns', [OrderResolutionController::class, 'storeReturn']);
+    Route::get('/returns', [OrderResolutionController::class, 'buyerReturns']);
+    Route::post('/returns/{returnRequest}/dispute', [OrderResolutionController::class, 'escalate']);
+    Route::get('/return-evidence/{evidence}', [OrderResolutionController::class, 'evidence']);
     Route::get('/messages', [MessagingController::class, 'index']);
     Route::post('/messages', [MessagingController::class, 'store']);
+    Route::post('/messages/conversations', [MessagingController::class, 'start']);
+    Route::get('/messages/attachments/{attachment}', [MessagingController::class, 'attachment']);
+    Route::get('/messages/{conversation}', [MessagingController::class, 'show']);
+    Route::post('/messages/{conversation}', [MessagingController::class, 'send']);
+    Route::patch('/messages/{conversation}/read', [MessagingController::class, 'markRead']);
     Route::get('/reviews', [CommerceController::class, 'reviews']);
+    Route::get('/reviews/eligible', [CommerceController::class, 'eligibleReviews']);
     Route::post('/reviews', [CommerceController::class, 'storeReview']);
+    Route::patch('/reviews/{review}', [CommerceController::class, 'updateReview']);
+    Route::delete('/reviews/{review}', [CommerceController::class, 'destroyReview']);
     Route::get('/reports', [ModerationController::class, 'reports']);
     Route::post('/reports', [ModerationController::class, 'storeReport']);
     Route::get('/notifications', [ModerationController::class, 'notifications']);
@@ -75,6 +96,13 @@ Route::prefix('seller')
     Route::get('/me', [SellerController::class, 'me']);
     Route::patch('/me', [SellerController::class, 'updateMe']);
     Route::get('/orders', [SellerController::class, 'orders']);
+    Route::patch('/orders/{sellerOrder}/status', [SellerController::class, 'updateOrderStatus']);
+    Route::post('/orders/{sellerOrder}/cancel', [OrderResolutionController::class, 'sellerCancel']);
+    Route::get('/reviews', [SellerController::class, 'reviews']);
+    Route::post('/reviews/{review}/reply', [SellerController::class, 'replyToReview']);
+    Route::delete('/reviews/{review}/reply', [SellerController::class, 'destroyReviewReply']);
+    Route::get('/returns', [OrderResolutionController::class, 'sellerReturns']);
+    Route::patch('/returns/{returnRequest}', [OrderResolutionController::class, 'updateReturn']);
     Route::get('/products', [SellerController::class, 'products']);
     Route::get('/products/{product}', [SellerController::class, 'show']);
     Route::post('/products', [SellerController::class, 'store']);
@@ -97,5 +125,12 @@ Route::prefix('admin')
     Route::post('/seller-applications/{sellerApplication}/approve', [SellerApplicationController::class, 'approve']);
     Route::post('/seller-applications/{sellerApplication}/reject', [SellerApplicationController::class, 'reject']);
     Route::get('/seller-documents/{sellerDocument}/view', [SellerApplicationController::class, 'viewDocument']);
-    Route::get('/reports', [AdminController::class, 'reports']);
+    Route::get('/reports', [ModerationController::class, 'adminReports']);
+    Route::get('/reports/{report}', [ModerationController::class, 'adminReport']);
+    Route::patch('/reports/{report}', [ModerationController::class, 'updateReport']);
+    Route::get('/reports/{report}/attachments/{attachment}', [ModerationController::class, 'reportAttachment']);
+    Route::get('/disputes', [AdminDisputeController::class, 'index']);
+    Route::get('/disputes/{dispute}', [AdminDisputeController::class, 'show']);
+    Route::patch('/disputes/{dispute}/resolve', [AdminDisputeController::class, 'resolve']);
+    Route::get('/disputes/{dispute}/evidence/{evidence}', [AdminDisputeController::class, 'evidence']);
 });

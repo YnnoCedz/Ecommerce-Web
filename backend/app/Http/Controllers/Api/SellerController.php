@@ -4,11 +4,15 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\MediaStorageService;
+use App\Services\NotificationService;
+use App\Services\OrderLifecycleService;
 use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\ProductImage;
 use App\Models\ProductVariant;
 use App\Models\Promotion;
+use App\Models\Review;
+use App\Models\ReviewReply;
 use App\Models\Seller;
 use App\Models\SellerOrder;
 use Carbon\Carbon;
@@ -23,6 +27,12 @@ use Illuminate\Validation\Rule;
 
 class SellerController extends Controller
 {
+    public function __construct(
+        private readonly OrderLifecycleService $orderLifecycle,
+        private readonly NotificationService $notifications,
+    ) {
+    }
+
     public function dashboard(Request $request): JsonResponse
     {
         $seller = $request->user()->seller;
@@ -51,7 +61,7 @@ class SellerController extends Controller
             ->get();
 
         $sellerOrders = SellerOrder::query()
-            ->with(['order.items.product.images', 'order.buyer', 'shipment'])
+            ->with(['order.items.product.images', 'order.buyer', 'shipment.trackingEvents'])
             ->where('seller_id', $seller->id)
             ->get();
 
@@ -62,13 +72,13 @@ class SellerController extends Controller
             'archived_products' => $products->where('status', 'archived')->count(),
             'low_stock_products' => $products->filter(fn (Product $product) => (bool) $product->track_inventory && (int) $product->stock_quantity > 0 && (int) $product->stock_quantity <= (int) ($product->low_stock_threshold ?? 10))->count(),
             'out_of_stock_products' => $products->filter(fn (Product $product) => (bool) $product->track_inventory && (int) $product->stock_quantity <= 0)->count(),
-            'pending_orders' => $sellerOrders->where('status', 'new')->count(),
+            'pending_orders' => $sellerOrders->whereIn('status', ['pending', 'new'])->count(),
             'processing_orders' => $sellerOrders->whereIn('status', ['confirmed', 'preparing', 'ready'])->count(),
             'shipped_orders' => $sellerOrders->whereIn('status', ['picked-up', 'in-transit', 'shipped'])->count(),
             'completed_orders' => $sellerOrders->whereIn('status', ['delivered', 'completed'])->count(),
             'cancelled_orders' => $sellerOrders->whereIn('status', ['cancelled', 'failed'])->count(),
             'total_sales' => (float) $sellerOrders->sum('grand_total'),
-            'pending_sales' => (float) $sellerOrders->where('status', 'new')->sum('grand_total'),
+            'pending_sales' => (float) $sellerOrders->whereIn('status', ['pending', 'new'])->sum('grand_total'),
             'orders_count' => $sellerOrders->count(),
             'promotions_count' => Promotion::where('seller_id', $seller->id)->count(),
             'recent_activity' => $sellerOrders->sortByDesc('updated_at')->take(5)->values()->all(),
@@ -532,7 +542,7 @@ class SellerController extends Controller
         }
 
         $orders = SellerOrder::query()
-            ->with(['order.items.product.images', 'order.buyer', 'shipment'])
+            ->with(['order.items.product.images', 'order.buyer', 'shipment.trackingEvents'])
             ->where('seller_id', $seller->id)
             ->latest('id')
             ->limit(50)
@@ -543,6 +553,119 @@ class SellerController extends Controller
         return response()->json([
             'data' => $orders,
         ]);
+    }
+
+    public function updateOrderStatus(Request $request, SellerOrder $sellerOrder): JsonResponse
+    {
+        $seller = $request->user()->seller;
+        if (! $seller || $sellerOrder->seller_id !== $seller->id) {
+            return response()->json(['message' => 'Order not found.'], 404);
+        }
+
+        $data = $request->validate([
+            'status' => ['required', 'in:confirmed,preparing,ready,in-transit,delivered'],
+            'tracking_number' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        $updated = $this->orderLifecycle->transitionBySeller(
+            $sellerOrder,
+            $seller->id,
+            $data['status'],
+            $data['tracking_number'] ?? null,
+        );
+
+        return response()->json([
+            'message' => 'Order status updated.',
+            'data' => $this->sellerOrderPayload($updated),
+        ]);
+    }
+
+    public function replyToReview(Request $request, Review $review): JsonResponse
+    {
+        $seller = $request->user()->seller;
+        if (! $seller || $review->seller_id !== $seller->id) {
+            return response()->json(['message' => 'Review not found.'], 404);
+        }
+
+        $data = $request->validate([
+            'body' => ['required', 'string', 'max:3000'],
+        ]);
+
+        $reply = ReviewReply::query()->updateOrCreate(
+            ['review_id' => $review->id],
+            [
+                'seller_id' => $seller->id,
+                'body' => trim($data['body']),
+                'replied_at' => now(),
+            ],
+        );
+
+        if ($review->user) {
+            $this->notifications->publishToUser($review->user, [
+                'category' => 'review',
+                'title' => 'Seller replied to your review',
+                'body' => 'The seller replied to your review of '.($review->product?->name ?? 'a product').'.',
+                'action_type' => 'product',
+                'action_label' => 'View product',
+                'product_id' => $review->product_id,
+                'order_id' => $review->order_id,
+            ]);
+        }
+
+        return response()->json([
+            'message' => 'Reply saved.',
+            'data' => [
+                'id' => $reply->id,
+                'review_id' => $reply->review_id,
+                'body' => $reply->body,
+                'replied_at' => optional($reply->replied_at)->toISOString(),
+            ],
+        ]);
+    }
+
+    public function reviews(Request $request): JsonResponse
+    {
+        $seller = $request->user()->seller;
+        $reviews = Review::query()
+            ->where('seller_id', $seller->id)
+            ->with(['user', 'product.images', 'orderItem', 'reply'])
+            ->latest('submitted_at')
+            ->latest('id')
+            ->get()
+            ->map(function (Review $review) {
+                $firstName = $review->user?->first_name ?: str($review->user?->name)->before(' ')->toString();
+                $lastInitial = $review->user?->last_name ? mb_substr($review->user->last_name, 0, 1).'.' : '';
+
+                return [
+                    'id' => $review->id,
+                    'product_id' => $review->product_id,
+                    'product_name' => $review->orderItem?->product_name ?? $review->product?->name,
+                    'product_image' => $review->product?->images?->sortBy('sort_order')->first()?->file_path,
+                    'buyer_name' => trim($firstName.' '.$lastInitial),
+                    'rating' => (int) $review->rating,
+                    'title' => $review->title,
+                    'body' => $review->body,
+                    'status' => $review->status,
+                    'verified_purchase' => $review->order_item_id !== null,
+                    'submitted_at' => optional($review->submitted_at)->toISOString(),
+                    'reply' => $review->reply ? [
+                        'id' => $review->reply->id,
+                        'body' => $review->reply->body,
+                        'replied_at' => optional($review->reply->replied_at)->toISOString(),
+                    ] : null,
+                ];
+            })->values();
+
+        return response()->json(['data' => $reviews]);
+    }
+
+    public function destroyReviewReply(Request $request, Review $review): JsonResponse
+    {
+        $seller = $request->user()->seller;
+        abort_unless($seller && $review->seller_id === $seller->id, 404);
+        $review->reply()->where('seller_id', $seller->id)->delete();
+
+        return response()->json(['message' => 'Reply removed.']);
     }
 
     public function products(Request $request): JsonResponse
@@ -734,6 +857,15 @@ class SellerController extends Controller
             'ready_at' => optional($sellerOrder->ready_at)->toISOString(),
             'picked_up_at' => optional($sellerOrder->picked_up_at)->toISOString(),
             'delivered_at' => optional($sellerOrder->delivered_at)->toISOString(),
+            'completed_at' => optional($sellerOrder->completed_at)->toISOString(),
+            'next_status' => match ($sellerOrder->status) {
+                'pending', 'new' => 'confirmed',
+                'confirmed' => 'preparing',
+                'preparing' => 'ready',
+                'ready' => 'in-transit',
+                'in-transit' => 'delivered',
+                default => null,
+            },
             'placed_at' => optional($order?->placed_at)->toISOString(),
             'buyer' => $order?->buyer ? [
                 'id' => $order->buyer->id,
@@ -756,6 +888,13 @@ class SellerController extends Controller
                 'tracking' => $sellerOrder->shipment->tracking_number,
                 'driver' => $sellerOrder->shipment->driver_name,
                 'status' => $sellerOrder->shipment->status,
+                'events' => $sellerOrder->shipment->relationLoaded('trackingEvents')
+                    ? $sellerOrder->shipment->trackingEvents->sortByDesc('occurred_at')->map(fn ($event) => [
+                        'status' => $event->status,
+                        'note' => $event->note,
+                        'occurred_at' => optional($event->occurred_at)->toISOString(),
+                    ])->values()->all()
+                    : [],
             ] : null,
             'items' => $order?->items
                 ? $order->items
@@ -768,7 +907,7 @@ class SellerController extends Controller
                         'quantity' => (int) $item->quantity,
                         'unit_price' => (float) $item->unit_price,
                         'subtotal' => (float) $item->subtotal,
-                        'image' => $item->product?->images?->first()?->file_path,
+                        'image' => $item->product_image_storage_path ?? $item->product?->images?->first()?->file_path,
                     ])->values()->all()
                 : [],
         ];

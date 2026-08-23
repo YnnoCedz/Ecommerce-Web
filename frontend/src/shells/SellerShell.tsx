@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
+import { RotateCcw, Star } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import {
   dismissNotification,
@@ -8,8 +9,8 @@ import {
   markNotificationRead,
   type NotificationRecord,
 } from "../api/notifications";
-import { fetchSellerDashboard } from "../api/seller";
-import { CONVOS } from "../pages/messaging/MessagingPage";
+import { fetchSellerDashboard, fetchSellerProfile, type SellerProfile } from "../api/seller";
+import { fetchConversations } from "../api/account";
 import ConfirmDialog from "../components/ConfirmDialog";
 import {
   IconDashboard, IconProducts, IconInventory, IconOrders, IconCustomers,
@@ -31,10 +32,6 @@ type BadgeCounts = {
   messages: number;
   notifications: number;
 };
-
-const getSellerMessageCount = () =>
-  CONVOS.filter((conversation) => conversation.participants.some((participant) => participant.type === "seller"))
-    .reduce((total, conversation) => total + conversation.unread, 0);
 
 function formatRelativeTime(value: string | null) {
   if (!value) return "Just now";
@@ -82,6 +79,8 @@ const NAV_ITEMS: NavItem[] = [
   { id: "products",      label: "Products",     icon: IconProducts },
   { id: "inventory",     label: "Inventory",    icon: IconInventory },
   { id: "orders",        label: "Orders",       icon: IconOrders,     badgeKey: "orders" },
+  { id: "returns",       label: "Returns",      icon: RotateCcw },
+  { id: "reviews",       label: "Reviews",      icon: Star },
   { id: "customers",     label: "Customers",    icon: IconCustomers },
   { id: "promotions",    label: "Promotions",   icon: IconPromotions },
   { id: "analytics",     label: "Analytics",    icon: IconAnalytics },
@@ -106,13 +105,14 @@ interface SellerShellProps {
 export default function SellerShell({
   children,
   activeNav = "dashboard",
-  storeName = "Artisan Goods Co.",
-  storeCategory = "Home and Garden",
-  storeInitials = "AG",
+  storeName,
+  storeCategory,
+  storeInitials,
   onNavChange,
 }: SellerShellProps) {
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
+  const [sellerProfile, setSellerProfile] = useState<SellerProfile | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [activeItem, setActiveItem] = useState(activeNav);
@@ -121,10 +121,11 @@ export default function SellerShell({
   const [notificationsBusyId, setNotificationsBusyId] = useState<number | null>(null);
   const [badgeCounts, setBadgeCounts] = useState<BadgeCounts>({
     orders: 0,
-    messages: getSellerMessageCount(),
+    messages: 0,
     notifications: 0,
   });
   const ACCOUNT_ROUTES: Record<string, string> = {
+    "Profile": "/account/profile",
     "Account Settings": "/seller-center/settings",
     "Billing": "/seller-center/settings",
     "Switch to Buyer": "/",
@@ -155,17 +156,21 @@ export default function SellerShell({
     void (async () => {
       try {
         setNotificationsLoading(true);
-        const [dashboardResponse, notificationsResponse] = await Promise.all([
+        const [dashboardResponse, notificationsResponse, conversationsResponse, profileResponse] = await Promise.all([
           fetchSellerDashboard(),
           fetchNotifications({ limit: 5 }),
+          fetchConversations(),
+          fetchSellerProfile(),
         ]);
         if (!active) return;
         setBadgeCounts((current) => ({
           ...current,
           orders: dashboardResponse.data.summary.pending_orders ?? 0,
+          messages: conversationsResponse.data.reduce((total, conversation) => total + conversation.unread_count, 0),
           notifications: notificationsResponse.meta.unread_count ?? 0,
         }));
         setNotifications(notificationsResponse.data.filter((notification) => !notification.dismissed_at));
+        setSellerProfile(profileResponse.data);
       } catch {
         if (!active) return;
       } finally {
@@ -181,6 +186,20 @@ export default function SellerShell({
   }, []);
 
   const unreadNotificationCount = notifications.filter((notification) => !notification.read_at).length;
+  const resolvedStoreName = sellerProfile?.trade_name?.trim() || sellerProfile?.business_name?.trim() || storeName || "Your Store";
+  const resolvedStoreCategory = sellerProfile?.categories?.[0]?.name || storeCategory || "Marketplace Seller";
+  const resolvedStoreInitials = storeInitials || resolvedStoreName
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "S";
+  const accountName = user?.display_name?.trim() || "Seller";
+  const accountFirstName = user?.first_name?.trim() || accountName.split(/\s+/)[0] || "Seller";
+  const accountInitials = `${user?.first_name?.[0] ?? ""}${user?.last_name?.[0] ?? ""}`.trim()
+    || accountName[0]
+    || "S";
 
   const handleNotificationOpen = async (notification: NotificationRecord) => {
     try {
@@ -272,7 +291,6 @@ export default function SellerShell({
             <div className="w-6 h-6 bg-[var(--color-amber)] rounded flex items-center justify-center shrink-0">
               <span className="text-white font-[var(--font-display)] text-xs font-[400]">M</span>
             </div>
-            <span className="font-[var(--font-mono)] text-[10px] text-white/50 tracking-widest uppercase truncate">Seller Center</span>
           </div>
         )}
         <button
@@ -286,12 +304,16 @@ export default function SellerShell({
       {!collapsed && (
         <div className="px-4 py-4 border-b border-white/10 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded bg-white/15 flex items-center justify-center shrink-0">
-              <span className="font-[var(--font-display)] text-base text-white font-[400]">{storeInitials}</span>
+            <div className="w-10 h-10 rounded bg-white/15 flex items-center justify-center shrink-0 overflow-hidden">
+              {sellerProfile?.logo_url ? (
+                <img src={sellerProfile.logo_url} alt={`${resolvedStoreName} logo`} className="h-full w-full object-cover" />
+              ) : (
+                <span className="font-[var(--font-display)] text-base text-white font-[400]">{resolvedStoreInitials}</span>
+              )}
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-[600] text-white truncate">{storeName}</p>
-              <p className="text-xs text-white/50 truncate">{storeCategory}</p>
+              <p className="text-sm font-[600] text-white truncate">{resolvedStoreName}</p>
+              <p className="text-xs text-white/50 truncate">{resolvedStoreCategory}</p>
             </div>
           </div>
         </div>
@@ -299,8 +321,12 @@ export default function SellerShell({
 
       {collapsed && (
         <div className="px-4 py-3 border-b border-white/10 shrink-0 flex justify-center">
-          <div className="w-8 h-8 rounded bg-white/15 flex items-center justify-center" title={storeName}>
-            <span className="font-[var(--font-display)] text-sm text-white font-[400]">{storeInitials}</span>
+          <div className="w-8 h-8 rounded bg-white/15 flex items-center justify-center overflow-hidden" title={resolvedStoreName}>
+            {sellerProfile?.logo_url ? (
+              <img src={sellerProfile.logo_url} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <span className="font-[var(--font-display)] text-sm text-white font-[400]">{resolvedStoreInitials}</span>
+            )}
           </div>
         </div>
       )}
@@ -469,19 +495,23 @@ export default function SellerShell({
                 aria-expanded={accountOpen}
                 aria-haspopup="true"
                 className="flex items-center gap-2 pl-1 pr-2 h-8 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface)] rounded-sm transition-colors cursor-pointer">
-                <div className="w-6 h-6 rounded-full bg-[var(--color-navy)] flex items-center justify-center">
-                  <span className="text-white text-[10px] font-[500]">M</span>
+                <div className="w-6 h-6 rounded-full bg-[var(--color-navy)] flex items-center justify-center overflow-hidden">
+                  {user?.avatar_url ? (
+                    <img src={user.avatar_url} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="text-white text-[10px] font-[500]">{accountInitials.toUpperCase()}</span>
+                  )}
                 </div>
-                <span className="text-xs font-[500] hidden sm:block">Maria</span>
+                <span className="text-xs font-[500] hidden sm:block">{accountFirstName}</span>
                 <IconChevronDown size={10} className="text-[var(--color-ink-muted)]" />
               </button>
               {accountOpen && (
                 <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-[var(--color-border)] rounded-sm shadow-[0_8px_24px_rgba(28,27,24,0.12)] z-50">
                   <div className="px-4 py-3 border-b border-[var(--color-border)]">
-                    <p className="text-xs font-[600] text-[var(--color-ink)]">Maria Santos</p>
-                    <p className="text-[10px] text-[var(--color-ink-muted)]">Seller account</p>
+                    <p className="text-xs font-[600] text-[var(--color-ink)]">{accountName}</p>
+                    <p className="text-[10px] text-[var(--color-ink-muted)]">{user?.email ?? "Seller account"}</p>
                   </div>
-                  {["Account Settings", "Billing", "Switch to Buyer"].map(l => (
+                  {["Profile", "Account Settings", "Billing", "Switch to Buyer"].map(l => (
                     <button key={l} onClick={() => { setAccountOpen(false); navigate(ACCOUNT_ROUTES[l]); }} className="w-full flex items-center px-4 py-2.5 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface)] cursor-pointer">{l}</button>
                   ))}
                   <div className="border-t border-[var(--color-border)]">

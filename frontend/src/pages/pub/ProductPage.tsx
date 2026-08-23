@@ -1,12 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { Rating, Price, BtnPrimary, BtnSecondary } from "../../Part03";
-import { IconChevronRight, IconChevronLeft, IconHeart, IconCart, IconStore, IconBox, IconOrders } from "../../shells/icons";
-import { fetchCatalogProduct, type CatalogProduct } from "../../api/catalog";
+import { BadgeCheck, Clock3, Flag, MessageSquare, Minus, Plus, RotateCcw, Star, ThumbsUp, Truck } from "lucide-react";
+import { useNavigate } from "react-router";
+import { Rating, Price } from "../../Part03";
+import { IconChevronRight, IconChevronLeft, IconHeart, IconCart, IconStore } from "../../shells/icons";
+import { fetchCatalogProduct, fetchProductReviews, type CatalogProduct, type ProductReview } from "../../api/catalog";
 import { addCartItem } from "../../api/cart";
 import { addWishlistItem, fetchWishlistStatus, removeWishlistItem } from "../../api/buyer";
 import { useAuth } from "../../auth/AuthContext";
 import { useToast } from "../../components/ToastProvider";
-import { WATCH_GALLERY, DEFAULT_PRODUCT_IMAGE } from "./visuals";
+import { startConversation } from "../../api/account";
+import ReportDialog from "../../components/ReportDialog";
+
+const PRODUCT_PLACEHOLDER = "/images/product-placeholder.svg";
 
 type NavFn = (page: string, params?: Record<string, string>) => void;
 
@@ -61,35 +66,39 @@ function getSellerInitials(seller: CatalogProduct["seller"], fallbackName: strin
     .join("") || "M";
 }
 
-function ReviewCard({ review }: { review: { user: string; date: string; rating: number; title: string; body: string; helpful: number } }) {
+function formatReviewDate(value: string | null): string {
+  if (!value) return "";
+  return new Intl.DateTimeFormat("en-PH", { year: "numeric", month: "short", day: "numeric" }).format(new Date(value));
+}
+
+function ReviewCard({ review }: { review: ProductReview }) {
+  const initial = review.buyer_display_name.trim().charAt(0).toUpperCase() || "M";
+
   return (
     <div className="border-b border-[var(--color-border)] py-5">
       <div className="flex items-start gap-3 mb-3">
         <div className="w-9 h-9 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center shrink-0">
-          <span className="font-[500] text-sm text-[var(--color-ink-muted)]">{review.user[0]}</span>
+          <span className="font-[500] text-sm text-[var(--color-ink-muted)]">{initial}</span>
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-sm font-[600] text-[var(--color-ink)]">{review.user}</p>
-            <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-disabled)]">{review.date}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-[600] text-[var(--color-ink)]">{review.buyer_display_name}</p>
+              {review.verified_purchase && <span className="inline-flex items-center gap-1 text-[10px] text-[var(--color-green)]"><BadgeCheck size={12} /> Verified purchase</span>}
+            </div>
+            <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-disabled)]">{formatReviewDate(review.created_at)}</p>
           </div>
           <div className="flex mt-0.5">
             {Array.from({ length: 5 }).map((_, i) => (
-              <svg key={i} width="12" height="12" viewBox="0 0 14 14" fill={i < review.rating ? "#B8782A" : "#DDD9CE"}>
-                <path d="M7 1.5l1.56 3.16 3.49.51-2.52 2.46.59 3.47L7 9.25l-3.12 1.64.59-3.47L2 4.17l3.49-.51L7 1.5z" />
-              </svg>
+              <Star key={i} size={12} fill={i < review.rating ? "#B8782A" : "#DDD9CE"} strokeWidth={0} />
             ))}
           </div>
         </div>
       </div>
-      <p className="text-sm font-[600] text-[var(--color-ink)] mb-1">{review.title}</p>
-      <p className="text-sm text-[var(--color-ink-muted)] leading-relaxed mb-3">{review.body}</p>
-      <div className="flex items-center gap-2">
-        <button className="flex items-center gap-1.5 text-xs text-[var(--color-ink-muted)] hover:text-[var(--color-navy)] cursor-pointer transition-colors">
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 9V5l3-4h1l.5 3H10l-1 5H2z" /></svg>
-          Helpful ({review.helpful})
-        </button>
-      </div>
+      {review.title && <p className="text-sm font-[600] text-[var(--color-ink)] mb-1">{review.title}</p>}
+      {review.body && <p className="text-sm text-[var(--color-ink-muted)] leading-relaxed mb-3">{review.body}</p>}
+      <div className="flex items-center gap-1.5 text-xs text-[var(--color-ink-muted)]"><ThumbsUp size={12} /> Helpful ({review.helpful_count})</div>
+      {review.seller_reply && <div className="mt-4 ml-4 border-l-2 border-[var(--color-border)] pl-4"><p className="text-xs font-[600] text-[var(--color-ink)] mb-1">Response from {review.seller_reply.seller_name || "seller"}</p><p className="text-sm text-[var(--color-ink-muted)]">{review.seller_reply.body}</p></div>}
     </div>
   );
 }
@@ -97,7 +106,15 @@ function ReviewCard({ review }: { review: { user: string; date: string; rating: 
 export default function ProductPage({ slug, onNavigate }: { slug: string; onNavigate: NavFn }) {
   const { user } = useAuth();
   const { showToast } = useToast();
+  const navigate = useNavigate();
   const [product, setProduct] = useState<CatalogProduct | null>(null);
+  const [productLoading, setProductLoading] = useState(true);
+  const [productError, setProductError] = useState<string | null>(null);
+  const [reviews, setReviews] = useState<ProductReview[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [reviewsError, setReviewsError] = useState<string | null>(null);
+  const [reviewPage, setReviewPage] = useState(1);
+  const [reviewLastPage, setReviewLastPage] = useState(1);
   const [activeImg, setActiveImg] = useState(0);
   const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null);
   const [qty, setQty] = useState(1);
@@ -105,10 +122,57 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
   const [activeTab, setActiveTab] = useState("description");
   const [cartBusy, setCartBusy] = useState(false);
   const [wishlistBusy, setWishlistBusy] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
 
   useEffect(() => {
-    void fetchCatalogProduct(slug).then((response) => setProduct(response.data)).catch(() => setProduct(null));
+    let active = true;
+    setProductLoading(true);
+    setProductError(null);
+    setProduct(null);
+    setReviews([]);
+    setReviewPage(1);
+
+    void fetchCatalogProduct(slug)
+      .then((response) => {
+        if (active) setProduct(response.data);
+      })
+      .catch((error) => {
+        if (active) setProductError(error instanceof Error ? error.message : "Unable to load this product.");
+      })
+      .finally(() => {
+        if (active) setProductLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [slug]);
+
+  useEffect(() => {
+    if (activeTab !== "reviews" || !product) return;
+
+    let active = true;
+    setReviewsLoading(true);
+    setReviewsError(null);
+    void fetchProductReviews(product.slug, reviewPage)
+      .then((response) => {
+        if (!active) return;
+        setReviews(response.data);
+        setReviewLastPage(response.meta.last_page);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setReviews([]);
+        setReviewsError(error instanceof Error ? error.message : "Unable to load reviews.");
+      })
+      .finally(() => {
+        if (active) setReviewsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [activeTab, product, reviewPage]);
 
   useEffect(() => {
     const variants = product?.variants?.filter((variant) => variant.active) ?? [];
@@ -140,9 +204,9 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
   }, [product, user]);
 
   const images = useMemo(() => {
-    if (!product) return [DEFAULT_PRODUCT_IMAGE];
+    if (!product) return [PRODUCT_PLACEHOLDER];
     const fromApi = product.images?.map((image) => image.url).filter(Boolean) ?? [];
-    return fromApi.length > 0 ? fromApi : product.slug === "minimalist-chronograph-watch" ? WATCH_GALLERY : [product.image];
+    return fromApi.length > 0 ? fromApi : [product.image || PRODUCT_PLACEHOLDER];
   }, [product]);
 
   const related = product?.related ?? [];
@@ -153,13 +217,19 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
   const categoryLabel = product ? getCategoryLabel(product.category) : "Uncategorized";
   const sellerName = product ? getSellerName(product.seller) : "Maketo Seller";
   const sellerInitials = product ? getSellerInitials(product.seller, sellerName) : "M";
-  const reviews = [
-    { user: "Marco S.", date: "Jul 28, 2026", rating: 5, title: "Exceptional quality and packaging", body: "Arrived well packaged, exactly as described. The dial looks even better in person.", helpful: 42 },
-    { user: "Reina C.", date: "Jul 15, 2026", rating: 5, title: "My go-to everyday watch now", body: "Seller was very responsive and shipping was fast.", helpful: 31 },
-    { user: "Ben T.", date: "Jun 30, 2026", rating: 4, title: "Great watch, minor fit issue", body: "Looks amazing and the finishing is top-notch.", helpful: 18 },
-  ];
+  const seller = product && typeof product.seller === "object" ? product.seller : null;
+  const reviewSummary = product?.review_summary ?? {
+    average_rating: product?.rating ?? 0,
+    review_count: product?.rating_count ?? 0,
+    rating_distribution: { "1": 0, "2": 0, "3": 0, "4": 0, "5": 0 },
+  };
 
   const handleAddToCart = async () => {
+    if (!product) return;
+    if ((product.variants?.length ?? 0) > 0 && !selectedVariant) {
+      showToast({ kind: "error", title: "Select an option", message: "Choose a product option before adding this item." });
+      return;
+    }
     if (!currentInStock) {
       showToast({ kind: "error", title: "Item unavailable", message: "This product is currently out of stock." });
       return;
@@ -192,6 +262,7 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
   };
 
   const handleWishlist = async () => {
+    if (!product) return;
     if (!user) {
       onNavigate("login");
       return;
@@ -219,7 +290,21 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
     }
   };
 
+  const handleMessageSeller = async () => {
+    if (!user) { onNavigate("login"); return; }
+    if (!seller) return;
+    try {
+      const response = await startConversation({ seller_id: seller.id, product_id: product.id, subject: product.name });
+      navigate(`/account/messages?conversation=${response.data.id}`);
+    } catch (error) { showToast({ kind: "error", title: "Conversation unavailable", message: error instanceof Error ? error.message : "Please try again." }); }
+  };
+
   const handleBuyNow = async () => {
+    if (!product) return;
+    if ((product.variants?.length ?? 0) > 0 && !selectedVariant) {
+      showToast({ kind: "error", title: "Select an option", message: "Choose a product option before continuing." });
+      return;
+    }
     if (!currentInStock) {
       showToast({ kind: "error", title: "Item unavailable", message: "This product is currently out of stock." });
       return;
@@ -246,10 +331,19 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
     }
   };
 
-  if (!product) {
+  if (productLoading) {
     return (
       <div className="bg-[var(--color-ground)] min-h-full px-4 md:px-8 lg:px-12 py-16 text-center">
         <p className="text-sm text-[var(--color-ink-muted)]">Loading product...</p>
+      </div>
+    );
+  }
+
+  if (!product || productError) {
+    return (
+      <div className="bg-[var(--color-ground)] min-h-full px-4 md:px-8 lg:px-12 py-16 text-center">
+        <p className="text-lg text-[var(--color-ink)] mb-2">Product unavailable</p>
+        <p className="text-sm text-[var(--color-ink-muted)]">{productError || "This product could not be found."}</p>
       </div>
     );
   }
@@ -275,12 +369,12 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
               <div className="hidden md:flex flex-col gap-2 w-16 shrink-0">
                 {images.map((img, i) => (
                   <button key={i} onClick={() => setActiveImg(i)} className={`w-16 h-16 rounded-sm overflow-hidden border-2 transition-all cursor-pointer ${activeImg === i ? "border-[var(--color-navy)]" : "border-[var(--color-border)] hover:border-[var(--color-border-strong)]"}`}>
-                    <img src={`${img}?w=120&h=120&fit=crop&auto=format`} alt="" className="w-full h-full object-cover" />
+                    <img src={img} alt="" className="w-full h-full object-cover" />
                   </button>
                 ))}
               </div>
               <div className="flex-1 relative bg-[var(--color-surface)] rounded-sm overflow-hidden aspect-square">
-                <img src={`${images[activeImg]}?w=800&h=800&fit=crop&auto=format`} alt={product.name} className="w-full h-full object-cover" />
+                <img src={images[activeImg] || PRODUCT_PLACEHOLDER} onError={(event) => { event.currentTarget.src = PRODUCT_PLACEHOLDER; }} alt={product.name} className="w-full h-full object-cover" />
                 {images.length > 1 && (
                   <>
                     <button onClick={() => setActiveImg(i => (i - 1 + images.length) % images.length)} className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/90 rounded-full flex items-center justify-center shadow-sm hover:bg-white cursor-pointer transition-all">
@@ -323,11 +417,11 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
               <p className="text-xs font-[600] text-[var(--color-ink)] mb-2">Quantity</p>
               <div className="inline-flex items-center border border-[var(--color-border)] rounded-sm overflow-hidden">
                 <button onClick={() => setQty(q => Math.max(1, q - 1))} className="w-9 h-9 flex items-center justify-center text-[var(--color-ink-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-ink)] transition-colors cursor-pointer">
-                  <svg width="12" height="2" viewBox="0 0 12 2" fill="none"><path d="M1 1h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+                  <Minus size={12} />
                 </button>
                 <div className="w-10 h-9 flex items-center justify-center"><span className="text-sm font-[600] text-[var(--color-ink)]">{qty}</span></div>
-                <button onClick={() => setQty(q => Math.min(10, currentStock || 10, q + 1))} className="w-9 h-9 flex items-center justify-center text-[var(--color-ink-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-ink)] transition-colors cursor-pointer">
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+                <button onClick={() => setQty(q => Math.min(product.track_inventory ? currentStock : 99, q + 1))} disabled={!currentInStock || (product.track_inventory && qty >= currentStock)} className="w-9 h-9 flex items-center justify-center text-[var(--color-ink-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-ink)] transition-colors cursor-pointer disabled:opacity-40">
+                  <Plus size={12} />
                 </button>
               </div>
               <span className="text-xs text-[var(--color-ink-muted)] ml-3">{currentInStock ? (product.track_inventory ? `${currentStock} in stock` : "In stock") : "Out of stock"}</span>
@@ -348,10 +442,10 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
 
             <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-sm p-4 mb-4 space-y-3">
               {[
-                { icon: <IconBox size={14} />, label: "Delivery", value: "Standard: 3–5 business days · Express available" },
-                { icon: <IconOrders size={14} />, label: "Returns", value: "15-day returns — hassle free, no questions asked" },
-                { icon: <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><circle cx="7" cy="7" r="5" /><path d="M7 4.5V7l1.5 1.5" /></svg>, label: "Ships in", value: "1–2 business days after order confirmation" },
-              ].map(({ icon, label, value }) => (
+                { icon: <Truck size={14} />, label: "Shipping", value: product.shipping_policy },
+                { icon: <RotateCcw size={14} />, label: "Returns", value: product.return_policy },
+                { icon: <Clock3 size={14} />, label: "Delivery", value: product.delivery_estimate },
+              ].map(({ icon, label, value }) => value ? (
                 <div key={label} className="flex items-start gap-2.5">
                   <div className="text-[var(--color-ink-muted)] mt-0.5 shrink-0">{icon}</div>
                   <div>
@@ -359,24 +453,26 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
                     <span className="text-xs text-[var(--color-ink-muted)]">{value}</span>
                   </div>
                 </div>
-              ))}
+              ) : null)}
             </div>
 
             <div className="bg-white border border-[var(--color-border)] rounded-sm p-4">
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 bg-[var(--color-navy)] rounded flex items-center justify-center shrink-0">
-                  <span className="font-[var(--font-display)] text-base text-white">{sellerInitials}</span>
-                </div>
+                {seller?.logo ? <img src={seller.logo} alt="" className="w-10 h-10 rounded object-cover shrink-0" /> : <div className="w-10 h-10 bg-[var(--color-navy)] rounded flex items-center justify-center shrink-0"><span className="font-[var(--font-display)] text-base text-white">{sellerInitials}</span></div>}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5">
                     <p className="text-sm font-[600] text-[var(--color-ink)] truncate">{sellerName}</p>
+                    {seller?.verified && <BadgeCheck size={14} className="text-[var(--color-green)] shrink-0" />}
                   </div>
+                  {seller && <p className="text-xs text-[var(--color-ink-muted)] mt-1">{seller.rating.toFixed(1)} from {seller.rating_count} review{seller.rating_count === 1 ? "" : "s"}{seller.fulfilled_order_count !== null ? ` · ${seller.fulfilled_order_count} fulfilled` : ""}</p>}
                 </div>
               </div>
               <button onClick={() => onNavigate("seller", { slug: product.seller_slug ?? "" })} className="w-full flex items-center justify-center gap-1.5 py-2 border border-[var(--color-border)] rounded-sm text-xs font-[500] text-[var(--color-navy)] hover:border-[var(--color-navy)] hover:bg-[var(--color-navy-surface)] transition-colors cursor-pointer">
                 <IconStore size={13} />
                 Visit Seller Store
               </button>
+              <button onClick={() => void handleMessageSeller()} className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 border border-[var(--color-border)] rounded-sm text-xs font-[500] text-[var(--color-navy)] hover:border-[var(--color-navy)] hover:bg-[var(--color-navy-surface)] transition-colors cursor-pointer"><MessageSquare size={13} />Message seller</button>
+              <button onClick={() => user ? setReportOpen(true) : onNavigate("login")} className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 text-xs text-[var(--color-ink-muted)] hover:text-[var(--color-red)] cursor-pointer"><Flag size={13} />Report product</button>
             </div>
           </div>
         </div>
@@ -398,7 +494,7 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
             {activeTab === "description" && (
               <div className="max-w-2xl">
                 <p className="font-[var(--font-display)] text-xl font-[400] text-[var(--color-ink)] mb-4 leading-snug">
-                  {product.description || "A product curated for the Maketo marketplace."}
+                  {product.description || "No description provided."}
                 </p>
               </div>
             )}
@@ -408,8 +504,8 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
                 <table className="w-full text-sm">
                   <tbody>
                     {[
-                      ["SKU", product.sku ?? "—"],
-                      ["Stock", product.stock_quantity?.toString() ?? "0"],
+                      ["SKU", selectedVariant?.sku ?? product.sku ?? "—"],
+                      ["Stock", product.track_inventory ? currentStock.toString() : "Not tracked"],
                       ["Inventory Tracking", product.track_inventory ? "Enabled" : "Disabled"],
                       ["Free Shipping", product.free_shipping ? "Yes" : "No"],
                     ].map(([key, val]) => (
@@ -427,29 +523,35 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
               <div>
                 <div className="flex gap-10 mb-8 pb-6 border-b border-[var(--color-border)]">
                   <div className="text-center shrink-0">
-                    <p className="font-[var(--font-display)] text-5xl font-[300] text-[var(--color-ink)]">{product.rating}</p>
+                    <p className="font-[var(--font-display)] text-5xl font-[300] text-[var(--color-ink)]">{reviewSummary.average_rating.toFixed(1)}</p>
                     <div className="flex justify-center my-1.5">
                       {Array.from({ length: 5 }).map((_, i) => (
-                        <svg key={i} width="16" height="16" viewBox="0 0 14 14" fill={i < Math.round(product.rating) ? "#B8782A" : "#DDD9CE"}>
-                          <path d="M7 1.5l1.56 3.16 3.49.51-2.52 2.46.59 3.47L7 9.25l-3.12 1.64.59-3.47L2 4.17l3.49-.51L7 1.5z" />
-                        </svg>
+                        <Star key={i} size={16} fill={i < Math.round(reviewSummary.average_rating) ? "#B8782A" : "#DDD9CE"} strokeWidth={0} />
                       ))}
                     </div>
-                    <p className="text-xs text-[var(--color-ink-muted)]">{product.rating_count} reviews</p>
+                    <p className="text-xs text-[var(--color-ink-muted)]">{reviewSummary.review_count} review{reviewSummary.review_count === 1 ? "" : "s"}</p>
                   </div>
                   <div className="flex-1 space-y-2">
-                    {[5, 4, 3, 2, 1].map((stars, i) => (
+                    {[5, 4, 3, 2, 1].map((stars) => {
+                      const count = reviewSummary.rating_distribution[String(stars) as "1" | "2" | "3" | "4" | "5"] ?? 0;
+                      const width = reviewSummary.review_count > 0 ? (count / reviewSummary.review_count) * 100 : 0;
+                      return (
                       <div key={stars} className="flex items-center gap-3">
                         <span className="font-[var(--font-mono)] text-xs text-[var(--color-ink-muted)] w-4 text-right">{stars}</span>
-                        <svg width="11" height="11" viewBox="0 0 14 14" fill="#B8782A"><path d="M7 1.5l1.56 3.16 3.49.51-2.52 2.46.59 3.47L7 9.25l-3.12 1.64.59-3.47L2 4.17l3.49-.51L7 1.5z" /></svg>
+                        <Star size={11} fill="#B8782A" strokeWidth={0} />
                         <div className="flex-1 h-2 bg-[var(--color-surface)] rounded-full overflow-hidden">
-                          <div className="h-full bg-[var(--color-amber)] rounded-full" style={{ width: `${Math.max(8, 100 - i * 18)}%` }} />
+                          <div className="h-full bg-[var(--color-amber)] rounded-full" style={{ width: `${width}%` }} />
                         </div>
+                        <span className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-disabled)] w-6">{count}</span>
                       </div>
-                    ))}
+                    );})}
                   </div>
                 </div>
-                <div>{reviews.map((r, i) => <ReviewCard key={i} review={r} />)}</div>
+                {reviewsLoading && <p className="py-8 text-center text-sm text-[var(--color-ink-muted)]">Loading reviews...</p>}
+                {!reviewsLoading && reviewsError && <p className="py-8 text-center text-sm text-[var(--color-red)]">{reviewsError}</p>}
+                {!reviewsLoading && !reviewsError && reviews.length === 0 && <p className="py-8 text-center text-sm text-[var(--color-ink-muted)]">No reviews yet.</p>}
+                {!reviewsLoading && !reviewsError && <div>{reviews.map((review) => <ReviewCard key={review.id} review={review} />)}</div>}
+                {reviewLastPage > 1 && <div className="flex justify-center items-center gap-3 pt-6"><button onClick={() => setReviewPage((page) => Math.max(1, page - 1))} disabled={reviewPage === 1 || reviewsLoading} className="px-3 py-2 border border-[var(--color-border)] rounded-sm text-xs disabled:opacity-40">Previous</button><span className="text-xs text-[var(--color-ink-muted)]">Page {reviewPage} of {reviewLastPage}</span><button onClick={() => setReviewPage((page) => Math.min(reviewLastPage, page + 1))} disabled={reviewPage === reviewLastPage || reviewsLoading} className="px-3 py-2 border border-[var(--color-border)] rounded-sm text-xs disabled:opacity-40">Next</button></div>}
               </div>
             )}
           </div>
@@ -467,7 +569,7 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
               {related.map(p => (
                 <div key={p.id} className="group bg-white border border-[var(--color-border)] rounded-sm overflow-hidden hover:shadow-[0_4px_16px_rgba(28,27,24,0.10)] hover:border-[var(--color-border-strong)] transition-all cursor-pointer" onClick={() => onNavigate("product", { slug: p.slug })}>
                   <div className="aspect-square bg-[var(--color-surface)] overflow-hidden">
-                    <img src={`${p.image}?w=320&h=320&fit=crop&auto=format`} alt={p.name} className="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-300" />
+                    <img src={p.image || PRODUCT_PLACEHOLDER} onError={(event) => { event.currentTarget.src = PRODUCT_PLACEHOLDER; }} alt={p.name} className="w-full h-full object-cover group-hover:scale-[1.04] transition-transform duration-300" />
                   </div>
                   <div className="p-3">
                     <p className="text-xs font-[500] text-[var(--color-ink)] line-clamp-2 mb-1.5 leading-snug">{p.name}</p>
@@ -479,6 +581,7 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
           </div>
         )}
       </div>
+      {reportOpen && <ReportDialog targetType="product" targetId={product.id} targetName={product.name} onClose={() => setReportOpen(false)} />}
     </div>
   );
 }

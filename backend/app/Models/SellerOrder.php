@@ -20,6 +20,7 @@ class SellerOrder extends Model
         'ready_at',
         'picked_up_at',
         'delivered_at',
+        'completed_at',
     ];
 
     protected $casts = [
@@ -31,6 +32,7 @@ class SellerOrder extends Model
         'ready_at' => 'datetime',
         'picked_up_at' => 'datetime',
         'delivered_at' => 'datetime',
+        'completed_at' => 'datetime',
     ];
 
     public function order()
@@ -46,5 +48,20 @@ class SellerOrder extends Model
     public function shipment()
     {
         return $this->hasOne(Shipment::class);
+    }
+
+    public function items()
+    {
+        return $this->hasMany(OrderItem::class);
+    }
+
+    public function cancellation()
+    {
+        return $this->hasOne(OrderCancellation::class);
+    }
+
+    public function returnRequests()
+    {
+        return $this->hasMany(ReturnRequest::class);
     }
 }

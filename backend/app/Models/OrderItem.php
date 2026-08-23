@@ -16,6 +16,8 @@ class OrderItem extends Model
         'product_slug',
         'variant_name',
         'sku',
+        'product_image_storage_disk',
+        'product_image_storage_path',
         'unit_price',
         'quantity',
         'subtotal',
@@ -45,5 +47,15 @@ class OrderItem extends Model
     public function variant()
     {
         return $this->belongsTo(ProductVariant::class, 'product_variant_id');
+    }
+
+    public function review()
+    {
+        return $this->hasOne(Review::class);
+    }
+
+    public function returnRequestItems()
+    {
+        return $this->hasMany(ReturnRequestItem::class);
     }
 }

@@ -96,6 +96,21 @@ class Seller extends Model
         return $this->hasMany(SellerFollower::class);
     }
 
+    public function reviews()
+    {
+        return $this->hasMany(Review::class);
+    }
+
+    public function sellerOrders()
+    {
+        return $this->hasMany(SellerOrder::class);
+    }
+
+    public function orderItems()
+    {
+        return $this->hasMany(OrderItem::class);
+    }
+
     public function isApproved(): bool
     {
         return $this->status === 'approved';

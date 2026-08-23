@@ -5,16 +5,22 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\Review;
 use App\Models\Seller;
+use App\Services\MediaStorageService;
 use App\Services\ProductSearchService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class CatalogController extends Controller
 {
-    public function __construct(private readonly ProductSearchService $searchService)
-    {
+    public function __construct(
+        private readonly ProductSearchService $searchService,
+        private readonly MediaStorageService $mediaStorage,
+    ) {
     }
 
     public function categories(): JsonResponse
@@ -44,8 +50,15 @@ class CatalogController extends Controller
                 'category',
                 'images' => fn ($images) => $images->orderBy('sort_order')->orderBy('id'),
             ])
+            ->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
+            ->withCount(['reviews as rating_count' => fn ($reviews) => $reviews->where('status', 'approved')])
+            ->withSum(['orderItems as sold_count' => fn ($items) => $items->whereHas(
+                'sellerOrder',
+                fn ($orders) => $orders->whereIn('status', ['delivered', 'completed'])
+            )], 'quantity')
             ->where('status', 'active')
-            ->whereNull('deleted_at');
+            ->whereNull('deleted_at')
+            ->whereHas('seller', fn (Builder $seller) => $this->applyPublicSellerVisibility($seller));
 
         if ($request->filled('category')) {
             $categorySlug = (string) $request->query('category');
@@ -142,14 +155,33 @@ class CatalogController extends Controller
     {
         $product = Product::query()
             ->with([
-                'seller.user',
-                'seller.categories',
+                'seller' => fn ($seller) => $seller
+                    ->with(['user', 'categories'])
+                    ->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
+                    ->withCount([
+                        'reviews as rating_count' => fn ($reviews) => $reviews->where('status', 'approved'),
+                        'followers as actual_follower_count',
+                        'products as active_product_count' => fn ($products) => $products->where('status', 'active')->whereNull('deleted_at'),
+                        'sellerOrders as fulfilled_order_count' => fn ($orders) => $orders->whereIn('status', ['delivered', 'completed']),
+                    ])
+                    ->withSum(['orderItems as units_sold' => fn ($items) => $items->whereHas(
+                        'sellerOrder',
+                        fn ($orders) => $orders->whereIn('status', ['delivered', 'completed'])
+                    )], 'quantity'),
                 'category.parent',
-                'images' => fn ($images) => $images->orderBy('sort_order')->orderBy('id'),
+                'images' => fn ($images) => $images->orderByDesc('is_primary')->orderBy('sort_order')->orderBy('id'),
                 'variants.options',
             ])
+            ->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
+            ->withCount(['reviews as rating_count' => fn ($reviews) => $reviews->where('status', 'approved')])
+            ->withSum(['orderItems as sold_count' => fn ($items) => $items->whereHas(
+                'sellerOrder',
+                fn ($orders) => $orders->whereIn('status', ['delivered', 'completed'])
+            )], 'quantity')
             ->where('slug', $slug)
             ->where('status', 'active')
+            ->whereNull('deleted_at')
+            ->whereHas('seller', fn (Builder $seller) => $this->applyPublicSellerVisibility($seller))
             ->first();
 
         if (! $product) {
@@ -164,9 +196,20 @@ class CatalogController extends Controller
                 'category',
                 'images' => fn ($images) => $images->orderBy('sort_order')->orderBy('id'),
             ])
+            ->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
+            ->withCount(['reviews as rating_count' => fn ($reviews) => $reviews->where('status', 'approved')])
+            ->withSum(['orderItems as sold_count' => fn ($items) => $items->whereHas(
+                'sellerOrder',
+                fn ($orders) => $orders->whereIn('status', ['delivered', 'completed'])
+            )], 'quantity')
             ->whereKeyNot($product->id)
             ->where('category_id', $product->category_id)
             ->where('status', 'active')
+            ->whereNull('deleted_at')
+            ->whereHas('seller', fn (Builder $seller) => $this->applyPublicSellerVisibility($seller))
+            ->orderByDesc('rating')
+            ->orderByDesc('sold_count')
+            ->orderByDesc('published_at')
             ->limit(8)
             ->get()
             ->map(fn (Product $relatedProduct) => $this->productPayload($relatedProduct));
@@ -176,16 +219,71 @@ class CatalogController extends Controller
         ]);
     }
 
+    public function productReviews(Request $request, string $slug): JsonResponse
+    {
+        $filters = $request->validate([
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:50'],
+            'sort' => ['nullable', Rule::in(['newest', 'highest_rating', 'lowest_rating', 'most_helpful'])],
+        ]);
+
+        $product = Product::query()
+            ->where('slug', $slug)
+            ->where('status', 'active')
+            ->whereNull('deleted_at')
+            ->whereHas('seller', fn (Builder $seller) => $this->applyPublicSellerVisibility($seller))
+            ->first();
+
+        if (! $product) {
+            return response()->json(['message' => 'Product not found.'], 404);
+        }
+
+        $sort = $filters['sort'] ?? 'newest';
+        $reviews = Review::query()
+            ->where('product_id', $product->id)
+            ->where('status', 'approved')
+            ->with(['user', 'orderItem.order', 'reply.seller'])
+            ->when($sort === 'highest_rating', fn ($query) => $query->orderByDesc('rating')->latest('submitted_at'))
+            ->when($sort === 'lowest_rating', fn ($query) => $query->orderBy('rating')->latest('submitted_at'))
+            ->when($sort === 'most_helpful', fn ($query) => $query->orderByDesc('helpful_count')->latest('submitted_at'))
+            ->when($sort === 'newest', fn ($query) => $query->latest('submitted_at'))
+            ->latest('id')
+            ->paginate((int) ($filters['per_page'] ?? 10));
+
+        return response()->json([
+            'data' => collect($reviews->items())->map(fn (Review $review) => $this->publicReviewPayload($review))->values(),
+            'meta' => [
+                'current_page' => $reviews->currentPage(),
+                'last_page' => $reviews->lastPage(),
+                'per_page' => $reviews->perPage(),
+                'total' => $reviews->total(),
+            ],
+        ]);
+    }
+
     public function sellers(): JsonResponse
     {
         $sellers = Seller::query()
             ->with([
                 'user',
                 'categories',
-                'products' => fn ($query) => $query->where('status', 'active')->whereNull('deleted_at'),
+                'products' => fn ($query) => $query
+                    ->with(['seller.user', 'category', 'images'])
+                    ->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
+                    ->withCount(['reviews as rating_count' => fn ($reviews) => $reviews->where('status', 'approved')])
+                    ->withSum(['orderItems as sold_count' => fn ($items) => $items->whereHas('sellerOrder', fn ($orders) => $orders->whereIn('status', ['delivered', 'completed']))], 'quantity')
+                    ->where('status', 'active')
+                    ->whereNull('deleted_at'),
             ])
-            ->where('status', 'approved')
-            ->whereNull('deleted_at')
+            ->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
+            ->withCount([
+                'reviews as rating_count' => fn ($reviews) => $reviews->where('status', 'approved'),
+                'followers as actual_follower_count',
+                'products as active_product_count' => fn ($products) => $products->where('status', 'active')->whereNull('deleted_at'),
+                'sellerOrders as fulfilled_order_count' => fn ($orders) => $orders->whereIn('status', ['delivered', 'completed']),
+            ])
+            ->withSum(['orderItems as units_sold' => fn ($items) => $items->whereHas('sellerOrder', fn ($orders) => $orders->whereIn('status', ['delivered', 'completed']))], 'quantity')
+            ->where(fn (Builder $seller) => $this->applyPublicSellerVisibility($seller))
             ->orderByDesc('verified')
             ->orderBy('business_name')
             ->get()
@@ -203,10 +301,24 @@ class CatalogController extends Controller
                 'products' => fn ($query) => $query->with([
                     'images' => fn ($images) => $images->orderBy('sort_order')->orderBy('id'),
                     'category',
-                ])->where('status', 'active')->whereNull('deleted_at'),
+                    'seller.user',
+                ])
+                    ->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
+                    ->withCount(['reviews as rating_count' => fn ($reviews) => $reviews->where('status', 'approved')])
+                    ->withSum(['orderItems as sold_count' => fn ($items) => $items->whereHas('sellerOrder', fn ($orders) => $orders->whereIn('status', ['delivered', 'completed']))], 'quantity')
+                    ->where('status', 'active')
+                    ->whereNull('deleted_at'),
             ])
+            ->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
+            ->withCount([
+                'reviews as rating_count' => fn ($reviews) => $reviews->where('status', 'approved'),
+                'followers as actual_follower_count',
+                'products as active_product_count' => fn ($products) => $products->where('status', 'active')->whereNull('deleted_at'),
+                'sellerOrders as fulfilled_order_count' => fn ($orders) => $orders->whereIn('status', ['delivered', 'completed']),
+            ])
+            ->withSum(['orderItems as units_sold' => fn ($items) => $items->whereHas('sellerOrder', fn ($orders) => $orders->whereIn('status', ['delivered', 'completed']))], 'quantity')
             ->where('slug', $slug)
-            ->where('status', 'approved')
+            ->where(fn (Builder $seller) => $this->applyPublicSellerVisibility($seller))
             ->first();
 
         if (! $seller) {
@@ -233,7 +345,7 @@ class CatalogController extends Controller
 
     protected function productPayload(Product $product): array
     {
-        $primaryImage = $product->images->first()?->file_path;
+        $primaryImage = $product->images->first();
 
         return [
             'id' => $product->id,
@@ -251,7 +363,9 @@ class CatalogController extends Controller
             'rating' => round((float) ($product->rating ?? 0), 1),
             'rating_count' => (int) ($product->rating_count ?? 0),
             'sold_count' => (int) ($product->sold_count ?? 0),
-            'image' => $primaryImage ?: 'https://images.unsplash.com/photo-1512820790803-83ca734da794',
+            'image' => $primaryImage
+                ? $this->publicMediaUrl($primaryImage->file_path, $primaryImage->storage_disk ?? 'r2')
+                : '/images/product-placeholder.svg',
             'badge' => $product->sale_price ? 'SALE' : null,
             'in_stock' => $product->track_inventory ? $product->stock_quantity > 0 : true,
             'free_shipping' => (bool) $product->free_shipping,
@@ -260,6 +374,13 @@ class CatalogController extends Controller
 
     protected function productDetailPayload(Product $product, iterable $related = []): array
     {
+        $ratingDistribution = Review::query()
+            ->where('product_id', $product->id)
+            ->where('status', 'approved')
+            ->selectRaw('rating, COUNT(*) as review_count')
+            ->groupBy('rating')
+            ->pluck('review_count', 'rating');
+
         return array_merge($this->productPayload($product), [
             'description' => $product->description,
             'sku' => $product->sku,
@@ -276,7 +397,7 @@ class CatalogController extends Controller
             'category' => $this->categoryPayload($product->category),
             'images' => $product->images->map(fn ($image) => [
                 'id' => $image->id,
-                'url' => $image->file_path,
+                'url' => $this->publicMediaUrl($image->file_path, $image->storage_disk ?? 'r2'),
                 'alt' => $image->alt_text ?? $product->name,
                 'sort_order' => $image->sort_order,
                 'is_primary' => (bool) $image->is_primary,
@@ -292,6 +413,16 @@ class CatalogController extends Controller
                     'active' => (bool) $variant->active,
                     'options' => $variant->options->pluck('value')->values()->all(),
                 ])->values()->all(),
+            'review_summary' => [
+                'average_rating' => round((float) ($product->rating ?? 0), 2),
+                'review_count' => (int) ($product->rating_count ?? 0),
+                'rating_distribution' => collect([5, 4, 3, 2, 1])->mapWithKeys(
+                    fn (int $rating) => [(string) $rating => (int) ($ratingDistribution[$rating] ?? 0)]
+                )->all(),
+            ],
+            'shipping_policy' => $product->seller->shipping_policy ?: config('marketplace.policies.default_shipping'),
+            'return_policy' => $product->seller->return_policy ?: config('marketplace.policies.default_returns'),
+            'delivery_estimate' => config('marketplace.delivery_estimate_message'),
             'related' => collect($related)->values()->all(),
         ]);
     }
@@ -308,18 +439,74 @@ class CatalogController extends Controller
                 ->take(2)
                 ->implode(''),
             'category' => $seller->categories->first()?->name ?? 'Marketplace Seller',
-            'rating' => 0,
-            'rating_count' => 0,
-            'product_count' => (int) ($seller->product_count ?: $seller->products->count()),
-            'follower_count' => (int) $seller->follower_count,
-            'response_rate' => (float) $seller->response_rate,
-            'response_time' => $seller->response_time_label ?? 'within 1 hour',
-            'joined_year' => (int) ($seller->joined_year ?? now()->year),
+            'rating' => round((float) ($seller->rating ?? 0), 2),
+            'rating_count' => (int) ($seller->rating_count ?? 0),
+            'product_count' => (int) ($seller->active_product_count ?? ($seller->relationLoaded('products') ? $seller->products->count() : 0)),
+            'follower_count' => isset($seller->actual_follower_count) ? (int) $seller->actual_follower_count : null,
+            'fulfilled_order_count' => isset($seller->fulfilled_order_count) ? (int) $seller->fulfilled_order_count : null,
+            'units_sold' => isset($seller->units_sold) ? (int) $seller->units_sold : null,
+            'joined_year' => (int) ($seller->joined_year ?: $seller->created_at?->year),
             'verified' => (bool) $seller->verified,
-            'banner' => $seller->banner_path ?: 'https://images.unsplash.com/photo-1780798464793-be53ffd37b79',
+            'logo' => $seller->logo_path ? $this->publicMediaUrl($seller->logo_path) : null,
+            'banner' => $seller->banner_path ? $this->publicMediaUrl($seller->banner_path) : null,
             'location' => trim(implode(', ', array_filter([$seller->city, $seller->province]))),
             'description' => $seller->description,
-            'products' => $seller->products->map(fn (Product $product) => $this->productPayload($product))->values()->all(),
+            'products' => $seller->relationLoaded('products')
+                ? $seller->products->map(fn (Product $product) => $this->productPayload($product))->values()->all()
+                : [],
         ];
+    }
+
+    protected function publicReviewPayload(Review $review): array
+    {
+        $firstName = trim((string) $review->user?->first_name);
+        $lastInitial = mb_substr(trim((string) $review->user?->last_name), 0, 1);
+        $displayName = $firstName !== ''
+            ? trim($firstName.' '.($lastInitial !== '' ? $lastInitial.'.' : ''))
+            : 'Maketo Buyer';
+        $order = $review->orderItem?->order;
+        $sellerOrder = $review->orderItem?->sellerOrder;
+        $verifiedPurchase = $review->order_item_id !== null
+            && $order !== null
+            && $order->buyer_id === $review->user_id
+            && $sellerOrder?->status === 'completed';
+
+        return [
+            'id' => $review->id,
+            'rating' => (int) $review->rating,
+            'title' => $review->title,
+            'body' => $review->body,
+            'buyer_display_name' => $displayName,
+            'buyer_avatar' => $review->user?->avatar_path
+                ? $this->publicMediaUrl($review->user->avatar_path)
+                : null,
+            'verified_purchase' => $verifiedPurchase,
+            'helpful_count' => (int) $review->helpful_count,
+            'created_at' => optional($review->submitted_at ?? $review->created_at)->toISOString(),
+            'updated_at' => optional($review->updated_at)->toISOString(),
+            'images' => [],
+            'seller_reply' => $review->reply ? [
+                'body' => $review->reply->body,
+                'seller_name' => $review->reply->seller?->trade_name ?: $review->reply->seller?->business_name,
+                'replied_at' => optional($review->reply->replied_at ?? $review->reply->created_at)->toISOString(),
+            ] : null,
+        ];
+    }
+
+    protected function applyPublicSellerVisibility(Builder $query): Builder
+    {
+        return $query
+            ->where('status', 'approved')
+            ->whereNull('deleted_at')
+            ->whereHas('user', fn (Builder $user) => $user->where('status', 'active'));
+    }
+
+    protected function publicMediaUrl(?string $path, string $disk = 'r2'): ?string
+    {
+        if (! $path || Str::startsWith($path, ['http://', 'https://', 'data:', '/'])) {
+            return $path;
+        }
+
+        return $this->mediaStorage->publicUrl($path, $disk) ?: $path;
     }
 }

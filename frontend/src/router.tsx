@@ -34,6 +34,9 @@ const ProfilePage = lazy(() => import("./pages/account/ProfilePage"));
 const SecurityPage = lazy(() => import("./pages/account/SecurityPage"));
 const AddressesPage = lazy(() => import("./pages/account/AddressesPage"));
 const PreferencesPage = lazy(() => import("./pages/account/PreferencesPage"));
+const PersonalInfoPage = lazy(() => import("./pages/account/PersonalInfoPage"));
+const ReviewsPage = lazy(() => import("./pages/buyer/ReviewsPage"));
+const AccountRouteLayout = lazy(() => import("./layouts/AccountRouteLayout"));
 
 const SellerDashboard = lazy(() => import("./pages/seller/SellerDashboard"));
 const ProductListPage = lazy(() => import("./pages/seller/ProductListPage"));
@@ -45,6 +48,8 @@ const PromotionsPage = lazy(() => import("./pages/seller/PromotionsPage"));
 const AnalyticsPage = lazy(() => import("./pages/seller/AnalyticsPage"));
 const StoreManagementPage = lazy(() => import("./pages/seller/StoreManagementPage"));
 const SellerSettingsPage = lazy(() => import("./pages/seller/SellerSettingsPage"));
+const SellerReviewsPage = lazy(() => import("./pages/seller/SellerReviewsPage"));
+const SellerReturnsPage = lazy(() => import("./pages/seller/SellerReturnsPage"));
 const SellerOnboarding = lazy(() => import("./pages/seller/onboarding/SellerOnboarding"));
 
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
@@ -54,6 +59,7 @@ const AdminProductsPage = lazy(() => import("./pages/admin/AdminProductsPage"));
 const AdminOrdersPage = lazy(() => import("./pages/admin/AdminOrdersPage"));
 const CategoryManagementPage = lazy(() => import("./pages/admin/CategoryManagementPage"));
 const ReportsModerationPage = lazy(() => import("./pages/admin/ReportsModerationPage"));
+const AdminDisputesPage = lazy(() => import("./pages/admin/AdminDisputesPage"));
 const AdminAnalyticsPage = lazy(() => import("./pages/admin/AdminAnalyticsPage"));
 const AdminSettingsPage = lazy(() => import("./pages/admin/AdminSettingsPage"));
 
@@ -152,7 +158,7 @@ function ProfileRoute() {
     lastName: user.last_name ?? user.display_name.split(" ").slice(1).join(" ") ?? "",
     email: user.email,
     phone: user.phone ?? user.mobile ?? "",
-    avatar: null,
+    avatar: user.avatar_url,
     status:
       user.email_verified_at
         ? user.status === "active"
@@ -329,6 +335,8 @@ export const router = createBrowserRouter([
           { path: "products/:id/edit", Component: ProductCreationPage },
           { path: "inventory", Component: InventoryPage },
           { path: "orders", Component: SellerOrdersPage },
+          { path: "returns", Component: SellerReturnsPage },
+          { path: "reviews", Component: SellerReviewsPage },
           { path: "customers", Component: CustomersPage },
           { path: "promotions", Component: PromotionsPage },
           { path: "analytics", Component: AnalyticsPage },
@@ -354,6 +362,7 @@ export const router = createBrowserRouter([
           { path: "orders", Component: AdminOrdersPage },
           { path: "categories", Component: CategoryManagementPage },
           { path: "reports", Component: ReportsModerationPage },
+          { path: "disputes", Component: AdminDisputesPage },
           { path: "moderation", element: <Navigate to="/admin/reports" replace /> },
           { path: "notifications", Component: NotificationCenter },
           { path: "analytics", Component: AdminAnalyticsPage },
@@ -382,16 +391,23 @@ export const router = createBrowserRouter([
         path: "account",
         element: <RequireVerifiedAccount />,
         children: [
-          { index: true, element: <Navigate to="/account/profile" replace /> },
-          { path: "orders", Component: OrderHistoryRoute },
-          { path: "orders/:id", Component: OrderDetailRoute },
-          { path: "wishlist", Component: WishlistPage },
-          { path: "messages", Component: MessagingPage },
-          { path: "notifications", Component: NotificationCenter },
-          { path: "profile", Component: ProfileRoute },
-          { path: "security", Component: SecurityPage },
-          { path: "addresses", Component: AddressesPage },
-          { path: "preferences", Component: PreferencesPage },
+          {
+            element: <AccountRouteLayout />,
+            children: [
+              { index: true, element: <Navigate to="/account/profile" replace /> },
+              { path: "orders", Component: OrderHistoryRoute },
+              { path: "orders/:id", Component: OrderDetailRoute },
+              { path: "wishlist", Component: WishlistPage },
+              { path: "messages", Component: MessagingPage },
+              { path: "notifications", Component: NotificationCenter },
+              { path: "profile", Component: ProfileRoute },
+              { path: "personal-info", Component: PersonalInfoPage },
+              { path: "security", Component: SecurityPage },
+              { path: "addresses", Component: AddressesPage },
+              { path: "preferences", Component: PreferencesPage },
+              { path: "reviews", Component: ReviewsPage },
+            ],
+          },
         ],
       },
       {

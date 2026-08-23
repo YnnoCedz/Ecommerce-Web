@@ -9,7 +9,7 @@ import {
   type NotificationRecord,
 } from "../api/notifications";
 import { fetchSellerApplications } from "../api/sellerApplications";
-import { REPORTS } from "../pages/admin/ReportsModerationPage";
+import { fetchAdminDisputes, fetchAdminReports } from "../api/adminModeration";
 import ConfirmDialog from "../components/ConfirmDialog";
 import {
   IconDashboard, IconUsers, IconSellers, IconProducts, IconOrders,
@@ -29,12 +29,9 @@ type NavItem = {
 type BadgeCounts = {
   sellers: number;
   reports: number;
-  moderation: number;
+  disputes: number;
   notifications: number;
 };
-
-const getPendingReportCount = () => REPORTS.filter((report) => report.status === "pending").length;
-const getModerationCount = () => REPORTS.filter((report) => report.status === "pending" || report.status === "reviewing").length;
 
 function formatRelativeTime(value: string | null) {
   if (!value) return "Just now";
@@ -62,6 +59,10 @@ function resolveNotificationRoute(notification: NotificationRecord) {
     return "/admin/reports";
   }
 
+  if (action.includes("dispute")) {
+    return "/admin/disputes";
+  }
+
   if (action.includes("analytics")) {
     return "/admin/analytics";
   }
@@ -81,7 +82,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "orders",      label: "Orders",       icon: IconOrders },
   { id: "categories",  label: "Categories",   icon: IconCategories },
   { id: "reports",     label: "Reports",      icon: IconReports,    badgeKey: "reports", badgeColor: "red" },
-  { id: "moderation",  label: "Moderation",   icon: IconModeration, badgeKey: "moderation", badgeColor: "red" },
+  { id: "disputes",    label: "Disputes",     icon: IconModeration, badgeKey: "disputes", badgeColor: "red" },
   { id: "analytics",   label: "Analytics",    icon: IconAnalytics },
   { id: "settings",    label: "Settings",     icon: IconSettings },
 ];
@@ -108,8 +109,8 @@ export default function AdminShell({ children, activeNav = "dashboard", onNavCha
   const [logoutLoading, setLogoutLoading] = useState(false);
   const [badgeCounts, setBadgeCounts] = useState<BadgeCounts>({
     sellers: 0,
-    reports: getPendingReportCount(),
-    moderation: getModerationCount(),
+    reports: 0,
+    disputes: 0,
     notifications: 0,
   });
   const handleLogout = async () => {
@@ -134,14 +135,18 @@ export default function AdminShell({ children, activeNav = "dashboard", onNavCha
     void (async () => {
       try {
         setNotificationsLoading(true);
-        const [applicationsResponse, notificationsResponse] = await Promise.all([
+        const [applicationsResponse, notificationsResponse, reportsResponse, disputesResponse] = await Promise.all([
           fetchSellerApplications({ status: "pending", per_page: 1 }),
           fetchNotifications({ limit: 5 }),
+          fetchAdminReports(),
+          fetchAdminDisputes(),
         ]);
         if (!active) return;
         setBadgeCounts((current) => ({
           ...current,
           sellers: applicationsResponse.data.total ?? applicationsResponse.data.length,
+          reports: reportsResponse.meta.pending_count + reportsResponse.meta.reviewing_count,
+          disputes: disputesResponse.meta.open_count,
           notifications: notificationsResponse.meta.unread_count ?? 0,
         }));
         setNotifications(notificationsResponse.data.filter((notification) => !notification.dismissed_at));
@@ -440,7 +445,7 @@ export default function AdminShell({ children, activeNav = "dashboard", onNavCha
                     <p className="text-[10px] text-[var(--color-ink-muted)]">admin@marketo.ph</p>
                   </div>
                   {["Profile", "Admin Settings"].map(l => (
-                    <button key={l} onClick={() => { setAccountOpen(false); navigate("/admin/settings"); }} className="w-full flex items-center px-4 py-2.5 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface)] cursor-pointer">{l}</button>
+                    <button key={l} onClick={() => { setAccountOpen(false); navigate(l === "Profile" ? "/account/profile" : "/admin/settings"); }} className="w-full flex items-center px-4 py-2.5 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface)] cursor-pointer">{l}</button>
                   ))}
                   <div className="border-t border-[var(--color-border)]">
                     <button onClick={() => setLogoutConfirmOpen(true)} className="w-full flex items-center px-4 py-2.5 text-sm text-[var(--color-red)] hover:bg-[var(--color-red-light)] cursor-pointer">Log out</button>

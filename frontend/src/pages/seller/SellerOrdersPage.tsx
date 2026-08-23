@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchSellerOrders, type SellerOrder } from "../../api/seller";
+import { LoaderCircle } from "lucide-react";
+import { cancelSellerOrderBySeller, fetchSellerOrders, updateSellerOrderStatus, type SellerOrder } from "../../api/seller";
+import { useToast } from "../../components/ToastProvider";
 
 type FulfillmentStatus = "new" | "confirmed" | "preparing" | "ready" | "picked-up" | "in-transit" | "delivered" | "completed" | "cancelled" | "failed";
 
@@ -65,10 +67,49 @@ function FulfillmentFlow({ current }: { current: FulfillmentStatus }) {
   );
 }
 
-function OrderCard({ order }: { order: SellerOrder }) {
+const ACTION_LABELS: Record<NonNullable<SellerOrder["next_status"]>, string> = {
+  confirmed: "Confirm order",
+  preparing: "Start preparing",
+  ready: "Mark packed and ready",
+  "in-transit": "Mark shipped",
+  delivered: "Mark delivered",
+};
+
+function OrderCard({ order, onUpdated }: { order: SellerOrder; onUpdated: (order: SellerOrder) => void }) {
+  const { showToast } = useToast();
   const [expanded, setExpanded] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [trackingNumber, setTrackingNumber] = useState(order.tracking_number ?? "");
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
   const status = normalizeStatus(order.status);
   const cfg = FULFILLMENT_CONFIG[status];
+
+  const advanceOrder = async () => {
+    if (!order.next_status) return;
+    setUpdating(true);
+    try {
+      const response = await updateSellerOrderStatus(order.id, order.next_status, trackingNumber);
+      onUpdated(response.data);
+      showToast({ title: "Order updated", message: response.message });
+    } catch (error) {
+      showToast({ kind: "error", title: "Order not updated", message: error instanceof Error ? error.message : "Please try again." });
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const cancelOrder = async () => {
+    if (cancelReason.trim().length < 5) return;
+    setUpdating(true);
+    try {
+      const response = await cancelSellerOrderBySeller(order.id, cancelReason.trim());
+      onUpdated({ ...order, status: "cancelled", next_status: null });
+      setCancelling(false);
+      showToast({ title: "Order cancelled", message: response.message });
+    } catch (error) { showToast({ kind: "error", title: "Order not cancelled", message: error instanceof Error ? error.message : "Please try again." }); }
+    finally { setUpdating(false); }
+  };
 
   return (
     <div className={`bg-white border rounded-sm overflow-hidden transition-colors ${status === "new" ? "border-[var(--color-amber-border)]" : "border-[var(--color-border)]"}`}>
@@ -141,6 +182,22 @@ function OrderCard({ order }: { order: SellerOrder }) {
               ))}
             </div>
           </div>
+
+          {order.next_status && (
+            <div className="flex flex-col gap-3 border-t border-[var(--color-border-subtle)] pt-4 sm:flex-row sm:items-end sm:justify-between">
+              {order.next_status === "in-transit" ? (
+                <label className="text-xs font-[500] text-[var(--color-ink)]">
+                  Tracking number (optional)
+                  <input value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} maxLength={100} placeholder="Generated automatically if blank" className="mt-1.5 w-full min-w-64 rounded-sm border border-[var(--color-border)] px-3 py-2 text-sm outline-none focus:border-[var(--color-navy)]" />
+                </label>
+              ) : <span />}
+              <button onClick={() => void advanceOrder()} disabled={updating} className="inline-flex items-center justify-center gap-2 rounded-sm bg-[var(--color-navy)] px-4 py-2.5 text-sm font-[500] text-white hover:bg-[var(--color-navy-hover)] disabled:cursor-not-allowed disabled:opacity-60">
+                {updating && <LoaderCircle size={15} className="animate-spin" />}
+                {ACTION_LABELS[order.next_status]}
+              </button>
+            </div>
+          )}
+          {(["new", "confirmed"].includes(status)) && <div className="border-t border-[var(--color-border-subtle)] pt-4">{!cancelling ? <button onClick={() => setCancelling(true)} className="text-sm text-[var(--color-red)]">Cancel this seller order</button> : <div className="rounded-sm border border-[var(--color-red-border)] bg-[var(--color-red-light)] p-4"><p className="text-sm font-[600] text-[var(--color-red)]">Confirm seller cancellation</p><textarea value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} rows={2} maxLength={1000} placeholder="Reason for the buyer" className="mt-2 w-full resize-none rounded-sm border border-[var(--color-border)] bg-white px-3 py-2 text-sm" /><div className="mt-2 flex justify-end gap-2"><button onClick={() => setCancelling(false)} className="px-3 py-2 text-sm">Keep order</button><button onClick={() => void cancelOrder()} disabled={updating || cancelReason.trim().length < 5} className="rounded-sm bg-[var(--color-red)] px-3 py-2 text-sm text-white disabled:opacity-50">Confirm cancellation</button></div></div>}</div>}
         </div>
       )}
     </div>
@@ -152,6 +209,10 @@ export default function SellerOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<"all" | "new" | "active" | "completed" | "cancelled">("all");
   const [search, setSearch] = useState("");
+
+  const replaceOrder = (updated: SellerOrder) => {
+    setOrders((current) => current.map((order) => order.id === updated.id ? updated : order));
+  };
 
   useEffect(() => {
     let active = true;
@@ -260,7 +321,7 @@ export default function SellerOrdersPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {filtered.map((order) => <OrderCard key={order.id} order={order} />)}
+          {filtered.map((order) => <OrderCard key={order.id} order={order} onUpdated={replaceOrder} />)}
         </div>
       )}
     </div>

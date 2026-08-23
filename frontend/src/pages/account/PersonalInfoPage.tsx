@@ -1,102 +1,137 @@
-import { useState } from "react";
-import { AccountUser } from "./AccountLayout";
+import { useEffect, useRef, useState } from "react";
+import { updateAccountProfile } from "../../api/account";
+import { ApiError } from "../../api/client";
+import { useAuth } from "../../auth/AuthContext";
+import { useToast } from "../../components/ToastProvider";
 
-function EditableField({ label, value, onSave, type = "text", options }: {
-  label: string; value: string; onSave: (v: string) => void;
-  type?: "text" | "select" | "tel" | "date"; options?: string[];
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
+const INPUT = "w-full rounded-sm border border-[var(--color-border)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--color-navy)]";
 
-  const save = () => { onSave(draft); setEditing(false); };
-  const cancel = () => { setDraft(value); setEditing(false); };
+export default function PersonalInfoPage() {
+  const { user, refreshUser } = useAuth();
+  const { showToast } = useToast();
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [removeAvatar, setRemoveAvatar] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    setFirstName(user?.first_name ?? "");
+    setLastName(user?.last_name ?? "");
+    setPhone((user?.phone ?? user?.mobile ?? "").replace(/^\+63/, ""));
+  }, [user]);
+
+  useEffect(() => {
+    if (!avatarFile) {
+      setAvatarPreview(null);
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(avatarFile);
+    setAvatarPreview(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [avatarFile]);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setErrors({});
+    try {
+      const response = await updateAccountProfile({
+        first_name: firstName,
+        last_name: lastName,
+        phone,
+        avatar_file: avatarFile,
+        remove_avatar: removeAvatar,
+      });
+      await refreshUser();
+      setAvatarFile(null);
+      setRemoveAvatar(false);
+      showToast({ title: "Profile updated", message: response.message });
+    } catch (error) {
+      if (error instanceof ApiError && error.errors) {
+        setErrors(Object.fromEntries(Object.entries(error.errors).map(([key, messages]) => [key, messages[0]])));
+      }
+      showToast({ kind: "error", title: "Profile not saved", message: error instanceof Error ? error.message : "Please try again." });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
-    <div className="flex items-start gap-3 py-4 border-b border-[var(--color-border-subtle)] last:border-0">
-      <div className="flex-1 min-w-0">
-        <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] uppercase tracking-wide mb-1">{label}</p>
-        {editing ? (
-          <div className="flex items-center gap-2 mt-1">
-            {type === "select" && options ? (
-              <select value={draft} onChange={e => setDraft(e.target.value)}
-                className="flex-1 px-3 py-1.5 text-sm border border-[var(--color-navy)] rounded-sm bg-white outline-none focus:ring-2 focus:ring-[var(--color-navy)]/10">
-                {options.map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
+    <div className="mx-auto max-w-screen-xl px-4 py-6 md:px-8 lg:px-12">
+      <div className="mb-5">
+        <h1 className="font-[var(--font-display)] text-2xl text-[var(--color-ink)]">Personal information</h1>
+        <p className="mt-1 text-sm text-[var(--color-ink-muted)]">Update the contact information saved to your Maketo account.</p>
+      </div>
+      <form onSubmit={submit} className="overflow-hidden rounded-sm border border-[var(--color-border)] bg-white">
+        <div className="flex flex-wrap items-center gap-4 border-b border-[var(--color-border)] p-6">
+          <div className="h-20 w-20 overflow-hidden rounded bg-[var(--color-navy)] flex items-center justify-center shrink-0">
+            {!removeAvatar && (avatarPreview || user?.avatar_url) ? (
+              <img src={avatarPreview ?? user?.avatar_url ?? ""} alt="Profile avatar" className="h-full w-full object-cover" />
             ) : (
-              <input type={type} value={draft} onChange={e => setDraft(e.target.value)}
-                className="flex-1 px-3 py-1.5 text-sm border border-[var(--color-navy)] rounded-sm bg-white outline-none focus:ring-2 focus:ring-[var(--color-navy)]/10"
-                autoFocus />
+              <span className="font-[var(--font-display)] text-2xl text-white">
+                {(firstName[0] ?? "U").toUpperCase()}{(lastName[0] ?? "").toUpperCase()}
+              </span>
             )}
-            <button onClick={save} className="px-3 py-1.5 bg-[var(--color-navy)] text-white text-xs font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] cursor-pointer">Save</button>
-            <button onClick={cancel} className="px-3 py-1.5 border border-[var(--color-border)] text-xs text-[var(--color-ink-muted)] rounded-sm hover:bg-[var(--color-surface)] cursor-pointer">Cancel</button>
           </div>
-        ) : (
-          <p className="text-sm text-[var(--color-ink)] font-[500] mt-0.5">{value || <span className="text-[var(--color-ink-disabled)]">Not set</span>}</p>
-        )}
-      </div>
-      {!editing && (
-        <button onClick={() => { setDraft(value); setEditing(true); }}
-          className="text-xs text-[var(--color-navy)] font-[500] hover:underline cursor-pointer mt-5 shrink-0">
-          Edit
-        </button>
-      )}
-    </div>
-  );
-}
-
-export default function PersonalInfoPage({ user, onUserChange }: {
-  user: AccountUser;
-  onUserChange: (u: AccountUser) => void;
-}) {
-  const update = (key: keyof AccountUser) => (val: string) =>
-    onUserChange({ ...user, [key]: val });
-
-  const [gender, setGender] = useState("Prefer not to say");
-  const [birthday, setBirthday] = useState("1994-03-15");
-  const [language, setLanguage] = useState("English (Philippines)");
-
-  return (
-    <div className="space-y-4">
-      <div className="bg-white border border-[var(--color-border)] rounded-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-[var(--color-border)]">
-          <h3 className="text-sm font-[600] text-[var(--color-ink)]">Personal Information</h3>
-          <p className="text-xs text-[var(--color-ink-muted)] mt-0.5">Manage your name, contact info, and profile details</p>
+          <div>
+            <p className="text-sm font-[600] text-[var(--color-ink)]">Profile photo</p>
+            <p className="mt-0.5 text-xs text-[var(--color-ink-muted)]">PNG, JPG, or WebP up to 5 MB.</p>
+            <div className="mt-3 flex items-center gap-3">
+              <button type="button" onClick={() => avatarInputRef.current?.click()} className="rounded-sm border border-[var(--color-border)] px-3 py-2 text-xs font-[500] hover:bg-[var(--color-surface)]">
+                Upload photo
+              </button>
+              {(user?.avatar_url || avatarFile) && !removeAvatar && (
+                <button type="button" onClick={() => { setAvatarFile(null); setRemoveAvatar(true); }} className="text-xs font-[500] text-[var(--color-red)] hover:underline">
+                  Remove
+                </button>
+              )}
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null;
+                  setAvatarFile(file);
+                  setRemoveAvatar(false);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </div>
+            {errors.avatar_file && <span className="mt-1 block text-xs text-[var(--color-red)]">{errors.avatar_file}</span>}
+          </div>
         </div>
-        <div className="px-6">
-          <EditableField label="First name" value={user.firstName} onSave={update("firstName")} />
-          <EditableField label="Last name" value={user.lastName} onSave={update("lastName")} />
-          <EditableField label="Email address" type="text" value={user.email} onSave={update("email")} />
-          <EditableField label="Phone number" type="tel" value={user.phone} onSave={update("phone")} />
-          <EditableField label="Date of birth" type="date" value={birthday} onSave={setBirthday} />
-          <EditableField label="Gender" type="select" value={gender} onSave={setGender}
-            options={["Male", "Female", "Non-binary", "Prefer not to say"]} />
-          <EditableField label="Language" type="select" value={language} onSave={setLanguage}
-            options={["English (Philippines)", "Filipino", "Cebuano"]} />
+        <div className="grid gap-5 p-6 md:grid-cols-2">
+          <label className="text-sm font-[500]">First name
+            <input className={`${INPUT} mt-1.5`} value={firstName} onChange={(e) => setFirstName(e.target.value)} maxLength={100} required />
+            {errors.first_name && <span className="mt-1 block text-xs text-[var(--color-red)]">{errors.first_name}</span>}
+          </label>
+          <label className="text-sm font-[500]">Last name
+            <input className={`${INPUT} mt-1.5`} value={lastName} onChange={(e) => setLastName(e.target.value)} maxLength={100} required />
+            {errors.last_name && <span className="mt-1 block text-xs text-[var(--color-red)]">{errors.last_name}</span>}
+          </label>
+          <label className="text-sm font-[500]">Email address
+            <input className={`${INPUT} mt-1.5 bg-[var(--color-surface)] text-[var(--color-ink-muted)]`} value={user?.email ?? ""} readOnly />
+            <span className="mt-1 block text-xs text-[var(--color-ink-muted)]">Email changes require a separate verification flow and are not available here.</span>
+          </label>
+          <label className="text-sm font-[500]">Mobile number
+            <div className="mt-1.5 flex rounded-sm border border-[var(--color-border)] focus-within:border-[var(--color-navy)]">
+              <span className="flex items-center border-r border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm">+63</span>
+              <input className="min-w-0 flex-1 px-3 py-2.5 text-sm outline-none" inputMode="numeric" value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))} placeholder="9XXXXXXXXX" required />
+            </div>
+            {errors.phone && <span className="mt-1 block text-xs text-[var(--color-red)]">{errors.phone}</span>}
+          </label>
         </div>
-      </div>
-
-      {/* Email change warning */}
-      <div className="bg-[var(--color-warning-light)] border border-[var(--color-warning-border)] rounded-sm px-4 py-3">
-        <p className="text-xs font-[600] text-[var(--color-warning)] mb-0.5">Changing your email</p>
-        <p className="text-xs text-[var(--color-warning)]/80 leading-relaxed">
-          If you change your email address, you'll need to verify the new address before it becomes active. You'll continue using your current email to sign in until verification is complete.
-        </p>
-      </div>
-
-      {/* Delete account */}
-      <div className="bg-white border border-[var(--color-red-border)] rounded-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-[var(--color-red-border)] bg-[var(--color-red-light)]">
-          <h3 className="text-sm font-[600] text-[var(--color-red)]">Delete Account</h3>
+        <div className="flex justify-end border-t border-[var(--color-border)] px-6 py-4">
+          <button disabled={saving} className="rounded-sm bg-[var(--color-navy)] px-5 py-2.5 text-sm font-[500] text-white disabled:opacity-60">{saving ? "Saving..." : "Save changes"}</button>
         </div>
-        <div className="px-6 py-5">
-          <p className="text-sm text-[var(--color-ink-muted)] leading-relaxed mb-4">
-            Permanently delete your account and all associated data. This action cannot be undone. All orders, reviews, and saved items will be removed.
-          </p>
-          <button className="px-4 py-2 text-sm font-[500] text-[var(--color-red)] border border-[var(--color-red-border)] rounded-sm hover:bg-[var(--color-red-light)] transition-colors cursor-pointer">
-            Delete my account
-          </button>
-        </div>
-      </div>
+      </form>
     </div>
   );
 }

@@ -3,6 +3,12 @@ import { Rating, Price } from "../../Part03";
 import { IconHeart, IconChevronRight, IconMessages } from "../../shells/icons";
 import { fetchCatalogSeller, type CatalogProduct, type CatalogSeller } from "../../api/catalog";
 import { DEFAULT_SELLER_BANNER } from "./visuals";
+import { useNavigate } from "react-router";
+import { useAuth } from "../../auth/AuthContext";
+import { useToast } from "../../components/ToastProvider";
+import { startConversation } from "../../api/account";
+import { Flag } from "lucide-react";
+import ReportDialog from "../../components/ReportDialog";
 
 type NavFn = (page: string, params?: Record<string, string>) => void;
 
@@ -26,10 +32,21 @@ function ProductCard({ product, onNavigate }: { product: CatalogProduct; onNavig
 }
 
 export default function SellerStorePage({ sellerSlug, onNavigate }: { sellerSlug: string; onNavigate: NavFn }) {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { showToast } = useToast();
   const [seller, setSeller] = useState<CatalogSeller | null>(null);
   const [followed, setFollowed] = useState(false);
   const [activeTab, setActiveTab] = useState("products");
   const [sort, setSort] = useState("relevance");
+  const [reportOpen, setReportOpen] = useState(false);
+
+  const messageSeller = async () => {
+    if (!user) { onNavigate("login"); return; }
+    if (!seller) return;
+    try { const response = await startConversation({ seller_id: seller.id, subject: seller.name }); navigate(`/account/messages?conversation=${response.data.id}`); }
+    catch (error) { showToast({ kind: "error", title: "Conversation unavailable", message: error instanceof Error ? error.message : "Please try again." }); }
+  };
 
   useEffect(() => {
     void fetchCatalogSeller(sellerSlug).then((response) => setSeller(response.data)).catch(() => setSeller(null));
@@ -55,7 +72,7 @@ export default function SellerStorePage({ sellerSlug, onNavigate }: { sellerSlug
   return (
     <div className="bg-[var(--color-ground)] min-h-full">
       <div className="relative" style={{ height: "220px" }}>
-        <img src={`${seller.banner || DEFAULT_SELLER_BANNER}?w=1400&h=400&fit=crop&auto=format`} alt={seller.name} className="w-full h-full object-cover" />
+        <img src={seller.banner || `${DEFAULT_SELLER_BANNER}?w=1400&h=400&fit=crop&auto=format`} alt={seller.name} className="w-full h-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
         <div className="absolute top-4 left-4 md:left-8 lg:left-12">
           <div className="flex items-center gap-1.5">
@@ -95,9 +112,13 @@ export default function SellerStorePage({ sellerSlug, onNavigate }: { sellerSlug
                     <IconHeart size={13} />
                     {followed ? "Following" : "Follow"}
                   </button>
-                  <button className="flex items-center gap-1.5 px-4 py-2 text-sm font-[500] rounded-sm border border-[var(--color-border)] text-[var(--color-ink)] hover:border-[var(--color-navy)] hover:text-[var(--color-navy)] transition-all cursor-pointer">
+                  <button onClick={() => void messageSeller()} className="flex items-center gap-1.5 px-4 py-2 text-sm font-[500] rounded-sm border border-[var(--color-border)] text-[var(--color-ink)] hover:border-[var(--color-navy)] hover:text-[var(--color-navy)] transition-all cursor-pointer">
                     <IconMessages size={13} />
                     Message
+                  </button>
+                  <button onClick={() => user ? setReportOpen(true) : onNavigate("login")} className="flex items-center gap-1.5 px-3 py-2 text-sm text-[var(--color-ink-muted)] hover:text-[var(--color-red)] cursor-pointer">
+                    <Flag size={13} />
+                    Report
                   </button>
                 </div>
               </div>
@@ -221,6 +242,7 @@ export default function SellerStorePage({ sellerSlug, onNavigate }: { sellerSlug
           </div>
         )}
       </div>
+      {reportOpen && <ReportDialog targetType="seller" targetId={seller.id} targetName={seller.name} onClose={() => setReportOpen(false)} />}
     </div>
   );
 }

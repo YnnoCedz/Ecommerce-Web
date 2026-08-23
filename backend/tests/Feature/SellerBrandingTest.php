@@ -118,4 +118,39 @@ class SellerBrandingTest extends TestCase
         $this->assertSame(['#1A3550'], $seller->brand_colors);
         $this->assertNotNull($seller->logo_path);
     }
+
+    public function test_browser_style_multipart_branding_upload_uses_method_spoofing(): void
+    {
+        Storage::fake('r2');
+
+        $user = User::factory()->create([
+            'role' => 'seller',
+            'status' => 'active',
+            'email_verified_at' => now(),
+        ]);
+
+        $seller = Seller::factory()->create([
+            'user_id' => $user->id,
+            'status' => 'approved',
+            'verified' => true,
+            'brand_colors' => [],
+        ]);
+
+        $response = $this->actingAs($user)
+            ->withHeaders($this->browserHeaders())
+            ->post('/api/seller/me', [
+                '_method' => 'PATCH',
+                'business_name' => $seller->business_name,
+                'brand_colors' => json_encode(['#123456']),
+                'logo_file' => $this->fakePng('browser-logo.png'),
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.brand_colors.0', '#123456');
+
+        $seller->refresh();
+
+        $this->assertNotNull($seller->logo_path);
+        Storage::disk('r2')->assertExists($seller->logo_path);
+    }
 }

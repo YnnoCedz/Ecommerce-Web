@@ -1,5 +1,4 @@
 import { useState } from "react";
-import AdminShell from "../../shells/AdminShell";
 
 type OrderStatus = "processing" | "ready" | "in-transit" | "out-for-delivery" | "delivered" | "completed" | "cancelled" | "failed" | "returned" | "refunded";
 type ExceptionType = "none" | "dispute" | "refund-request" | "fraud-flag" | "delayed";
@@ -93,8 +92,7 @@ export default function AdminOrdersPage() {
   ];
 
   return (
-    <AdminShell activeNav="orders">
-      <div className="flex h-full min-h-screen">
+    <div className="flex h-full min-h-screen">
 
         {/* ── ORDER LIST ──────────────────────────────────────── */}
         <div className={`flex flex-col ${selectedOrder ? "hidden lg:flex lg:w-[55%]" : "w-full"} border-r border-[var(--color-border)]`}>
@@ -335,7 +333,6 @@ export default function AdminOrdersPage() {
             </div>
           </div>
         )}
-      </div>
-    </AdminShell>
+    </div>
   );
 }

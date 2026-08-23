@@ -6,6 +6,7 @@ import {
   type SellerProduct,
   type SellerProfile,
 } from "../../api/seller";
+import { DEFAULT_SELLER_BANNER } from "../pub/visuals";
 
 type StoreTab = "profile" | "branding" | "policies" | "preview";
 
@@ -537,12 +538,7 @@ function BrandingTab({
           ) : profile?.banner_url ? (
             <img src={profile.banner_url} alt="Store banner" className="w-full h-full object-cover" />
           ) : (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <p className="text-sm font-[500] text-[var(--color-ink)]">No banner uploaded yet</p>
-                <p className="text-xs text-[var(--color-ink-muted)] mt-1">Banner management is now wired to storage.</p>
-              </div>
-            </div>
+            <img src={`${DEFAULT_SELLER_BANNER}?w=1400&h=400&fit=crop&auto=format`} alt="Default store banner" className="w-full h-full object-cover" />
           )}
         </div>
         <div className="flex items-center gap-3">
@@ -800,12 +796,7 @@ function PreviewTab({
           {profile?.banner_url ? (
             <img src={profile.banner_url} alt="Store banner" className="w-full h-full object-cover" />
           ) : (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <p className="text-sm font-[500] text-[var(--color-ink)]">No banner preview</p>
-                <p className="text-xs text-[var(--color-ink-muted)] mt-1">A store banner will appear here once uploaded.</p>
-              </div>
-            </div>
+            <img src={`${DEFAULT_SELLER_BANNER}?w=1400&h=400&fit=crop&auto=format`} alt="Default store banner" className="w-full h-full object-cover" />
           )}
         </div>
 

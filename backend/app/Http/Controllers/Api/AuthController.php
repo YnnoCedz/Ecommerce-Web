@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AuthChallenge;
 use App\Models\User;
 use App\Notifications\AuthChallengeNotification;
+use App\Services\MediaStorageService;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -26,9 +27,13 @@ class AuthController extends Controller
     private const TWO_FACTOR_RESEND_SECONDS = 30;
     private const TWO_FACTOR_MAX_ATTEMPTS = 5;
 
+    public function __construct(private readonly MediaStorageService $media)
+    {
+    }
+
     protected function strongPasswordRules(): array
     {
-        return ['required', 'confirmed', PasswordRule::min(8)->mixedCase()->numbers()->symbols()];
+        return ['required', 'confirmed', 'max:16', PasswordRule::min(8)->mixedCase()->numbers()->symbols()];
     }
 
     public function register(Request $request): JsonResponse
@@ -565,6 +570,7 @@ class AuthController extends Controller
             'first_name' => $user->first_name,
             'last_name' => $user->last_name,
             'display_name' => $user->display_name,
+            'avatar_url' => $user->avatar_path ? $this->media->publicUrl($user->avatar_path) : null,
             'email' => $user->email,
             'mobile' => $user->mobile,
             'phone' => $user->phone ?? $user->mobile,

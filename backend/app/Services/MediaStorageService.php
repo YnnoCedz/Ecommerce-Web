@@ -51,6 +51,26 @@ class MediaStorageService
         }
     }
 
+    public function snapshotPublicFile(string $sourcePath, string $prefix, ?string $disk = 'r2'): ?array
+    {
+        if ($sourcePath === '' || Str::startsWith($sourcePath, ['http://', 'https://', 'data:'])) {
+            return null;
+        }
+
+        $storage = Storage::disk($disk);
+        if (! $storage->exists($sourcePath)) {
+            return null;
+        }
+
+        $extension = pathinfo($sourcePath, PATHINFO_EXTENSION) ?: 'bin';
+        $snapshotPath = trim($prefix, '/').'/'.Str::uuid().'.'.$extension;
+        if (! $storage->copy($sourcePath, $snapshotPath)) {
+            throw new RuntimeException('Unable to create the historical order image snapshot.');
+        }
+
+        return ['storage_disk' => $disk, 'storage_path' => $snapshotPath];
+    }
+
     public function testConnection(string $prefix = 'maketo-system-test'): array
     {
         $this->assertR2Configured();

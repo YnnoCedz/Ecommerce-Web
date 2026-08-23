@@ -27,6 +27,7 @@ class Order extends Model
         'grand_total',
         'buyer_notes',
         'placed_at',
+        'completed_at',
     ];
 
     protected $casts = [
@@ -36,6 +37,7 @@ class Order extends Model
         'tax_total' => 'decimal:2',
         'grand_total' => 'decimal:2',
         'placed_at' => 'datetime',
+        'completed_at' => 'datetime',
     ];
 
     public function buyer()
@@ -56,5 +58,15 @@ class Order extends Model
     public function payments()
     {
         return $this->hasMany(Payment::class);
+    }
+
+    public function cancellations()
+    {
+        return $this->hasMany(OrderCancellation::class);
+    }
+
+    public function returnRequests()
+    {
+        return $this->hasMany(ReturnRequest::class);
     }
 }

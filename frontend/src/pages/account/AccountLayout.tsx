@@ -172,10 +172,14 @@ export default function AccountLayout({ children, activePage, user, onNavigate, 
             {/* User card */}
             <div className="bg-white border border-[var(--color-border)] rounded-sm p-4">
               <div className="flex items-center gap-3 mb-3">
-                <div className="w-12 h-12 bg-[var(--color-navy)] rounded shrink-0 flex items-center justify-center">
-                  <span className="font-[var(--font-display)] text-lg text-white font-[400]">
-                    {user.firstName[0]}{user.lastName[0]}
-                  </span>
+                <div className="w-12 h-12 bg-[var(--color-navy)] rounded shrink-0 flex items-center justify-center overflow-hidden">
+                  {user.avatar ? (
+                    <img src={user.avatar} alt={`${user.firstName} ${user.lastName}`} className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="font-[var(--font-display)] text-lg text-white font-[400]">
+                      {user.firstName[0]}{user.lastName[0]}
+                    </span>
+                  )}
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-[600] text-[var(--color-ink)] truncate">{user.firstName} {user.lastName}</p>

@@ -172,6 +172,8 @@ export type SellerOrder = {
   ready_at: string | null;
   picked_up_at: string | null;
   delivered_at: string | null;
+  completed_at: string | null;
+  next_status: "confirmed" | "preparing" | "ready" | "in-transit" | "delivered" | null;
   placed_at: string | null;
   buyer: {
     id: number;
@@ -187,6 +189,7 @@ export type SellerOrder = {
     tracking: string | null;
     driver: string | null;
     status: string | null;
+    events: Array<{ status: string; note: string | null; occurred_at: string | null }>;
   } | null;
   items: Array<{
     id: number;
@@ -229,6 +232,38 @@ export type SellerPromotion = {
   applies_to: string;
   category: { id: number; name: string; slug: string } | null;
   new_customers_only: boolean;
+};
+
+export type SellerReview = {
+  id: number;
+  product_id: number;
+  product_name: string;
+  product_image: string | null;
+  buyer_name: string;
+  rating: number;
+  title: string | null;
+  body: string | null;
+  status: string;
+  verified_purchase: boolean;
+  submitted_at: string | null;
+  reply: { id: number; body: string; replied_at: string | null } | null;
+};
+
+export type SellerReturnRequest = {
+  id: number;
+  order_number: string;
+  seller_order_id: number;
+  buyer_name: string;
+  status: string;
+  reason: string;
+  buyer_statement: string | null;
+  seller_response: string | null;
+  requested_amount: number;
+  refunded_amount: number;
+  requested_at: string | null;
+  items: Array<{ id: number; product_name: string; quantity: number; unit_price: number; refund_amount: number }>;
+  evidence: Array<{ id: number; name: string; mime_type: string | null; url: string }>;
+  dispute: { id: number; status: string; reason: string } | null;
 };
 
 export type SellerDashboard = {
@@ -286,12 +321,47 @@ export async function fetchSellerOrders() {
   return singleFlight("seller:orders", () => apiFetch<{ data: SellerOrder[] }>("/seller/orders"));
 }
 
+export async function updateSellerOrderStatus(
+  sellerOrderId: number,
+  status: NonNullable<SellerOrder["next_status"]>,
+  trackingNumber?: string,
+) {
+  return apiFetch<{ message: string; data: SellerOrder }>(`/seller/orders/${sellerOrderId}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status, tracking_number: trackingNumber || null }),
+  });
+}
+
+export function cancelSellerOrderBySeller(sellerOrderId: number, reason: string) {
+  return apiFetch<{ message: string }>(`/seller/orders/${sellerOrderId}/cancel`, { method: "POST", body: JSON.stringify({ reason }) });
+}
+
 export async function fetchSellerCustomers() {
   return singleFlight("seller:customers", () => apiFetch<{ data: SellerCustomer[] }>("/seller/customers"));
 }
 
 export async function fetchSellerPromotions() {
   return singleFlight("seller:promotions", () => apiFetch<{ data: SellerPromotion[] }>("/seller/promotions"));
+}
+
+export function fetchSellerReviews() {
+  return apiFetch<{ data: SellerReview[] }>("/seller/reviews");
+}
+
+export function saveSellerReviewReply(reviewId: number, body: string) {
+  return apiFetch<{ message: string }>(`/seller/reviews/${reviewId}/reply`, { method: "POST", body: JSON.stringify({ body }) });
+}
+
+export function deleteSellerReviewReply(reviewId: number) {
+  return apiFetch<{ message: string }>(`/seller/reviews/${reviewId}/reply`, { method: "DELETE" });
+}
+
+export function fetchSellerReturns() {
+  return apiFetch<{ data: SellerReturnRequest[] }>("/seller/returns");
+}
+
+export function updateSellerReturn(returnId: number, status: string, seller_response?: string) {
+  return apiFetch<{ message: string; data: SellerReturnRequest }>(`/seller/returns/${returnId}`, { method: "PATCH", body: JSON.stringify({ status, seller_response }) });
 }
 
 export type SellerProfileUpdatePayload = {
@@ -342,6 +412,9 @@ export async function updateSellerProfile(payload: SellerProfileUpdatePayload) {
   }
 
   const formData = new FormData();
+  // PHP does not reliably parse multipart file fields on PATCH requests.
+  // Use Laravel method spoofing so uploaded branding files reach the controller.
+  formData.set("_method", "PATCH");
   formData.set("business_name", payload.business_name);
   if (payload.trade_name !== undefined) formData.set("trade_name", payload.trade_name ?? "");
   if (payload.tagline !== undefined) formData.set("tagline", payload.tagline ?? "");
@@ -374,7 +447,7 @@ export async function updateSellerProfile(payload: SellerProfileUpdatePayload) {
   if (payload.remove_banner) formData.set("remove_banner", "1");
 
   return apiFetch<{ message: string; data: SellerProfile }>("/seller/me", {
-    method: "PATCH",
+    method: "POST",
     body: formData,
   });
 }

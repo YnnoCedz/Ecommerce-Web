@@ -66,6 +66,7 @@ const FOOTER_LINKS: { heading: string; links: { label: string; href: string }[] 
 
 // Account menu — label + destination route.
 const BASE_ACCOUNT_LINKS: { label: string; href: string }[] = [
+  { label: "Profile", href: "/account/profile" },
   { label: "My Orders", href: "/account/orders" },
   { label: "Wishlist", href: "/account/wishlist" },
   { label: "Addresses", href: "/account/addresses" },
@@ -330,8 +331,12 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
                     aria-expanded={accountMenuOpen}
                     aria-haspopup="true"
                     className="flex flex-col items-center p-2 text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] transition-colors cursor-pointer">
-                    <div className="w-6 h-6 rounded-full bg-[var(--color-navy)] flex items-center justify-center">
-                      <span className="text-white text-[10px] font-[500]">{accountInitials}</span>
+                    <div className="w-6 h-6 rounded-full bg-[var(--color-navy)] flex items-center justify-center overflow-hidden">
+                      {user?.avatar_url ? (
+                        <img src={user.avatar_url} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <span className="text-white text-[10px] font-[500]">{accountInitials}</span>
+                      )}
                     </div>
                     <span className="text-[9px] font-[var(--font-mono)] mt-0.5 hidden lg:block">Account</span>
                   </button>

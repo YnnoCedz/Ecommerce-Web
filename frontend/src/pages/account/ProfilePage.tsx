@@ -58,10 +58,22 @@ export default function ProfilePage({ user, onNavigate, onPageChange }: {
   const recentOrders = orders.slice(0, 3);
 
   return (
-    <div className="space-y-4">
-      <StatusBannerAccount status={user.status} />
+    <div className="bg-[var(--color-ground)] min-h-full">
+      <div className="max-w-screen-xl mx-auto px-4 md:px-8 lg:px-12 py-6">
+        <div className="flex items-center gap-2 mb-5">
+          <button onClick={() => onNavigate("home")} className="font-[var(--font-mono)] text-[11px] text-[var(--color-ink-muted)] hover:text-[var(--color-navy)] cursor-pointer">Home</button>
+          <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" strokeWidth="1.3" className="text-[var(--color-ink-disabled)]"><path d="M3 2l3 2.5-3 2.5" /></svg>
+          <span className="font-[var(--font-mono)] text-[11px] text-[var(--color-ink)]">My Profile</span>
+        </div>
 
-      <SectionCard
+        <div className="flex items-center justify-between mb-5">
+          <h1 className="font-[var(--font-display)] text-2xl font-[400] text-[var(--color-ink)]">My Profile</h1>
+        </div>
+
+        <div className="space-y-4">
+          <StatusBannerAccount status={user.status} />
+
+          <SectionCard
         title="Profile"
         action={
           <button onClick={() => onPageChange("personal-info")}
@@ -71,10 +83,14 @@ export default function ProfilePage({ user, onNavigate, onPageChange }: {
         }>
         <div className="flex items-start gap-5">
           <div className="relative shrink-0">
-            <div className="w-20 h-20 bg-[var(--color-navy)] rounded flex items-center justify-center">
-              <span className="font-[var(--font-display)] text-3xl text-white font-[400]">
-                {user.firstName[0]}{user.lastName[0]}
-              </span>
+            <div className="w-20 h-20 bg-[var(--color-navy)] rounded flex items-center justify-center overflow-hidden">
+              {user.avatar ? (
+                <img src={user.avatar} alt={`${user.firstName} ${user.lastName}`} className="h-full w-full object-cover" />
+              ) : (
+                <span className="font-[var(--font-display)] text-3xl text-white font-[400]">
+                  {user.firstName[0]}{user.lastName[0]}
+                </span>
+              )}
             </div>
           </div>
 
@@ -98,9 +114,9 @@ export default function ProfilePage({ user, onNavigate, onPageChange }: {
             </div>
           </div>
         </div>
-      </SectionCard>
+          </SectionCard>
 
-      <SectionCard
+          <SectionCard
         title="Recent Orders"
         action={
           <button onClick={() => onPageChange("orders")}
@@ -138,9 +154,9 @@ export default function ProfilePage({ user, onNavigate, onPageChange }: {
             ))}
           </div>
         )}
-      </SectionCard>
+          </SectionCard>
 
-      <SectionCard
+          <SectionCard
         title="Security"
         action={
           <button onClick={() => onPageChange("security")}
@@ -163,7 +179,9 @@ export default function ProfilePage({ user, onNavigate, onPageChange }: {
             </div>
           ))}
         </div>
-      </SectionCard>
+          </SectionCard>
+        </div>
+      </div>
     </div>
   );
 }

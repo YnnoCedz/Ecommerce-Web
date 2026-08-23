@@ -29,6 +29,7 @@ class User extends Authenticatable implements MustVerifyEmailContract
         'email',
         'mobile',
         'phone',
+        'avatar_path',
         'password',
         'role',
         'status',
@@ -95,6 +96,26 @@ class User extends Authenticatable implements MustVerifyEmailContract
     public function marketplaceNotifications()
     {
         return $this->hasMany(MarketplaceNotification::class);
+    }
+
+    public function preference()
+    {
+        return $this->hasOne(UserPreference::class);
+    }
+
+    public function conversationParticipants()
+    {
+        return $this->morphMany(ConversationParticipant::class, 'participantable');
+    }
+
+    public function sentMessages()
+    {
+        return $this->morphMany(Message::class, 'senderable');
+    }
+
+    public function reviews()
+    {
+        return $this->hasMany(Review::class);
     }
 
     public function isBuyer(): bool

@@ -9,6 +9,7 @@ const NAV_ROUTES: Record<string, string> = {
   orders:     "/admin/orders",
   categories: "/admin/categories",
   reports:    "/admin/reports",
+  disputes:   "/admin/disputes",
   moderation: "/admin/moderation",
   analytics:  "/admin/analytics",
   settings:   "/admin/settings",

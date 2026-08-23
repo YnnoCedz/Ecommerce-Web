@@ -18,6 +18,13 @@ class Shipment extends Model
         'delivered_at',
     ];
 
+    protected $casts = [
+        'expected_delivery_at' => 'datetime',
+        'picked_up_at' => 'datetime',
+        'in_transit_at' => 'datetime',
+        'delivered_at' => 'datetime',
+    ];
+
     public function sellerOrder()
     {
         return $this->belongsTo(SellerOrder::class);
@@ -33,4 +40,3 @@ class Shipment extends Model
         return $this->hasMany(TrackingEvent::class);
     }
 }
-

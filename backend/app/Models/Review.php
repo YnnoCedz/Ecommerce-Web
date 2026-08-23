@@ -23,6 +23,39 @@ class Review extends Model
         'moderation_note',
     ];
 
+    protected $casts = [
+        'rating' => 'integer',
+        'helpful_count' => 'integer',
+        'not_helpful_count' => 'integer',
+        'submitted_at' => 'datetime',
+        'moderated_at' => 'datetime',
+    ];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function seller()
+    {
+        return $this->belongsTo(Seller::class);
+    }
+
+    public function product()
+    {
+        return $this->belongsTo(Product::class);
+    }
+
+    public function order()
+    {
+        return $this->belongsTo(Order::class);
+    }
+
+    public function orderItem()
+    {
+        return $this->belongsTo(OrderItem::class);
+    }
+
     public function reply()
     {
         return $this->hasOne(ReviewReply::class);

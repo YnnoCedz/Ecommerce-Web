@@ -2,12 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { fetchCart, type CartData } from "../../api/cart";
 import { fetchAccountAddresses, storeAccountAddress, submitCheckout, type BuyerAddress, type CheckoutResult } from "../../api/buyer";
+import { useToast } from "../../components/ToastProvider";
 
 type Step = 1 | 2 | 3 | 4;
-type PaymentMethod = "cod";
+type PaymentMethod = "cod" | "gcash" | "maya" | "card";
 
 const PAYMENT_METHODS: { id: PaymentMethod; label: string; desc: string }[] = [
   { id: "cod", label: "Cash on Delivery", desc: "Pay when your order is delivered" },
+  { id: "gcash", label: "GCash", desc: "Demo mobile-wallet transaction" },
+  { id: "maya", label: "Maya", desc: "Demo mobile-wallet transaction" },
+  { id: "card", label: "Card", desc: "Sandbox card transaction; no sensitive details are stored" },
 ];
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
@@ -27,6 +31,7 @@ function currency(value: number) {
 
 export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }) {
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [searchParams] = useSearchParams();
   const [step, setStep] = useState<Step>(initialStep);
   const [cart, setCart] = useState<CartData | null>(null);
@@ -39,6 +44,11 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
   const [error, setError] = useState<string | null>(null);
   const [addingAddress, setAddingAddress] = useState(false);
   const [order, setOrder] = useState<CheckoutResult | null>(null);
+  const [mobileNumber, setMobileNumber] = useState("+63");
+  const [cardholderName, setCardholderName] = useState("");
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardExpiry, setCardExpiry] = useState("");
+  const [cardCvv, setCardCvv] = useState("");
   const [newAddress, setNewAddress] = useState({
     label: "Home",
     recipient_name: "",
@@ -140,15 +150,32 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
         return;
       }
 
+      if ((selectedPayment === "gcash" || selectedPayment === "maya") && !/^\+639\d{9}$/.test(mobileNumber)) {
+        setError("Enter a valid Philippine mobile number for the demo wallet payment.");
+        return;
+      }
+      const cardDigits = cardNumber.replace(/\D/g, "");
+      if (selectedPayment === "card" && (!cardholderName.trim() || cardDigits.length !== 16 || !/^\d{2}\/\d{2}$/.test(cardExpiry) || !/^\d{3,4}$/.test(cardCvv))) {
+        setError("Complete the demo card details using a 16-digit card number, MM/YY expiry, and CVV.");
+        return;
+      }
+
       const response = await submitCheckout({
         address_id: selectedAddressId,
         payment_method: selectedPayment,
         cart_item_ids: selectedItemIds.size > 0 ? [...selectedItemIds] : undefined,
+        payment_details: selectedPayment === "card" ? {
+          cardholder_name: cardholderName.trim(),
+          card_last4: cardDigits.slice(-4),
+          card_brand: cardDigits.startsWith("4") ? "Visa" : cardDigits.startsWith("5") ? "Mastercard" : "Demo card",
+        } : selectedPayment === "gcash" || selectedPayment === "maya" ? { mobile_number: mobileNumber } : undefined,
       });
       setOrder(response.data);
       setNotice(response.message);
       setStep(4);
       setError(null);
+      showToast({ kind: response.data.payment_status === "failed" ? "error" : undefined, title: response.data.payment_status === "paid" ? "Demo payment successful" : "Order placed", message: response.message });
+      navigate(`/account/orders/${encodeURIComponent(response.data.order_number)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to submit checkout.");
     } finally {
@@ -323,6 +350,22 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
                     <p className="text-xs text-[var(--color-ink-muted)] mt-0.5">{method.desc}</p>
                   </button>
                 ))}
+                {(selectedPayment === "gcash" || selectedPayment === "maya") && (
+                  <div className="mt-3 rounded-sm border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+                    <label className="text-xs font-[500] text-[var(--color-ink)]">Demo mobile number</label>
+                    <input value={mobileNumber} onChange={(event) => setMobileNumber(`+63${event.target.value.replace(/\D/g, "").replace(/^63/, "").slice(0, 10)}`)} className="mt-1.5 w-full rounded-sm border border-[var(--color-border)] px-3 py-2.5 text-sm" placeholder="+639XXXXXXXXX" />
+                    <p className="mt-2 text-xs text-[var(--color-ink-muted)]">Sandbox only. No wallet is charged.</p>
+                  </div>
+                )}
+                {selectedPayment === "card" && (
+                  <div className="mt-3 grid gap-3 rounded-sm border border-[var(--color-border)] bg-[var(--color-surface)] p-4 sm:grid-cols-2">
+                    <label className="sm:col-span-2 text-xs font-[500] text-[var(--color-ink)]">Cardholder name<input value={cardholderName} onChange={(event) => setCardholderName(event.target.value)} maxLength={120} className="mt-1.5 w-full rounded-sm border border-[var(--color-border)] px-3 py-2.5 text-sm" /></label>
+                    <label className="sm:col-span-2 text-xs font-[500] text-[var(--color-ink)]">Demo card number<input value={cardNumber} onChange={(event) => setCardNumber(event.target.value.replace(/\D/g, "").slice(0, 16).replace(/(.{4})/g, "$1 ").trim())} inputMode="numeric" className="mt-1.5 w-full rounded-sm border border-[var(--color-border)] px-3 py-2.5 text-sm" placeholder="4242 4242 4242 4242" /></label>
+                    <label className="text-xs font-[500] text-[var(--color-ink)]">Expiry<input value={cardExpiry} onChange={(event) => { const digits = event.target.value.replace(/\D/g, "").slice(0, 4); setCardExpiry(digits.length > 2 ? `${digits.slice(0, 2)}/${digits.slice(2)}` : digits); }} inputMode="numeric" className="mt-1.5 w-full rounded-sm border border-[var(--color-border)] px-3 py-2.5 text-sm" placeholder="MM/YY" /></label>
+                    <label className="text-xs font-[500] text-[var(--color-ink)]">CVV<input value={cardCvv} onChange={(event) => setCardCvv(event.target.value.replace(/\D/g, "").slice(0, 4))} type="password" inputMode="numeric" className="mt-1.5 w-full rounded-sm border border-[var(--color-border)] px-3 py-2.5 text-sm" placeholder="123" /></label>
+                    <p className="sm:col-span-2 text-xs text-[var(--color-ink-muted)]">CVV, expiry, and full card number never leave this page and are never stored.</p>
+                  </div>
+                )}
               </div>
             </SectionCard>
           </div>
@@ -345,7 +388,7 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
               onClick={placeOrder}
               disabled={!selectedAddress || submitting}
               className="w-full py-3 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm disabled:opacity-60">
-              {submitting ? "Placing order..." : "Place order"}
+              {submitting ? (selectedPayment === "cod" ? "Placing order..." : "Processing demo payment...") : "Place order"}
             </button>
             <p className="text-xs text-[var(--color-ink-muted)] leading-relaxed">
               Your price, inventory, address ownership, and seller totals are validated again by Maketo before the order is saved.

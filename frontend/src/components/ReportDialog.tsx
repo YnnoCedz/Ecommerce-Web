@@ -7,11 +7,13 @@ import {
   Info,
   X,
 } from "lucide-react";
+import { submitReport } from "../api/adminModeration";
 
 export type ReportTargetType = "seller" | "buyer" | "courier" | "product" | "conversation";
 
 type ReportDialogProps = {
   targetType: ReportTargetType;
+  targetId?: number;
   targetName: string;
   onClose: () => void;
 };
@@ -67,13 +69,14 @@ const TARGET_ICONS: Record<ReportTargetType, string> = {
   conversation: "💬",
 };
 
-export default function ReportDialog({ targetType, targetName, onClose }: ReportDialogProps) {
+export default function ReportDialog({ targetType, targetId, targetName, onClose }: ReportDialogProps) {
   const [step, setStep] = useState<ReportStep>("reason");
   const [selectedReason, setSelectedReason] = useState("");
   const [description, setDescription] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
-  const [referenceId] = useState(`RPT-${Math.floor(100000 + Math.random() * 900000)}`);
+  const [referenceId, setReferenceId] = useState("");
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const reasons = REASONS[targetType];
@@ -89,12 +92,29 @@ export default function ReportDialog({ targetType, targetName, onClose }: Report
 
   const removeFile = (idx: number) => setFiles(prev => prev.filter((_, i) => i !== idx));
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (!targetId) {
+      setSubmissionError("This report target is unavailable. Refresh the page and try again.");
+      return;
+    }
+
     setSubmitting(true);
-    setTimeout(() => {
-      setSubmitting(false);
+    setSubmissionError(null);
+    try {
+      const response = await submitReport({
+        target_type: targetType,
+        target_id: targetId,
+        reason: selectedReason,
+        description: description.trim(),
+        attachments: files,
+      });
+      setReferenceId(response.data.reference);
       setStep("success");
-    }, 1400);
+    } catch (caught) {
+      setSubmissionError(caught instanceof Error ? caught.message : "Unable to submit the report.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const STEP_ORDER: ReportStep[] = ["reason", "details", "confirm", "success"];
@@ -312,6 +332,12 @@ export default function ReportDialog({ targetType, targetName, onClose }: Report
           )}
         </div>
 
+        {submissionError && step !== "success" && (
+          <div className="mx-6 mb-3 px-3 py-2 bg-[var(--color-red-light)] border border-[var(--color-red)]/20 text-xs text-[var(--color-red)]">
+            {submissionError}
+          </div>
+        )}
+
         {/* Footer */}
         {step !== "success" && (
           <div className="px-6 py-4 border-t border-[var(--color-border)] flex justify-between items-center shrink-0 bg-[var(--color-surface)]">
@@ -345,7 +371,7 @@ export default function ReportDialog({ targetType, targetName, onClose }: Report
 
             {step === "confirm" && (
               <button
-                onClick={handleSubmit}
+                onClick={() => void handleSubmit()}
                 disabled={submitting}
                 className="flex items-center gap-2 px-5 py-2 bg-[var(--color-red)] text-white text-sm font-[500] rounded-sm hover:opacity-90 cursor-pointer transition-all disabled:opacity-60">
                 {submitting && (

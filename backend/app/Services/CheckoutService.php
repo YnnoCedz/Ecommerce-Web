@@ -6,7 +6,6 @@ use App\Models\Address;
 use App\Models\Cart;
 use App\Models\CartItem;
 use App\Models\Order;
-use App\Models\Payment;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Seller;
@@ -19,8 +18,11 @@ use Illuminate\Validation\ValidationException;
 
 class CheckoutService
 {
-    public function __construct(private readonly NotificationService $notifications)
-    {
+    public function __construct(
+        private readonly NotificationService $notifications,
+        private readonly PaymentService $payments,
+        private readonly MediaStorageService $media,
+    ) {
     }
 
     public function checkout(User $buyer, array $data): Order
@@ -128,6 +130,14 @@ class CheckoutService
                 foreach ($lines as $line) {
                     $product = $line['product'];
                     $variant = $line['variant'];
+                    $primaryImage = $product->images->sortBy('sort_order')->first();
+                    $snapshot = $primaryImage
+                        ? $this->media->snapshotPublicFile(
+                            (string) $primaryImage->file_path,
+                            "orders/{$order->id}/items",
+                            $primaryImage->storage_disk ?: 'r2',
+                        )
+                        : null;
 
                     $order->items()->create([
                         'seller_order_id' => $sellerOrder->id,
@@ -138,6 +148,8 @@ class CheckoutService
                         'product_slug' => $product->slug,
                         'variant_name' => $variant?->name,
                         'sku' => $variant?->sku ?? $product->sku,
+                        'product_image_storage_disk' => $snapshot['storage_disk'] ?? $primaryImage?->storage_disk,
+                        'product_image_storage_path' => $snapshot['storage_path'] ?? $primaryImage?->file_path,
                         'unit_price' => $line['unit_price'],
                         'quantity' => $line['quantity'],
                         'subtotal' => $line['subtotal'],
@@ -164,18 +176,15 @@ class CheckoutService
                 }
             }
 
-            Payment::create([
-                'order_id' => $order->id,
-                'method' => $data['payment_method'],
-                'status' => 'pending',
-                'amount' => $grandTotal,
-                'currency' => 'PHP',
-            ]);
+            $payment = $this->payments->charge($order, $buyer, $data['payment_method'], $data['payment_details'] ?? []);
+            $order->forceFill(['payment_status' => $payment->status])->save();
 
             $this->notifications->publishToUser($buyer, [
                 'category' => 'order',
-                'title' => 'Order placed',
-                'body' => "Your order {$order->order_number} was placed successfully.",
+                'title' => $payment->status === 'failed' ? 'Payment failed' : 'Order placed',
+                'body' => $payment->status === 'failed'
+                    ? "The demo payment for {$order->order_number} failed. You can retry from the order page."
+                    : "Your order {$order->order_number} was placed successfully.",
                 'action_type' => 'buyer_order',
                 'action_label' => 'View order',
                 'order_id' => $order->id,
@@ -196,14 +205,14 @@ class CheckoutService
                 $this->refreshRemainingCartTotals($cart);
             }
 
-            return $order->load(['items', 'sellerOrders.seller', 'payments']);
+            return $order->fresh()->load(['items', 'sellerOrders.seller', 'payments']);
         }, 3);
     }
 
     private function buildCheckoutLines(Collection $cartItems): Collection
     {
         return $cartItems->map(function (CartItem $cartItem) {
-            $product = Product::query()->with(['seller.user'])->lockForUpdate()->find($cartItem->product_id);
+            $product = Product::query()->with(['seller.user', 'images'])->lockForUpdate()->find($cartItem->product_id);
             $variant = $cartItem->product_variant_id
                 ? ProductVariant::query()->lockForUpdate()->find($cartItem->product_variant_id)
                 : null;

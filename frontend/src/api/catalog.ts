@@ -18,12 +18,13 @@ export type CatalogSeller = {
   rating: number;
   rating_count: number;
   product_count: number;
-  follower_count: number;
-  response_rate: number;
-  response_time: string;
+  follower_count: number | null;
+  fulfilled_order_count: number | null;
+  units_sold: number | null;
   joined_year: number;
   verified: boolean;
-  banner: string;
+  logo: string | null;
+  banner: string | null;
   location: string;
   description: string | null;
   products: CatalogProduct[];
@@ -34,9 +35,9 @@ export type CatalogProduct = {
   slug: string;
   name: string;
   seller_slug: string | null;
-  seller: string;
+  seller: string | CatalogSeller;
   category_slug: string | null;
-  category: string;
+  category: string | CatalogCategory;
   price: number;
   original_price: number | null;
   rating: number;
@@ -76,6 +77,45 @@ export type CatalogProduct = {
     options: string[];
   }>;
   related?: CatalogProduct[];
+  review_summary?: ProductReviewSummary;
+  shipping_policy?: string | null;
+  return_policy?: string | null;
+  delivery_estimate?: string | null;
+};
+
+export type ProductReviewSummary = {
+  average_rating: number;
+  review_count: number;
+  rating_distribution: Record<"1" | "2" | "3" | "4" | "5", number>;
+};
+
+export type ProductReview = {
+  id: number;
+  rating: number;
+  title: string | null;
+  body: string | null;
+  buyer_display_name: string;
+  buyer_avatar: string | null;
+  verified_purchase: boolean;
+  helpful_count: number;
+  created_at: string | null;
+  updated_at: string | null;
+  images: string[];
+  seller_reply: {
+    body: string;
+    seller_name: string | null;
+    replied_at: string | null;
+  } | null;
+};
+
+export type ProductReviewsResponse = {
+  data: ProductReview[];
+  meta: {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+  };
 };
 
 export type MarketplaceSearchParams = {
@@ -148,6 +188,11 @@ export async function fetchSearchSuggestions(query: string, limit = 6) {
 
 export async function fetchCatalogProduct(slug: string) {
   return apiFetch<{ data: CatalogProduct }>(`/products/${encodeURIComponent(slug)}`);
+}
+
+export async function fetchProductReviews(slug: string, page = 1, perPage = 10) {
+  const params = new URLSearchParams({ page: String(page), per_page: String(perPage), sort: "newest" });
+  return apiFetch<ProductReviewsResponse>(`/products/${encodeURIComponent(slug)}/reviews?${params.toString()}`);
 }
 
 export async function fetchCatalogSellers() {

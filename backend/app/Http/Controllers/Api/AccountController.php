@@ -4,14 +4,117 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Address;
+use App\Models\UserPreference;
+use App\Services\MediaStorageService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rules\Password as PasswordRule;
+use Illuminate\Validation\Rule;
 
 class AccountController extends Controller
 {
+    public function updateProfile(Request $request, MediaStorageService $storage): JsonResponse
+    {
+        $phone = $this->normalizePhilippinePhone((string) $request->input('phone'));
+        $request->merge(['phone' => $phone]);
+        $user = $request->user();
+
+        $data = $request->validate([
+            'first_name' => ['required', 'string', 'max:100'],
+            'last_name' => ['required', 'string', 'max:100'],
+            'avatar_file' => ['nullable', 'image', 'mimes:jpeg,jpg,png,webp', 'max:5120'],
+            'remove_avatar' => ['nullable', 'boolean'],
+            'phone' => [
+                'required',
+                'string',
+                'regex:/^\+639\d{9}$/',
+                Rule::unique('users', 'phone')->ignore($user->id),
+                Rule::unique('users', 'mobile')->ignore($user->id),
+            ],
+        ], [
+            'phone.regex' => 'Enter a valid Philippine mobile number.',
+        ]);
+
+        $oldAvatarPath = $user->avatar_path;
+        $storedAvatar = null;
+        $avatarPath = $request->boolean('remove_avatar') ? null : $oldAvatarPath;
+
+        try {
+            if ($request->hasFile('avatar_file')) {
+                $storedAvatar = $storage->storePublicFile($request->file('avatar_file'), "user-avatars/{$user->id}");
+                $avatarPath = $storedAvatar['storage_path'];
+            }
+
+            $user->forceFill([
+                'first_name' => trim($data['first_name']),
+                'last_name' => trim($data['last_name']),
+                'name' => trim($data['first_name'].' '.$data['last_name']),
+                'phone' => $data['phone'],
+                'mobile' => $data['phone'],
+                'avatar_path' => $avatarPath,
+            ])->save();
+        } catch (\Throwable $e) {
+            if ($storedAvatar) {
+                try {
+                    $storage->delete($storedAvatar['storage_path'], $storedAvatar['storage_disk'] ?? 'r2');
+                } catch (\Throwable) {
+                }
+            }
+
+            throw $e;
+        }
+
+        if ($oldAvatarPath && $oldAvatarPath !== $avatarPath) {
+            try {
+                $storage->delete($oldAvatarPath, 'r2');
+            } catch (\Throwable) {
+            }
+        }
+
+        return response()->json([
+            'message' => 'Profile updated.',
+            'data' => [
+                'first_name' => $user->first_name,
+                'last_name' => $user->last_name,
+                'display_name' => $user->display_name,
+                'avatar_url' => $avatarPath ? $storage->publicUrl($avatarPath) : null,
+                'email' => $user->email,
+                'phone' => $user->phone,
+                'mobile' => $user->mobile,
+            ],
+        ]);
+    }
+
+    public function preferences(Request $request): JsonResponse
+    {
+        $preferences = $request->user()->preference()->firstOrCreate([]);
+
+        return response()->json(['data' => $this->preferencePayload($preferences)]);
+    }
+
+    public function updatePreferences(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'language' => ['required', Rule::in(['en-PH', 'fil-PH', 'ceb-PH'])],
+            'currency' => ['required', Rule::in(['PHP'])],
+            'number_format' => ['required', Rule::in(['1,000.00', '1.000,00'])],
+            'recommendations_enabled' => ['required', 'boolean'],
+            'recently_viewed_enabled' => ['required', 'boolean'],
+            'price_drop_alerts_enabled' => ['required', 'boolean'],
+            'analytics_cookies_enabled' => ['required', 'boolean'],
+            'marketing_cookies_enabled' => ['required', 'boolean'],
+        ]);
+
+        $preferences = $request->user()->preference()->updateOrCreate([], $data);
+
+        return response()->json([
+            'message' => 'Preferences saved.',
+            'data' => $this->preferencePayload($preferences),
+        ]);
+    }
+
     public function addresses(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -108,7 +211,7 @@ class AccountController extends Controller
     {
         $data = $request->validate([
             'current_password' => ['required', 'string'],
-            'password' => ['required', 'confirmed', PasswordRule::min(8)->mixedCase()->numbers()->symbols()],
+            'password' => ['required', 'confirmed', 'max:16', PasswordRule::min(8)->mixedCase()->numbers()->symbols()],
         ]);
 
         $user = $request->user();
@@ -125,10 +228,11 @@ class AccountController extends Controller
             'remember_token' => \Illuminate\Support\Str::random(60),
         ])->save();
 
-        DB::table('sessions')
-            ->where('user_id', $user->id)
-            ->where('id', '!=', $request->session()->getId())
-            ->delete();
+        $sessions = DB::table('sessions')->where('user_id', $user->id);
+        if ($request->hasSession()) {
+            $sessions->where('id', '!=', $request->session()->getId());
+        }
+        $sessions->delete();
 
         return response()->json([
             'message' => 'Password updated.',
@@ -172,5 +276,38 @@ class AccountController extends Controller
             'postal_code' => $address->postal_code,
             'is_default' => (bool) $address->is_default,
         ];
+    }
+
+    private function preferencePayload(UserPreference $preferences): array
+    {
+        return [
+            'language' => $preferences->language,
+            'currency' => $preferences->currency,
+            'number_format' => $preferences->number_format,
+            'recommendations_enabled' => (bool) $preferences->recommendations_enabled,
+            'recently_viewed_enabled' => (bool) $preferences->recently_viewed_enabled,
+            'price_drop_alerts_enabled' => (bool) $preferences->price_drop_alerts_enabled,
+            'analytics_cookies_enabled' => (bool) $preferences->analytics_cookies_enabled,
+            'marketing_cookies_enabled' => (bool) $preferences->marketing_cookies_enabled,
+        ];
+    }
+
+    private function normalizePhilippinePhone(string $phone): string
+    {
+        $digits = preg_replace('/\D+/', '', $phone) ?? '';
+
+        if (str_starts_with($digits, '63')) {
+            return '+'.$digits;
+        }
+
+        if (str_starts_with($digits, '09')) {
+            return '+63'.substr($digits, 1);
+        }
+
+        if (str_starts_with($digits, '9')) {
+            return '+63'.$digits;
+        }
+
+        return $phone;
     }
 }
