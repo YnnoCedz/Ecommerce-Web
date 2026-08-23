@@ -30,9 +30,8 @@ RUN composer install \
     --no-scripts
 
 COPY . .
-
-RUN composer dump-autoload --optimize
-
+RUN rm -f bootstrap/cache/*.php \
+    && composer dump-autoload --optimize --no-dev
 RUN mkdir -p \
     storage/framework/cache \
     storage/framework/sessions \
