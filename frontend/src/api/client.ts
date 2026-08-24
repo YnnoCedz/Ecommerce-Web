@@ -1,4 +1,4 @@
-const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "/api";
+const configuredApiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/+$/, "");
 // Development requests stay on the frontend origin so the Vite proxy owns
 // the browser cookie path. Production can use the configured API origin.
 export const API_BASE_URL = import.meta.env.DEV ? "/api" : configuredApiBaseUrl;
@@ -7,7 +7,7 @@ const API_ORIGIN = IS_ABSOLUTE_API_URL
   ? new URL(API_BASE_URL).origin
   : typeof window !== "undefined"
     ? window.location.origin
-    : "http://192.168.1.8:8443";
+    : "http://127.0.0.1:8000";
 const API_URL = IS_ABSOLUTE_API_URL
   ? API_BASE_URL
   : API_BASE_URL.startsWith("/")

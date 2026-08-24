@@ -1,4 +1,5 @@
 <?php
 
-return [];
-
+return [
+    App\Providers\AuthRateLimitServiceProvider::class,
+];

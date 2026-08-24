@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Rating, Price } from "../../Part03";
 import { IconChevronRight, IconTrendUp, IconBox, IconOrders } from "../../shells/icons";
 import { fetchCatalogCategories, fetchCatalogProducts, fetchCatalogSellers, type CatalogCategory, type CatalogProduct, type CatalogSeller } from "../../api/catalog";
-import { CATEGORY_VISUALS } from "./visuals";
+import { CATEGORY_VISUALS, DEFAULT_SELLER_BANNER } from "./visuals";
 import { usePersistedWishlist } from "../../hooks/usePersistedWishlist";
 
 type NavFn = (page: string, params?: Record<string, string>) => void;
@@ -211,12 +211,25 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
               <button
                 key={seller.slug}
                 onClick={() => onNavigate("seller", { slug: seller.slug })}
-                className="group bg-[var(--color-surface)] border border-[var(--color-border)] rounded-sm p-4 text-left hover:border-[var(--color-navy)] hover:shadow-[0_4px_16px_rgba(28,27,24,0.08)] transition-all cursor-pointer">
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-10 h-10 bg-[var(--color-navy)] rounded flex items-center justify-center shrink-0">
-                    <span className="font-[var(--font-display)] text-base text-white font-[400]">{seller.initials}</span>
+                className="group overflow-hidden bg-[var(--color-surface)] border border-[var(--color-border)] rounded-sm text-left hover:border-[var(--color-navy)] hover:shadow-[0_4px_16px_rgba(28,27,24,0.08)] transition-all cursor-pointer">
+                <div className="relative h-20 overflow-hidden bg-[var(--color-navy-surface)]">
+                  <img
+                    src={seller.banner || `${DEFAULT_SELLER_BANNER}?w=600&h=180&fit=crop&auto=format`}
+                    alt={`${seller.name} banner`}
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/25 to-transparent" />
+                </div>
+                <div className="px-4 pb-4">
+                  <div className="flex items-end gap-3 -mt-5 mb-3 relative z-10">
+                  <div className="w-12 h-12 bg-[var(--color-navy)] border-2 border-white rounded overflow-hidden flex items-center justify-center shrink-0 shadow-sm">
+                    {seller.logo || seller.avatar ? (
+                      <img src={seller.logo || seller.avatar || ""} alt={`${seller.name} logo`} className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="font-[var(--font-display)] text-base text-white font-[400]">{seller.initials}</span>
+                    )}
                   </div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1 pb-0.5">
                     <div className="flex items-center gap-1.5">
                       <p className="text-sm font-[600] text-[var(--color-ink)] truncate">{seller.name}</p>
                       {seller.verified && (
@@ -231,6 +244,7 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
                 </div>
                 <Rating value={seller.rating} count={seller.rating_count} />
                 <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] mt-2">{seller.product_count} products</p>
+                </div>
               </button>
             ))}
           </div>

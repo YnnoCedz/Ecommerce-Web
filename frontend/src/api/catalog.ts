@@ -23,6 +23,7 @@ export type CatalogSeller = {
   units_sold: number | null;
   joined_year: number;
   verified: boolean;
+  avatar: string | null;
   logo: string | null;
   banner: string | null;
   location: string;

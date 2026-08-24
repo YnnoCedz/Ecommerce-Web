@@ -1,4 +1,4 @@
-import { defineConfig, type HtmlTagDescriptor, type Plugin } from 'vite'
+import { defineConfig, loadEnv, type HtmlTagDescriptor, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
@@ -7,6 +7,26 @@ import siteConfiguration from './.figma/make/site.json'
 
 // Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  const apiBaseUrl = env.VITE_API_BASE_URL?.trim()
+  const developmentBackendUrl = env.VITE_DEV_BACKEND_URL?.trim() || 'http://127.0.0.1:8000'
+
+  if (mode === 'production') {
+    let productionApiUrl: URL
+
+    try {
+      productionApiUrl = new URL(apiBaseUrl || '')
+    } catch {
+      throw new Error(
+        'VITE_API_BASE_URL must be an absolute production URL such as https://your-api.onrender.com/api.',
+      )
+    }
+
+    if (productionApiUrl.protocol !== 'https:' || productionApiUrl.pathname.replace(/\/+$/, '') !== '/api') {
+      throw new Error('VITE_API_BASE_URL must use HTTPS and end with /api for production builds.')
+    }
+  }
+
   // .figma/make/deploy-preview passes `--mode development` for cached-preview builds.
   const emitSourcemaps = mode === 'development'
 
@@ -35,12 +55,12 @@ export default defineConfig(({ mode }) => {
       strictPort: true,
       proxy: {
         '/api': {
-          target: 'http://192.168.1.8:8000',
+          target: developmentBackendUrl,
           changeOrigin: true,
           secure: false,
         },
         '/sanctum': {
-          target: 'http://192.168.1.8:8000',
+          target: developmentBackendUrl,
           changeOrigin: true,
           secure: false,
         },

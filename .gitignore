@@ -10,6 +10,11 @@ vite.config.*.timestamp-*
 *-debug.log*
 logs/
 *.log
+
+# Laravel dependencies and generated runtime caches
+/backend/vendor/
+/backend/bootstrap/cache/*.php
+/backend/.phpunit.result.cache
 .claude-replay.*
 .tmp-*
 

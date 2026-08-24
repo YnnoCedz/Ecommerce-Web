@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
-pnpm run build
+npm run build
 figma make deploy --build-dir dist

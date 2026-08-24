@@ -121,6 +121,28 @@ class ProductPageLiveDataTest extends TestCase
         $this->getJson('/api/products/hidden-seller-product/reviews')->assertNotFound();
     }
 
+    public function test_public_seller_cards_expose_uploaded_avatar_logo_and_banner(): void
+    {
+        $sellerUser = User::factory()->create([
+            'role' => 'seller',
+            'status' => 'active',
+            'avatar_path' => 'https://cdn.example.test/users/avatar.jpg',
+        ]);
+        $seller = Seller::factory()->create([
+            'user_id' => $sellerUser->id,
+            'status' => 'approved',
+            'logo_path' => 'https://cdn.example.test/stores/logo.png',
+            'banner_path' => 'https://cdn.example.test/stores/banner.jpg',
+        ]);
+
+        $this->getJson('/api/sellers')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $seller->id)
+            ->assertJsonPath('data.0.avatar', 'https://cdn.example.test/users/avatar.jpg')
+            ->assertJsonPath('data.0.logo', 'https://cdn.example.test/stores/logo.png')
+            ->assertJsonPath('data.0.banner', 'https://cdn.example.test/stores/banner.jpg');
+    }
+
     private function verifiedReview(Product $product, Seller $seller, int $rating, string $firstName, string $lastName): Review
     {
         $buyer = User::factory()->create([

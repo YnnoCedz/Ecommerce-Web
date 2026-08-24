@@ -86,8 +86,12 @@ export default function SellerStorePage({ sellerSlug, onNavigate }: { sellerSlug
       <div className="bg-white border-b border-[var(--color-border)]">
         <div className="px-4 md:px-8 lg:px-12 max-w-screen-xl mx-auto">
           <div className="flex items-start gap-4 pt-6 pb-5">
-            <div className="w-16 h-16 bg-[var(--color-navy)] rounded-sm flex items-center justify-center shrink-0 mt-2 border-2 border-white shadow-[0_4px_16px_rgba(28,27,24,0.15)]">
-              <span className="font-[var(--font-display)] text-2xl text-white font-[400]">{seller.initials}</span>
+            <div className="w-16 h-16 bg-[var(--color-navy)] rounded-sm overflow-hidden flex items-center justify-center shrink-0 mt-2 border-2 border-white shadow-[0_4px_16px_rgba(28,27,24,0.15)]">
+              {seller.logo || seller.avatar ? (
+                <img src={seller.logo || seller.avatar || ""} alt={`${seller.name} logo`} className="h-full w-full object-cover" />
+              ) : (
+                <span className="font-[var(--font-display)] text-2xl text-white font-[400]">{seller.initials}</span>
+              )}
             </div>
             <div className="flex-1 min-w-0 pt-2">
               <div className="flex items-center gap-3 flex-wrap">

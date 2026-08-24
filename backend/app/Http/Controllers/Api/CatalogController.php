@@ -447,6 +447,7 @@ class CatalogController extends Controller
             'units_sold' => isset($seller->units_sold) ? (int) $seller->units_sold : null,
             'joined_year' => (int) ($seller->joined_year ?: $seller->created_at?->year),
             'verified' => (bool) $seller->verified,
+            'avatar' => $seller->user?->avatar_path ? $this->publicMediaUrl($seller->user->avatar_path) : null,
             'logo' => $seller->logo_path ? $this->publicMediaUrl($seller->logo_path) : null,
             'banner' => $seller->banner_path ? $this->publicMediaUrl($seller->banner_path) : null,
             'location' => trim(implode(', ', array_filter([$seller->city, $seller->province]))),
