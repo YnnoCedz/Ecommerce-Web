@@ -3,11 +3,34 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
 
-import siteConfiguration from './.figma/make/site.json'
+import siteConfiguration from './.figma/make/site.json' with { type: 'json' }
+
+const projectRoot = import.meta.dirname
+
+function isLocalOrPrivateHostname(hostname: string): boolean {
+  const normalizedHostname = hostname.toLowerCase().replace(/^\[|\]$/g, '')
+
+  if (normalizedHostname === 'localhost' || normalizedHostname === '::1') {
+    return true
+  }
+
+  const octets = normalizedHostname.split('.').map(Number)
+  if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) {
+    return false
+  }
+
+  return (
+    octets[0] === 0 ||
+    octets[0] === 10 ||
+    octets[0] === 127 ||
+    (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+    (octets[0] === 192 && octets[1] === 168)
+  )
+}
 
 // Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '')
+  const env = loadEnv(mode, projectRoot, '')
   const apiBaseUrl = env.VITE_API_BASE_URL?.trim()
   const developmentBackendUrl = env.VITE_DEV_BACKEND_URL?.trim() || 'http://127.0.0.1:8000'
 
@@ -22,8 +45,18 @@ export default defineConfig(({ mode }) => {
       )
     }
 
-    if (productionApiUrl.protocol !== 'https:' || productionApiUrl.pathname.replace(/\/+$/, '') !== '/api') {
-      throw new Error('VITE_API_BASE_URL must use HTTPS and end with /api for production builds.')
+    if (
+      productionApiUrl.protocol !== 'https:' ||
+      productionApiUrl.pathname !== '/api' ||
+      productionApiUrl.username !== '' ||
+      productionApiUrl.password !== '' ||
+      productionApiUrl.search !== '' ||
+      productionApiUrl.hash !== '' ||
+      isLocalOrPrivateHostname(productionApiUrl.hostname)
+    ) {
+      throw new Error(
+        'VITE_API_BASE_URL must be a public HTTPS URL ending exactly with /api and must not contain credentials, a query, or a fragment.',
+      )
     }
   }
 
@@ -46,7 +79,7 @@ export default defineConfig(({ mode }) => {
     ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, './src'),
+        '@': path.resolve(projectRoot, './src'),
       },
     },
     server: {
