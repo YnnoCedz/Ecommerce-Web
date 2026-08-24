@@ -1,11 +1,12 @@
 <?php
 
-use Illuminate\Foundation\Application;
-use Illuminate\Foundation\Configuration\Exceptions;
-use Illuminate\Foundation\Configuration\Middleware;
 use App\Http\Middleware\EnsureAccountIsActive;
 use App\Http\Middleware\EnsureSellerApproved;
 use App\Http\Middleware\EnsureUserRole;
+use App\Http\Middleware\ExposeCsrfToken;
+use Illuminate\Foundation\Application;
+use Illuminate\Foundation\Configuration\Exceptions;
+use Illuminate\Foundation\Configuration\Middleware;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -16,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->statefulApi();
+        $middleware->append(ExposeCsrfToken::class);
         $middleware->alias([
             'account.active' => EnsureAccountIsActive::class,
             'role' => EnsureUserRole::class,

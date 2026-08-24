@@ -44,6 +44,5 @@ RUN rm -f bootstrap/cache/*.php \
 
 EXPOSE 10000
 
-CMD php artisan config:clear && \
-    php artisan migrate --force && \
+CMD php artisan config:cache && \
     php artisan serve --host=0.0.0.0 --port=${PORT:-10000}

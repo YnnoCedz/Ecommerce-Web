@@ -1,16 +1,19 @@
 <?php
 
+$frontendOrigins = array_values(array_filter(array_map(
+    static fn (string $origin): string => rtrim(trim($origin), '/'),
+    explode(',', (string) env('FRONTEND_URL', 'http://192.168.1.8:8443')),
+)));
+
 return [
     'paths' => ['api/*', 'sanctum/csrf-cookie'],
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => array_values(array_filter([
-        env('FRONTEND_URL', 'http://192.168.1.8:8443'),
-    ])),
+    'allowed_origins' => $frontendOrigins,
     'allowed_origins_patterns' => [],
     'allowed_headers' => ['*'],
-    'exposed_headers' => [],
+    'exposed_headers' => ['X-CSRF-TOKEN'],
     'max_age' => 0,
     'supports_credentials' => true,
 ];

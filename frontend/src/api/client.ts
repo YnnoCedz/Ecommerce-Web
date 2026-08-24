@@ -11,6 +11,12 @@ const API_ORIGIN = import.meta.env.DEV
   ? window.location.origin
   : new URL(API_BASE_URL).origin;
 
+if (!import.meta.env.DEV && API_ORIGIN === window.location.origin) {
+  throw new Error(
+    "VITE_API_BASE_URL points to the frontend origin. Configure it with the public Laravel API URL ending in /api.",
+  );
+}
+
 function normalizeApiPath(path: string): string {
   if (!path.startsWith("/")) {
     throw new Error(`API paths must start with "/": ${path}`);
@@ -24,6 +30,8 @@ function normalizeApiPath(path: string): string {
 }
 
 type ApiOptions = RequestInit & { authToken?: string };
+
+let csrfToken: string | null = null;
 
 export class ApiError extends Error {
   status: number;
@@ -70,13 +78,27 @@ export function hasCookie(name: string): boolean {
 }
 
 export async function ensureCsrfCookie(): Promise<void> {
-  await fetch(`${API_ORIGIN}/sanctum/csrf-cookie`, {
+  const response = await fetch(`${API_ORIGIN}/sanctum/csrf-cookie`, {
     credentials: "include",
     headers: {
       Accept: "application/json",
-      "X-Requested-With": "XMLHttpRequest",
     },
   });
+
+  if (!response.ok) {
+    const payload = await readResponseBody(response);
+    const message = response.status === 405
+      ? "GET /sanctum/csrf-cookie is not allowed by the configured API host. Check VITE_API_BASE_URL and the deployed Laravel routes."
+      : `CSRF request failed: GET /sanctum/csrf-cookie returned ${response.status}.`;
+
+    throw new ApiError(message, response.status, payload);
+  }
+
+  csrfToken = response.headers.get("X-CSRF-TOKEN") ?? readCookie("XSRF-TOKEN");
+
+  if (!csrfToken) {
+    throw new Error("The API did not provide a CSRF token. Check the Laravel CORS and session configuration.");
+  }
 }
 
 async function readResponseBody(response: Response): Promise<unknown> {
@@ -90,13 +112,18 @@ async function readResponseBody(response: Response): Promise<unknown> {
 }
 
 export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
+  const normalizedPath = normalizeApiPath(path);
+  const method = (options.method ?? "GET").toUpperCase();
   const headers = new Headers(options.headers);
   headers.set("Accept", "application/json");
-  headers.set("X-Requested-With", "XMLHttpRequest");
 
-  const xsrfToken = readCookie("XSRF-TOKEN");
-  if (xsrfToken && !headers.has("X-XSRF-TOKEN")) {
-    headers.set("X-XSRF-TOKEN", xsrfToken);
+  if (csrfToken && !headers.has("X-CSRF-TOKEN")) {
+    headers.set("X-CSRF-TOKEN", csrfToken);
+  } else {
+    const xsrfToken = readCookie("XSRF-TOKEN");
+    if (xsrfToken && !headers.has("X-XSRF-TOKEN")) {
+      headers.set("X-XSRF-TOKEN", xsrfToken);
+    }
   }
 
   const body = options.body;
@@ -113,7 +140,7 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
   }
   if (options.authToken) headers.set("Authorization", `Bearer ${options.authToken}`);
 
-  const response = await fetch(`${API_BASE_URL}${normalizeApiPath(path)}`, {
+  const response = await fetch(`${API_BASE_URL}${normalizedPath}`, {
     ...options,
     headers,
     credentials: "include",
@@ -121,6 +148,9 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
 
   if (!response.ok) {
     const payload = await readResponseBody(response);
+    const fallbackMessage = response.status === 405
+      ? `${method} ${normalizedPath.split("?")[0]} is not allowed by the configured API host. Check VITE_API_BASE_URL and the deployed Laravel route method.`
+      : `API request failed: ${method} ${normalizedPath.split("?")[0]} returned ${response.status}.`;
     const message =
       payload && typeof payload === "object" && "message" in payload && typeof (payload as { message?: unknown }).message === "string"
         ? (payload as { message: string }).message
@@ -133,9 +163,9 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
                 }
               }
 
-              return `API request failed: ${response.status}`;
+              return fallbackMessage;
             })()
-        : `API request failed: ${response.status}`;
+        : fallbackMessage;
     throw new ApiError(message, response.status, payload);
   }
 
