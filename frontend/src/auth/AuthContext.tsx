@@ -32,6 +32,7 @@ type AuthContextValue = AuthState & {
   resendTwoFactor: () => Promise<TwoFactorChallenge | null>;
   clearError: () => void;
   clearPendingTwoFactor: () => void;
+  pendingVerificationEmail: string | null;
 };
 
 type LoginResult = { user: AuthUser; redirectTo?: string; requiresTwoFactor?: boolean };
@@ -39,6 +40,7 @@ type LoginResult = { user: AuthUser; redirectTo?: string; requiresTwoFactor?: bo
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 const PENDING_TWO_FACTOR_STORAGE_KEY = "maketo.pending-two-factor";
+const PENDING_VERIFICATION_EMAIL_KEY = "maketo.pending-verification-email";
 
 function readPendingTwoFactor(): TwoFactorChallenge | null {
   if (typeof window === "undefined") {
@@ -71,6 +73,38 @@ function writePendingTwoFactor(value: TwoFactorChallenge | null) {
   window.sessionStorage.setItem(PENDING_TWO_FACTOR_STORAGE_KEY, JSON.stringify(value));
 }
 
+function readPendingVerificationEmail(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const value = window.sessionStorage.getItem(PENDING_VERIFICATION_EMAIL_KEY);
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (!normalized || /\s/.test(normalized) || !/^\S+@\S+\.\S+$/.test(normalized)) {
+    window.sessionStorage.removeItem(PENDING_VERIFICATION_EMAIL_KEY);
+    return null;
+  }
+
+  return normalized;
+}
+
+function writePendingVerificationEmail(email: string | null) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (!email) {
+    window.sessionStorage.removeItem(PENDING_VERIFICATION_EMAIL_KEY);
+    return;
+  }
+
+  window.sessionStorage.setItem(PENDING_VERIFICATION_EMAIL_KEY, email.trim().toLowerCase());
+}
+
 function extractErrorMessage(error: unknown, fallback: string) {
   if (error instanceof ApiError) {
     if (error.errors) {
@@ -93,6 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingTwoFactor, setPendingTwoFactor] = useState<TwoFactorChallenge | null>(() => readPendingTwoFactor());
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState<string | null>(() => readPendingVerificationEmail());
   const loginInFlightRef = useRef<Promise<LoginResult> | null>(null);
 
   const updateUser = useCallback((nextUser: AuthUser | null) => {
@@ -196,6 +231,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearAuthToken();
     updateUser(null);
     setError(null);
+    setPendingVerificationEmail(response.verification_email ?? payload.email);
+    writePendingVerificationEmail(response.verification_email ?? payload.email);
     return {
       user: response.user as AuthUser,
       redirectTo: response.redirect_to,
@@ -214,6 +251,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     updateUser(response.user as AuthUser);
     setLoading(false);
     setError(null);
+    setPendingVerificationEmail(null);
+    writePendingVerificationEmail(null);
 
     return {
       user: response.user as AuthUser,
@@ -302,6 +341,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setPendingTwoFactor(null);
       writePendingTwoFactor(null);
     },
+    pendingVerificationEmail,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

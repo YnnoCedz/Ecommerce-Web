@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { useAuth } from "../../auth/AuthContext";
 import { ApiError } from "../../api/client";
@@ -10,8 +10,8 @@ type NavFn = (page: string, params?: Record<string, string>) => void;
 export default function VerifyEmailPage({ onNavigate }: { onNavigate: NavFn }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user, verifyEmail } = useAuth();
-  const [email, setEmail] = useState(searchParams.get("email") ?? user?.email ?? "");
+  const { user, verifyEmail, pendingVerificationEmail } = useAuth();
+  const [email, setEmail] = useState(searchParams.get("email") ?? pendingVerificationEmail ?? user?.email ?? "");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
@@ -20,10 +20,15 @@ export default function VerifyEmailPage({ onNavigate }: { onNavigate: NavFn }) {
   const [resendCooldown, setResendCooldown] = useState(0);
 
   useEffect(() => {
+    if (!email && (pendingVerificationEmail || user?.email)) {
+      setEmail(pendingVerificationEmail ?? user.email);
+      return;
+    }
+
     if (!email && user?.email) {
       setEmail(user.email);
     }
-  }, [email, user?.email]);
+  }, [email, pendingVerificationEmail, user?.email]);
 
   const displayEmail = useMemo(() => email || user?.email || "your email address", [email, user?.email]);
 
@@ -37,7 +42,9 @@ export default function VerifyEmailPage({ onNavigate }: { onNavigate: NavFn }) {
     return () => window.clearTimeout(timer);
   }, [resendCooldown]);
 
-  const verify = async () => {
+  const verify = async (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
+
     if (loading) {
       return;
     }
@@ -127,68 +134,71 @@ export default function VerifyEmailPage({ onNavigate }: { onNavigate: NavFn }) {
       {message && <AuthAlert type="success" message={message} />}
       {error && <AuthAlert type="error" message={error} />}
 
-      <div className="rounded-sm border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-4 text-sm text-[var(--color-ink-muted)] leading-relaxed space-y-2">
-        <p>
-          We sent a verification code to <strong className="text-[var(--color-ink)]">{displayEmail}</strong>.
-        </p>
-        <p>Open the email, copy the code, and enter it below. You do not need to leave the website.</p>
-      </div>
+      <form onSubmit={verify} className="space-y-5">
+        <div className="rounded-sm border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-4 text-sm text-[var(--color-ink-muted)] leading-relaxed space-y-2">
+          <p>
+            We sent a verification code to <strong className="text-[var(--color-ink)]">{displayEmail}</strong>.
+          </p>
+          <p>Open the email, copy the code, and enter it below. You do not need to leave the website.</p>
+        </div>
 
-      <Field
-        label="Email address"
-        type="email"
-        value={email}
-        onChange={(value) => {
-          setEmail(value);
-          setError(null);
-        }}
-        placeholder="you@example.com"
-        required
-      />
+        <Field
+          label="Email address"
+          type="email"
+          value={email}
+          onChange={(value) => {
+            setEmail(value);
+            setError(null);
+          }}
+          placeholder="you@example.com"
+          required
+        />
 
-      <Field
-        label="Verification code"
-        value={code}
-        onChange={(value) => {
-          setCode(value.replace(/\D/g, "").slice(0, 6));
-          setError(null);
-        }}
-        placeholder="123456"
-        required
-        hint="Enter the 6-digit code from your email."
-      />
+        <Field
+          label="Verification code"
+          value={code}
+          onChange={(value) => {
+            setCode(value.replace(/\D/g, "").slice(0, 6));
+            setError(null);
+          }}
+          placeholder="123456"
+          required
+          hint="Enter the 6-digit code from your email."
+        />
 
-      <button
-        onClick={verify}
-        disabled={loading || code.length !== 6 || !email.trim()}
-        className="w-full py-3 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center justify-center gap-2"
-      >
-        {loading ? (
-          <>
-            <svg className="animate-spin" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <circle cx="7" cy="7" r="5" strokeOpacity="0.3" />
-              <path d="M7 2a5 5 0 015 5" strokeLinecap="round" />
-            </svg>
-            Verifying...
-          </>
-        ) : "Verify email"}
-      </button>
+        <button
+          type="submit"
+          disabled={loading || code.length !== 6 || !email.trim()}
+          className="w-full py-3 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center justify-center gap-2"
+        >
+          {loading ? (
+            <>
+              <svg className="animate-spin" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <circle cx="7" cy="7" r="5" strokeOpacity="0.3" />
+                <path d="M7 2a5 5 0 015 5" strokeLinecap="round" />
+              </svg>
+              Verifying...
+            </>
+          ) : "Verify email"}
+        </button>
 
-      <button
-        onClick={resend}
-        disabled={resending || resendCooldown > 0}
-        className="w-full py-3 border border-[var(--color-border)] text-[var(--color-ink)] text-sm font-[500] rounded-sm hover:border-[var(--color-navy)] hover:text-[var(--color-navy)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center justify-center gap-2"
-      >
-        {resending ? (
-          <>
-            <svg className="animate-spin" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <circle cx="7" cy="7" r="5" strokeOpacity="0.3" />
-              <path d="M7 2a5 5 0 015 5" strokeLinecap="round" />
-            </svg>
-            Sending...
-          </>
-        ) : resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : "Resend code"}
-      </button>
+        <button
+          type="button"
+          onClick={resend}
+          disabled={resending || resendCooldown > 0}
+          className="w-full py-3 border border-[var(--color-border)] text-[var(--color-ink)] text-sm font-[500] rounded-sm hover:border-[var(--color-navy)] hover:text-[var(--color-navy)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center justify-center gap-2"
+        >
+          {resending ? (
+            <>
+              <svg className="animate-spin" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <circle cx="7" cy="7" r="5" strokeOpacity="0.3" />
+                <path d="M7 2a5 5 0 015 5" strokeLinecap="round" />
+              </svg>
+              Sending...
+            </>
+          ) : resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : "Resend code"}
+        </button>
+      </form>
     </AuthLayout>
   );
 }

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
 import { useAuth } from "../../auth/AuthContext";
 import { ApiError } from "../../api/client";
@@ -45,7 +45,9 @@ export default function RegisterPage({ onNavigate }: { onNavigate: NavFn }) {
 
   const displayPhone = phoneLocal.replace(/\D/g, "").slice(0, 10);
 
-  const submit = async () => {
+  const submit = async (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
+
     if (submissionInFlightRef.current) return;
 
     const e: Record<string, string> = {};
@@ -141,76 +143,78 @@ export default function RegisterPage({ onNavigate }: { onNavigate: NavFn }) {
 
       {message && <AuthAlert type="error" message={message} />}
 
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="First name" value={firstName} onChange={setFirstName}
-          placeholder="Ana" error={errors.firstName} required />
-        <Field label="Last name" value={lastName} onChange={setLastName}
-          placeholder="Reyes" error={errors.lastName} required />
-      </div>
-
-      <Field label="Email address" type="email" value={email} onChange={setEmail}
-        placeholder="you@example.com" error={errors.email} required />
-
-      <div>
-        <label className="block text-xs font-[600] text-[var(--color-ink)] mb-1.5">
-          Phone number <span className="text-[var(--color-red)] ml-0.5">*</span>
-        </label>
-        <div className={`flex items-center rounded-sm border bg-white transition-all ${errors.phone ? "border-[var(--color-red)] focus-within:ring-2 focus-within:ring-[var(--color-red)]/15" : "border-[var(--color-border)] focus-within:border-[var(--color-navy)] focus-within:ring-2 focus-within:ring-[var(--color-navy)]/10"}`}>
-          <span className="px-3.5 py-2.5 text-sm text-[var(--color-ink-muted)] border-r border-[var(--color-border)] bg-[var(--color-surface)] select-none">
-            +63
-          </span>
-          <input
-            type="tel"
-            inputMode="numeric"
-            value={displayPhone}
-            onChange={(e) => setPhoneLocal(e.target.value.replace(/\D/g, "").slice(0, 10))}
-            placeholder="917 555 0182"
-            className="flex-1 px-3.5 py-2.5 text-sm outline-none bg-transparent text-[var(--color-ink)] placeholder:text-[var(--color-ink-disabled)]"
-          />
+      <form onSubmit={submit} className="space-y-5">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="First name" value={firstName} onChange={setFirstName}
+            placeholder="Ana" error={errors.firstName} required />
+          <Field label="Last name" value={lastName} onChange={setLastName}
+            placeholder="Reyes" error={errors.lastName} required />
         </div>
-        {errors.phone ? <p className="text-xs text-[var(--color-red)] mt-1.5 flex items-center gap-1">{errors.phone}</p> : <p className="text-xs text-[var(--color-ink-muted)] mt-1.5">Enter your 10-digit mobile number without the +63.</p>}
-      </div>
 
-      <div className="space-y-2">
-        <Field label="Password" type="password" value={password} onChange={setPassword}
-          placeholder="Create a strong password" error={errors.password} required
-          hint={!errors.password ? "Use 8-16 characters with uppercase, number, and symbol." : undefined}
-          maxLength={16} />
-        <PasswordStrength password={password} />
-      </div>
+        <Field label="Email address" type="email" value={email} onChange={setEmail}
+          placeholder="you@example.com" error={errors.email} required />
 
-      <Field label="Confirm password" type="password" value={confirm} onChange={setConfirm}
-        placeholder="Repeat your password" error={errors.confirm} required maxLength={16} />
-
-      <div>
-        <label className="flex items-start gap-2.5 cursor-pointer group">
-          <div onClick={() => setAgreed(a => !a)}
-            className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${agreed ? "bg-[var(--color-navy)] border-[var(--color-navy)]" : errors.agreed ? "border-[var(--color-red)]" : "border-[var(--color-border-strong)] group-hover:border-[var(--color-navy)]"}`}>
-            {agreed && <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M1.5 4l2 2L6.5 2" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+        <div>
+          <label className="block text-xs font-[600] text-[var(--color-ink)] mb-1.5">
+            Phone number <span className="text-[var(--color-red)] ml-0.5">*</span>
+          </label>
+          <div className={`flex items-center rounded-sm border bg-white transition-all ${errors.phone ? "border-[var(--color-red)] focus-within:ring-2 focus-within:ring-[var(--color-red)]/15" : "border-[var(--color-border)] focus-within:border-[var(--color-navy)] focus-within:ring-2 focus-within:ring-[var(--color-navy)]/10"}`}>
+            <span className="px-3.5 py-2.5 text-sm text-[var(--color-ink-muted)] border-r border-[var(--color-border)] bg-[var(--color-surface)] select-none">
+              +63
+            </span>
+            <input
+              type="tel"
+              inputMode="numeric"
+              value={displayPhone}
+              onChange={(e) => setPhoneLocal(e.target.value.replace(/\D/g, "").slice(0, 10))}
+              placeholder="917 555 0182"
+              className="flex-1 px-3.5 py-2.5 text-sm outline-none bg-transparent text-[var(--color-ink)] placeholder:text-[var(--color-ink-disabled)]"
+            />
           </div>
-          <span className="text-sm text-[var(--color-ink-muted)] leading-snug">
-            I agree to Maketo's{" "}
-            <span className="text-[var(--color-navy)] font-[500] hover:underline cursor-pointer">Terms of Service</span>
-            {" "}and{" "}
-            <span className="text-[var(--color-navy)] font-[500] hover:underline cursor-pointer">Privacy Policy</span>
-          </span>
-        </label>
-        {errors.agreed && <p className="text-xs text-[var(--color-red)] mt-1.5 ml-6">{errors.agreed}</p>}
-      </div>
+          {errors.phone ? <p className="text-xs text-[var(--color-red)] mt-1.5 flex items-center gap-1">{errors.phone}</p> : <p className="text-xs text-[var(--color-ink-muted)] mt-1.5">Enter your 10-digit mobile number without the +63.</p>}
+        </div>
 
-      <button
-        onClick={submit}
-        disabled={loading}
-        className="w-full py-3 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center justify-center gap-2">
-        {loading ? (
-          <>
-            <svg className="animate-spin" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <circle cx="7" cy="7" r="5" strokeOpacity="0.3" /><path d="M7 2a5 5 0 015 5" strokeLinecap="round" />
-            </svg>
-            Creating account...
-          </>
-        ) : "Create account"}
-      </button>
+        <div className="space-y-2">
+          <Field label="Password" type="password" value={password} onChange={setPassword}
+            placeholder="Create a strong password" error={errors.password} required
+            hint={!errors.password ? "Use 8-16 characters with uppercase, number, and symbol." : undefined}
+            maxLength={16} />
+          <PasswordStrength password={password} />
+        </div>
+
+        <Field label="Confirm password" type="password" value={confirm} onChange={setConfirm}
+          placeholder="Repeat your password" error={errors.confirm} required maxLength={16} />
+
+        <div>
+          <label className="flex items-start gap-2.5 cursor-pointer group">
+            <div onClick={() => setAgreed(a => !a)}
+              className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${agreed ? "bg-[var(--color-navy)] border-[var(--color-navy)]" : errors.agreed ? "border-[var(--color-red)]" : "border-[var(--color-border-strong)] group-hover:border-[var(--color-navy)]"}`}>
+              {agreed && <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M1.5 4l2 2L6.5 2" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+            </div>
+            <span className="text-sm text-[var(--color-ink-muted)] leading-snug">
+              I agree to Maketo's{" "}
+              <span className="text-[var(--color-navy)] font-[500] hover:underline cursor-pointer">Terms of Service</span>
+              {" "}and{" "}
+              <span className="text-[var(--color-navy)] font-[500] hover:underline cursor-pointer">Privacy Policy</span>
+            </span>
+          </label>
+          {errors.agreed && <p className="text-xs text-[var(--color-red)] mt-1.5 ml-6">{errors.agreed}</p>}
+        </div>
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full py-3 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center justify-center gap-2">
+          {loading ? (
+            <>
+              <svg className="animate-spin" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <circle cx="7" cy="7" r="5" strokeOpacity="0.3" /><path d="M7 2a5 5 0 015 5" strokeLinecap="round" />
+              </svg>
+              Creating account...
+            </>
+          ) : "Create account"}
+        </button>
+      </form>
     </AuthLayout>
   );
 }
