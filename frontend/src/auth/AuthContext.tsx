@@ -25,7 +25,13 @@ type AuthState = {
 type AuthContextValue = AuthState & {
   refreshUser: () => Promise<AuthUser | null>;
   login: (payload: LoginPayload) => Promise<{ user: AuthUser; redirectTo?: string; requiresTwoFactor?: boolean }>;
-  register: (payload: RegisterPayload) => Promise<{ user: AuthUser; redirectTo?: string; message?: string; requiresEmailVerification?: boolean }>;
+  register: (payload: RegisterPayload) => Promise<{
+    user: AuthUser;
+    redirectTo?: string;
+    message?: string;
+    requiresEmailVerification?: boolean;
+    verificationEmailSent?: boolean;
+  }>;
   verifyEmail: (payload: { email: string; code: string }) => Promise<{ user: AuthUser; redirectTo?: string; message?: string }>;
   logout: () => Promise<void>;
   verifyTwoFactor: (payload: { code: string; challengeId?: number }) => Promise<{ user: AuthUser; redirectTo?: string }>;

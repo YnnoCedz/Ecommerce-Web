@@ -395,4 +395,33 @@ class AuthRegistrationVerificationTest extends TestCase
         $this->assertNull($user->email_verified_at);
         $this->assertNotNull($user->authChallenges()->latest('id')->firstOrFail()->consumed_at);
     }
+
+    public function test_resend_returns_safe_service_unavailable_response_when_mail_delivery_fails(): void
+    {
+        Notification::shouldReceive('send')
+            ->once()
+            ->andThrow(new RuntimeException('SMTP unavailable'));
+
+        $user = User::factory()->create([
+            'email' => 'resend-failure@maketo.local',
+            'email_verified_at' => null,
+        ]);
+
+        $response = $this->withHeaders($this->browserHeaders())
+            ->postJson('/api/auth/email/resend', [
+                'email' => $user->email,
+            ]);
+
+        $response
+            ->assertStatus(503)
+            ->assertExactJson([
+                'message' => 'Unable to send the verification code right now. Please try again.',
+                'code' => 'verification_delivery_failed',
+            ]);
+
+        $challenge = $user->authChallenges()->latest('id')->firstOrFail();
+
+        $this->assertNotNull($challenge->consumed_at);
+        $this->assertTrue($challenge->resend_available_at->lessThanOrEqualTo(now()));
+    }
 }

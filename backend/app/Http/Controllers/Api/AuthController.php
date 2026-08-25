@@ -383,7 +383,16 @@ class AuthController extends Controller
                 ], 429);
             }
 
-            $user->sendEmailVerificationNotification();
+            try {
+                $user->sendEmailVerificationNotification();
+            } catch (\Throwable $e) {
+                report($e);
+
+                return response()->json([
+                    'message' => 'Unable to send the verification code right now. Please try again.',
+                    'code' => 'verification_delivery_failed',
+                ], 503);
+            }
         }
 
         return response()->json([

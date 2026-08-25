@@ -32,7 +32,7 @@ export default function VerifyEmailPage({ onNavigate }: { onNavigate: NavFn }) {
 
   useEffect(() => {
     if (!email && (pendingVerificationEmail || user?.email)) {
-      setEmail(pendingVerificationEmail ?? user.email);
+      setEmail(pendingVerificationEmail ?? user?.email ?? "");
       return;
     }
 
