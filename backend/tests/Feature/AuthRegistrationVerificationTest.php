@@ -47,9 +47,7 @@ class AuthRegistrationVerificationTest extends TestCase
 
         $this->withHeaders($this->browserHeaders())
             ->getJson('/api/auth/me')
-            ->assertOk()
-            ->assertJsonPath('user.email', $email)
-            ->assertJsonPath('user.email_verified_at', null);
+            ->assertUnauthorized();
 
         $this->withHeaders($this->browserHeaders())->postJson('/api/auth/register', [
             'first_name' => 'Mia',
@@ -75,19 +73,24 @@ class AuthRegistrationVerificationTest extends TestCase
             'password' => 'Password123!',
         ])->assertStatus(403)->assertJsonPath('code', 'email_unverified');
 
-        $this->withHeaders($this->browserHeaders())->postJson('/api/auth/email/verify', [
+        $verificationResponse = $this->withHeaders($this->browserHeaders())->postJson('/api/auth/email/verify', [
             'email' => $email,
             'code' => $code,
         ])->assertOk()
             ->assertJsonPath('redirect_to', '/')
+            ->assertJsonPath('token_type', 'Bearer')
             ->assertJsonPath('user.email', $email);
 
         $this->assertNotNull($user->refresh()->email_verified_at);
+        $this->withToken($verificationResponse->json('token'))->getJson('/api/auth/me')
+            ->assertOk()
+            ->assertJsonPath('user.email', $email);
 
         $this->withHeaders($this->browserHeaders())->postJson('/api/auth/login', [
             'email' => $email,
             'password' => 'Password123!',
-        ])->assertOk();
+        ])->assertOk()
+            ->assertJsonPath('token_type', 'Bearer');
     }
 
     public function test_registration_rejects_passwords_missing_required_strength_rules(): void
@@ -139,7 +142,7 @@ class AuthRegistrationVerificationTest extends TestCase
         $this->assertSame('Enter this code on the Maketo verification page. If you did not request it, you can ignore this email.', $mail->introLines[3]);
     }
 
-    public function test_email_verification_accepts_leading_zero_code_and_keeps_session(): void
+    public function test_email_verification_accepts_leading_zero_code_and_issues_token(): void
     {
         Notification::fake();
 
@@ -159,8 +162,7 @@ class AuthRegistrationVerificationTest extends TestCase
             'sent_to' => $user->email,
         ]);
 
-        $this->actingAs($user)
-            ->withHeaders($this->browserHeaders())
+        $response = $this->withHeaders($this->browserHeaders())
             ->postJson('/api/auth/email/verify', [
                 'email' => $user->email,
                 'code' => '003491',
@@ -168,17 +170,18 @@ class AuthRegistrationVerificationTest extends TestCase
             ->assertOk()
             ->assertJsonPath('message', 'Email verified successfully.')
             ->assertJsonPath('redirect_to', '/')
+            ->assertJsonPath('token_type', 'Bearer')
             ->assertJsonPath('user.email_verified_at', fn ($value) => is_string($value));
 
         $this->assertNotNull($user->refresh()->email_verified_at);
 
-        $this->withHeaders($this->browserHeaders())
+        $this->withToken($response->json('token'))
             ->getJson('/api/auth/me')
             ->assertOk()
             ->assertJsonPath('user.email', $user->email);
     }
 
-    public function test_email_verification_with_valid_code_restores_session_when_missing(): void
+    public function test_email_verification_with_valid_code_returns_bearer_token(): void
     {
         Notification::fake();
 
@@ -198,7 +201,7 @@ class AuthRegistrationVerificationTest extends TestCase
             'sent_to' => $user->email,
         ]);
 
-        $this->withHeaders($this->browserHeaders())
+        $response = $this->withHeaders($this->browserHeaders())
             ->postJson('/api/auth/email/verify', [
                 'email' => $user->email,
                 'code' => '684052',
@@ -206,11 +209,12 @@ class AuthRegistrationVerificationTest extends TestCase
             ->assertOk()
             ->assertJsonPath('message', 'Email verified successfully.')
             ->assertJsonPath('redirect_to', '/')
+            ->assertJsonPath('token_type', 'Bearer')
             ->assertJsonPath('user.email', $user->email);
 
         $this->assertNotNull($user->refresh()->email_verified_at);
 
-        $this->withHeaders($this->browserHeaders())
+        $this->withToken($response->json('token'))
             ->getJson('/api/auth/me')
             ->assertOk()
             ->assertJsonPath('user.email', $user->email);
@@ -236,8 +240,7 @@ class AuthRegistrationVerificationTest extends TestCase
             'sent_to' => $user->email,
         ]);
 
-        $this->actingAs($user)
-            ->withHeaders($this->browserHeaders())
+        $this->withHeaders($this->browserHeaders())
             ->postJson('/api/auth/email/verify', [
                 'email' => $user->email,
                 'code' => '111111',
@@ -247,8 +250,7 @@ class AuthRegistrationVerificationTest extends TestCase
 
         $challenge->forceFill(['expires_at' => now()->subSecond()])->save();
 
-        $this->actingAs($user)
-            ->withHeaders($this->browserHeaders())
+        $this->withHeaders($this->browserHeaders())
             ->postJson('/api/auth/email/verify', [
                 'email' => $user->email,
                 'code' => '918204',
@@ -261,22 +263,20 @@ class AuthRegistrationVerificationTest extends TestCase
             'expires_at' => now()->addMinutes(User::EMAIL_VERIFICATION_EXPIRES_MINUTES),
         ])->save();
 
-        $this->actingAs($user)
-            ->withHeaders($this->browserHeaders())
+        $this->withHeaders($this->browserHeaders())
             ->postJson('/api/auth/email/verify', [
                 'email' => $user->email,
                 'code' => '918204',
             ])
             ->assertOk();
 
-        $this->actingAs($user)
-            ->withHeaders($this->browserHeaders())
+        $this->withHeaders($this->browserHeaders())
             ->postJson('/api/auth/email/verify', [
                 'email' => $user->email,
                 'code' => '918204',
             ])
-            ->assertOk()
-            ->assertJsonPath('message', 'Your email address is already verified.');
+            ->assertUnprocessable()
+            ->assertJsonPath('code', 'verification_challenge_not_found');
     }
 
     public function test_resending_verification_code_enforces_cooldown_and_invalidates_previous_code(): void
@@ -299,8 +299,7 @@ class AuthRegistrationVerificationTest extends TestCase
             'sent_to' => $user->email,
         ]);
 
-        $this->actingAs($user)
-            ->withHeaders($this->browserHeaders())
+        $this->withHeaders($this->browserHeaders())
             ->postJson('/api/auth/email/resend', [
                 'email' => $user->email,
             ])
@@ -309,8 +308,7 @@ class AuthRegistrationVerificationTest extends TestCase
 
         $oldChallenge->forceFill(['resend_available_at' => now()->subSecond()])->save();
 
-        $this->actingAs($user)
-            ->withHeaders($this->browserHeaders())
+        $this->withHeaders($this->browserHeaders())
             ->postJson('/api/auth/email/resend', [
                 'email' => $user->email,
             ])
@@ -319,8 +317,7 @@ class AuthRegistrationVerificationTest extends TestCase
 
         $this->assertNotNull($oldChallenge->refresh()->consumed_at);
 
-        $this->actingAs($user)
-            ->withHeaders($this->browserHeaders())
+        $this->withHeaders($this->browserHeaders())
             ->postJson('/api/auth/email/verify', [
                 'email' => $user->email,
                 'code' => '123456',

@@ -13,7 +13,7 @@ class ProductionCorsTest extends TestCase
         parent::setUp();
 
         config()->set('cors.allowed_origins', [self::FRONTEND_ORIGIN]);
-        config()->set('cors.supports_credentials', true);
+        config()->set('cors.supports_credentials', false);
     }
 
     public function test_production_frontend_can_preflight_required_api_routes(): void
@@ -26,10 +26,9 @@ class ProductionCorsTest extends TestCase
             $this->call('OPTIONS', $path, server: [
                 'HTTP_ORIGIN' => self::FRONTEND_ORIGIN,
                 'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => $method,
-                'HTTP_ACCESS_CONTROL_REQUEST_HEADERS' => 'content-type,x-csrf-token',
+                'HTTP_ACCESS_CONTROL_REQUEST_HEADERS' => 'authorization,content-type',
             ])->assertNoContent()
                 ->assertHeader('Access-Control-Allow-Origin', self::FRONTEND_ORIGIN)
-                ->assertHeader('Access-Control-Allow-Credentials', 'true')
                 ->assertHeader('Access-Control-Allow-Methods', $method);
         }
     }
@@ -49,21 +48,10 @@ class ProductionCorsTest extends TestCase
         );
     }
 
-    public function test_cross_site_frontend_can_read_csrf_token_and_post_login(): void
+    public function test_cross_site_frontend_can_post_login_without_csrf_cookie(): void
     {
-        $csrfResponse = $this->withHeader('Origin', self::FRONTEND_ORIGIN)
-            ->get('/sanctum/csrf-cookie')
-            ->assertNoContent()
-            ->assertHeader('Access-Control-Allow-Origin', self::FRONTEND_ORIGIN)
-            ->assertHeader('Access-Control-Expose-Headers', 'X-CSRF-TOKEN');
-
-        $csrfToken = $csrfResponse->headers->get('X-CSRF-TOKEN');
-
-        $this->assertNotEmpty($csrfToken);
-
         $this->withHeaders([
             'Origin' => self::FRONTEND_ORIGIN,
-            'X-CSRF-TOKEN' => $csrfToken,
         ])->postJson('/api/auth/login', [])
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['email', 'password'])

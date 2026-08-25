@@ -12,16 +12,6 @@ class AuthSessionPersistenceTest extends TestCase
 {
     use RefreshDatabase;
 
-    protected function browserHeaders(string $path = '/'): array
-    {
-        return [
-            'Accept' => 'application/json',
-            'X-Requested-With' => 'XMLHttpRequest',
-            'Origin' => 'http://192.168.1.8:8443',
-            'Referer' => 'http://192.168.1.8:8443'.$path,
-        ];
-    }
-
     protected function createUser(string $role): User
     {
         return User::factory()->create([
@@ -33,55 +23,45 @@ class AuthSessionPersistenceTest extends TestCase
         ]);
     }
 
-    protected function login(User $user): void
+    protected function login(User $user): string
     {
-        $this->withHeaders($this->browserHeaders('/auth/login'))
-            ->postJson('/api/auth/login', [
-                'email' => $user->email,
-                'password' => 'Password123!',
-            ])
-            ->assertOk()
-            ->assertJsonPath('user.id', $user->id);
+        return $this->postJson('/api/auth/login', [
+            'email' => $user->email,
+            'password' => 'Password123!',
+        ])->assertOk()
+            ->assertJsonPath('token_type', 'Bearer')
+            ->assertJsonPath('user.id', $user->id)
+            ->json('token');
     }
 
-    public function test_buyer_session_survives_navigation_and_validation_error_until_logout(): void
+    public function test_buyer_token_authorizes_requests_until_logout(): void
     {
         $buyer = $this->createUser('buyer');
-        $this->login($buyer);
+        $token = $this->login($buyer);
 
-        $this->withHeaders($this->browserHeaders('/account/orders'))
-            ->getJson('/api/auth/me')
+        $this->withToken($token)->getJson('/api/auth/me')
             ->assertOk()
             ->assertJsonPath('user.id', $buyer->id);
 
-        $this->withHeaders($this->browserHeaders('/account/orders'))
-            ->getJson('/api/orders')
-            ->assertOk();
+        $this->withToken($token)->getJson('/api/orders')->assertOk();
 
-        $this->withHeaders($this->browserHeaders('/account/security'))
-            ->patchJson('/api/account/password', [
-                'current_password' => 'wrong-password',
-                'password' => 'NewPassword123!',
-                'password_confirmation' => 'NewPassword123!',
-            ])
-            ->assertStatus(422)
+        $this->withToken($token)->patchJson('/api/account/password', [
+            'current_password' => 'wrong-password',
+            'password' => 'NewPassword123!',
+            'password_confirmation' => 'NewPassword123!',
+        ])->assertStatus(422)
             ->assertJsonPath('code', 'current_password_invalid');
 
-        $this->withHeaders($this->browserHeaders('/account/security'))
-            ->getJson('/api/auth/me')
+        $this->withToken($token)->getJson('/api/auth/me')
             ->assertOk()
             ->assertJsonPath('user.id', $buyer->id);
 
-        $this->withHeaders($this->browserHeaders('/account/security'))
-            ->postJson('/api/auth/logout')
-            ->assertOk();
-
-        $this->withHeaders($this->browserHeaders())
-            ->getJson('/api/auth/me')
-            ->assertUnauthorized();
+        $this->withToken($token)->postJson('/api/auth/logout')->assertOk();
+        $this->withToken($token)->getJson('/api/auth/me')->assertUnauthorized();
+        $this->assertDatabaseCount('personal_access_tokens', 0);
     }
 
-    public function test_approved_seller_session_survives_forbidden_admin_request(): void
+    public function test_approved_seller_token_preserves_role_boundaries(): void
     {
         $sellerUser = $this->createUser('seller');
         Seller::factory()->create([
@@ -90,47 +70,47 @@ class AuthSessionPersistenceTest extends TestCase
             'verified' => true,
         ]);
 
-        $this->login($sellerUser);
+        $token = $this->login($sellerUser);
 
-        $this->withHeaders($this->browserHeaders('/seller-center'))
-            ->getJson('/api/seller/dashboard')
-            ->assertOk();
-
-        $this->withHeaders($this->browserHeaders('/admin'))
-            ->getJson('/api/admin/dashboard')
+        $this->withToken($token)->getJson('/api/seller/dashboard')->assertOk();
+        $this->withToken($token)->getJson('/api/admin/dashboard')
             ->assertForbidden()
             ->assertJsonPath('code', 'insufficient_role');
-
-        $this->withHeaders($this->browserHeaders('/seller-center'))
-            ->getJson('/api/auth/me')
+        $this->withToken($token)->getJson('/api/auth/me')
             ->assertOk()
             ->assertJsonPath('user.id', $sellerUser->id);
     }
 
-    public function test_admin_session_survives_forbidden_seller_request(): void
+    public function test_admin_token_preserves_role_boundaries(): void
     {
         $admin = $this->createUser('admin');
-        $this->login($admin);
+        $token = $this->login($admin);
 
-        $this->withHeaders($this->browserHeaders('/admin'))
-            ->getJson('/api/admin/dashboard')
-            ->assertOk();
-
-        $this->withHeaders($this->browserHeaders('/seller-center'))
-            ->getJson('/api/seller/dashboard')
+        $this->withToken($token)->getJson('/api/admin/dashboard')->assertOk();
+        $this->withToken($token)->getJson('/api/seller/dashboard')
             ->assertForbidden()
             ->assertJsonPath('code', 'insufficient_role');
-
-        $this->withHeaders($this->browserHeaders('/admin'))
-            ->getJson('/api/auth/me')
+        $this->withToken($token)->getJson('/api/auth/me')
             ->assertOk()
             ->assertJsonPath('user.id', $admin->id);
     }
 
+    public function test_invalid_credentials_do_not_issue_a_token(): void
+    {
+        $buyer = $this->createUser('buyer');
+
+        $this->postJson('/api/auth/login', [
+            'email' => $buyer->email,
+            'password' => 'wrong-password',
+        ])->assertUnprocessable()
+            ->assertJsonMissingPath('token');
+
+        $this->assertDatabaseCount('personal_access_tokens', 0);
+    }
+
     public function test_unauthenticated_api_requests_return_json_401(): void
     {
-        $this->withHeaders($this->browserHeaders('/account/orders'))
-            ->getJson('/api/orders')
+        $this->getJson('/api/orders')
             ->assertUnauthorized()
             ->assertJsonPath('message', 'Unauthenticated.');
     }

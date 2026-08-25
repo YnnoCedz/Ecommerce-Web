@@ -1,4 +1,4 @@
-import { apiFetch, ensureCsrfCookie } from "./client";
+import { apiFetch } from "./client";
 import { singleFlight } from "./requestCache";
 
 export type AuthUser = {
@@ -28,9 +28,12 @@ export type AuthUser = {
 export type AuthSessionResponse = {
   message: string;
   user: AuthUser | null;
+  token?: string;
+  token_type?: "Bearer";
   redirect_to?: string;
   requires_two_factor?: boolean;
   two_factor_challenge_id?: number | null;
+  two_factor_challenge_token?: string | null;
   two_factor_expires_at?: string | null;
   two_factor_resend_available_at?: string | null;
   code?: string;
@@ -63,7 +66,9 @@ export type UpdatePasswordPayload = {
 
 export type TwoFactorChallenge = {
   challengeId: number;
+  challengeToken: string;
   email: string;
+  remember: boolean;
   redirectTo?: string;
   expiresAt: string | null;
   resendAvailableAt: string | null;
@@ -85,7 +90,6 @@ export type RegisterPayload = {
 };
 
 let currentUserPromise: Promise<{ user: AuthUser }> | null = null;
-let csrfCookiePromise: Promise<void> | null = null;
 
 export async function fetchCurrentUser() {
   return singleFlight("auth:me", () => {
@@ -100,90 +104,78 @@ export async function fetchCurrentUser() {
 }
 
 export async function loginRequest(payload: LoginPayload) {
-  await ensureAuthCsrfCookie();
   return apiFetch<AuthSessionResponse>("/auth/login", {
     method: "POST",
     body: JSON.stringify(payload),
+    authToken: null,
   });
 }
 
 export async function registerRequest(payload: RegisterPayload) {
-  await ensureAuthCsrfCookie();
   return apiFetch<AuthSessionResponse>("/auth/register", {
     method: "POST",
     body: JSON.stringify(payload),
+    authToken: null,
   });
 }
 
 export async function logoutRequest() {
-  await ensureAuthCsrfCookie();
   await apiFetch<{ message: string }>("/auth/logout", {
     method: "POST",
   });
 }
 
-export async function verifyTwoFactorRequest(payload: { challenge_id?: number; code: string }) {
-  await ensureAuthCsrfCookie();
+export async function verifyTwoFactorRequest(payload: { challenge_id: number; challenge_token: string; code: string }) {
   return apiFetch<AuthSessionResponse>("/auth/2fa/verify", {
     method: "POST",
     body: JSON.stringify(payload),
+    authToken: null,
   });
 }
 
-export async function resendTwoFactorRequest(payload: { challenge_id?: number }) {
-  await ensureAuthCsrfCookie();
+export async function resendTwoFactorRequest(payload: { challenge_id: number; challenge_token: string }) {
   return apiFetch<AuthSessionResponse>("/auth/2fa/resend", {
     method: "POST",
     body: JSON.stringify(payload),
+    authToken: null,
   });
 }
 
 export async function resendEmailVerificationRequest(payload: { email: string }) {
-  await ensureAuthCsrfCookie();
   return apiFetch<EmailVerificationResendResponse>("/auth/email/resend", {
     method: "POST",
     body: JSON.stringify(payload),
+    authToken: null,
   });
 }
 
 export async function verifyEmailVerificationRequest(payload: { email: string; code: string }) {
-  await ensureAuthCsrfCookie();
   return apiFetch<AuthSessionResponse>("/auth/email/verify", {
     method: "POST",
     body: JSON.stringify(payload),
+    authToken: null,
   });
 }
 
 export async function requestPasswordResetLink(payload: { email: string }) {
-  await ensureAuthCsrfCookie();
   return apiFetch<ForgotPasswordResponse>("/auth/password/forgot", {
     method: "POST",
     body: JSON.stringify(payload),
+    authToken: null,
   });
 }
 
 export async function resetPasswordRequest(payload: ResetPasswordPayload) {
-  await ensureAuthCsrfCookie();
   return apiFetch<{ message: string; redirect_to?: string }>("/auth/password/reset", {
     method: "POST",
     body: JSON.stringify(payload),
+    authToken: null,
   });
 }
 
 export async function updatePasswordRequest(payload: UpdatePasswordPayload) {
-  await ensureAuthCsrfCookie();
   return apiFetch<{ message: string }>("/account/password", {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
-}
-
-export async function ensureAuthCsrfCookie() {
-  if (!csrfCookiePromise) {
-    csrfCookiePromise = ensureCsrfCookie().finally(() => {
-      csrfCookiePromise = null;
-    });
-  }
-
-  return csrfCookiePromise;
 }

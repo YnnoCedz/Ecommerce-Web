@@ -13,7 +13,7 @@ import {
   type LoginPayload,
   type RegisterPayload,
 } from "../api/auth";
-import { ApiError } from "../api/client";
+import { ApiError, clearAuthToken, hasAuthToken, storeAuthToken } from "../api/client";
 
 type AuthState = {
   user: AuthUser | null;
@@ -98,6 +98,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const refreshUser = async () => {
+    if (!hasAuthToken()) {
+      updateUser(null);
+      setError(null);
+      setLoading(false);
+      return null;
+    }
+
     try {
       const response = await fetchCurrentUser();
       updateUser(response.user);
@@ -105,12 +112,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return response.user;
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
+        clearAuthToken();
         updateUser(null);
         setError(null);
       } else {
         setError(extractErrorMessage(err, "Unable to load your session."));
       }
-      // A transport failure is not proof that the Laravel session ended.
+      // A transport failure is not proof that the API token was revoked.
       // Keep any in-memory user and surface the verification failure instead.
       return userRef.current;
     } finally {
@@ -125,9 +133,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (payload: LoginPayload) => {
     const response = await loginRequest(payload);
     if (response.requires_two_factor) {
+      if (!response.two_factor_challenge_id || !response.two_factor_challenge_token) {
+        throw new Error("The API did not provide a complete two-factor challenge.");
+      }
+
       const challenge = {
-        challengeId: response.two_factor_challenge_id ?? 0,
+        challengeId: response.two_factor_challenge_id,
+        challengeToken: response.two_factor_challenge_token,
         email: payload.email,
+        remember: Boolean(payload.remember),
         redirectTo: response.redirect_to,
         expiresAt: response.two_factor_expires_at ?? null,
         resendAvailableAt: response.two_factor_resend_available_at ?? null,
@@ -143,6 +157,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
     }
 
+    if (!response.token || !response.user) {
+      throw new Error("The API did not provide an authentication token.");
+    }
+
+    storeAuthToken(response.token, Boolean(payload.remember));
     updateUser(response.user as AuthUser);
     setError(null);
     return {
@@ -154,7 +173,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = async (payload: RegisterPayload) => {
     const response = await registerRequest(payload);
-    updateUser(response.user as AuthUser);
+    clearAuthToken();
+    updateUser(null);
     setError(null);
     return {
       user: response.user as AuthUser,
@@ -166,6 +186,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const verifyEmail = async (payload: { email: string; code: string }) => {
     const response = await verifyEmailVerificationRequest(payload);
+    if (!response.token || !response.user) {
+      throw new Error("The API did not provide an authentication token.");
+    }
+
+    storeAuthToken(response.token);
     updateUser(response.user as AuthUser);
     setError(null);
 
@@ -177,20 +202,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
-    await logoutRequest();
-    updateUser(null);
-    setError(null);
-    setPendingTwoFactor(null);
-    writePendingTwoFactor(null);
+    try {
+      if (hasAuthToken()) {
+        await logoutRequest();
+      }
+    } finally {
+      clearAuthToken();
+      updateUser(null);
+      setError(null);
+      setPendingTwoFactor(null);
+      writePendingTwoFactor(null);
+    }
   };
 
   const verifyTwoFactor = async (payload: { code: string; challengeId?: number }) => {
     const challengeId = payload.challengeId ?? pendingTwoFactor?.challengeId;
     const response = await verifyTwoFactorRequest({
-      challenge_id: challengeId,
+      challenge_id: challengeId ?? 0,
+      challenge_token: pendingTwoFactor?.challengeToken ?? "",
       code: payload.code,
     });
 
+    if (!response.token || !response.user) {
+      throw new Error("The API did not provide an authentication token.");
+    }
+
+    storeAuthToken(response.token, pendingTwoFactor?.remember ?? false);
     updateUser(response.user as AuthUser);
     setError(null);
     setPendingTwoFactor(null);
@@ -209,6 +246,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const response = await resendTwoFactorRequest({
       challenge_id: pendingTwoFactor.challengeId,
+      challenge_token: pendingTwoFactor.challengeToken,
     });
 
     const nextChallenge = {

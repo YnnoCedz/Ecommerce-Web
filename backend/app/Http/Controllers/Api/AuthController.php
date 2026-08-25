@@ -15,21 +15,24 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
-use Illuminate\Validation\Rules\Password as PasswordRule;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rules\Password as PasswordRule;
 
 class AuthController extends Controller
 {
     private const TWO_FACTOR_PURPOSE = 'login';
+
     private const TWO_FACTOR_CHANNEL = 'email';
+
     private const TWO_FACTOR_CODE_LENGTH = 6;
+
     private const TWO_FACTOR_EXPIRES_MINUTES = 10;
+
     private const TWO_FACTOR_RESEND_SECONDS = 30;
+
     private const TWO_FACTOR_MAX_ATTEMPTS = 5;
 
-    public function __construct(private readonly MediaStorageService $media)
-    {
-    }
+    public function __construct(private readonly MediaStorageService $media) {}
 
     protected function strongPasswordRules(): array
     {
@@ -58,7 +61,7 @@ class AuthController extends Controller
                 $user = User::create([
                     'first_name' => $data['first_name'],
                     'last_name' => $data['last_name'],
-                    'name' => trim($data['first_name'] . ' ' . $data['last_name']),
+                    'name' => trim($data['first_name'].' '.$data['last_name']),
                     'email' => $email,
                     'mobile' => $phone,
                     'phone' => $phone,
@@ -84,15 +87,12 @@ class AuthController extends Controller
             ], 500);
         }
 
-        Auth::guard('web')->login($user);
-        $request->session()->regenerate();
-
         return response()->json([
             'message' => 'Registration successful. Please verify your email before signing in.',
             'user' => $this->userPayload($user),
             'requires_email_verification' => true,
             'verification_email' => $user->email,
-            'redirect_to' => '/auth/verify-email?email=' . urlencode($user->email),
+            'redirect_to' => '/auth/verify-email?email='.urlencode($user->email),
         ], 201);
     }
 
@@ -143,7 +143,7 @@ class AuthController extends Controller
         }
 
         if ($user->two_factor_enabled) {
-            $challenge = $this->issueTwoFactorChallenge($request, $user, $request->boolean('remember'));
+            [$challenge, $challengeToken] = $this->issueTwoFactorChallenge($request, $user, $request->boolean('remember'));
 
             return response()->json([
                 'message' => 'Two-factor verification is required.',
@@ -152,19 +152,18 @@ class AuthController extends Controller
                 'user' => $this->userPayload($user),
                 'redirect_to' => $this->redirectForUser($user),
                 'two_factor_challenge_id' => $challenge->id,
+                'two_factor_challenge_token' => $challengeToken,
                 'two_factor_expires_at' => optional($challenge->expires_at)->toISOString(),
                 'two_factor_resend_available_at' => optional($challenge->resend_available_at)->toISOString(),
             ], 202);
         }
-
-        Auth::guard('web')->login($user, $request->boolean('remember'));
-        $request->session()->regenerate();
 
         $user->forceFill(['last_active_at' => now()])->save();
         $user->refresh();
 
         return response()->json([
             'message' => 'Authenticated successfully.',
+            ...$this->accessTokenPayload($user),
             'user' => $this->userPayload($user),
             'redirect_to' => $this->redirectForUser($user),
         ]);
@@ -173,11 +172,12 @@ class AuthController extends Controller
     public function verifyTwoFactor(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'challenge_id' => ['nullable', 'integer', 'min:1'],
+            'challenge_id' => ['required', 'integer', 'min:1'],
+            'challenge_token' => ['required', 'string', 'size:64'],
             'code' => ['required', 'string', 'regex:/^\d{6}$/'],
         ]);
 
-        $challenge = $this->resolvePendingChallenge($request, $data['challenge_id'] ?? null);
+        $challenge = $this->resolvePendingChallenge($data['challenge_id'], $data['challenge_token']);
 
         if (! $challenge) {
             return response()->json([
@@ -234,14 +234,12 @@ class AuthController extends Controller
             ], 500);
         }
 
-        Auth::guard('web')->login($user, (bool) $request->session()->pull('auth.two_factor.remember', false));
-        $request->session()->regenerate();
-        $request->session()->forget([
-            'auth.two_factor.user_id',
-            'auth.two_factor.challenge_id',
-            'auth.two_factor.redirect_to',
-            'auth.two_factor.remember',
-        ]);
+        if (! $user->canAccessPlatformArea()) {
+            return response()->json([
+                'message' => 'This account is not currently allowed to sign in.',
+                'code' => 'account_inactive',
+            ], 403);
+        }
 
         $challenge->forceFill(['consumed_at' => now()])->save();
         $user->forceFill(['last_active_at' => now()])->save();
@@ -249,6 +247,7 @@ class AuthController extends Controller
 
         return response()->json([
             'message' => 'Authenticated successfully.',
+            ...$this->accessTokenPayload($user),
             'user' => $this->userPayload($user),
             'redirect_to' => $this->redirectForUser($user),
         ]);
@@ -257,10 +256,11 @@ class AuthController extends Controller
     public function resendTwoFactor(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'challenge_id' => ['nullable', 'integer', 'min:1'],
+            'challenge_id' => ['required', 'integer', 'min:1'],
+            'challenge_token' => ['required', 'string', 'size:64'],
         ]);
 
-        $challenge = $this->resolvePendingChallenge($request, $data['challenge_id'] ?? null);
+        $challenge = $this->resolvePendingChallenge($data['challenge_id'], $data['challenge_token']);
 
         if (! $challenge) {
             return response()->json([
@@ -408,6 +408,7 @@ class AuthController extends Controller
                 DB::table('sessions')
                     ->where('user_id', $user->id)
                     ->delete();
+                $user->tokens()->delete();
 
                 event(new PasswordReset($user));
             });
@@ -445,31 +446,13 @@ class AuthController extends Controller
         ]);
 
         $email = $this->normalizeEmail($data['email']);
-        $sessionUser = $request->user();
-
-        if ($sessionUser instanceof User && ! hash_equals($sessionUser->email, $email)) {
-            return response()->json([
-                'message' => 'The verification code is invalid or has expired.',
-                'code' => 'verification_user_mismatch',
-            ], 422);
-        }
-
-        $user = $sessionUser instanceof User
-            ? $sessionUser
-            : User::where('email', $email)->first();
+        $user = User::where('email', $email)->first();
 
         if (! $user) {
             return response()->json([
                 'message' => 'The verification code is invalid or has expired.',
                 'code' => 'verification_user_not_found',
             ], 422);
-        }
-
-        if ($user->hasVerifiedEmail()) {
-            return response()->json([
-                'message' => 'Your email address is already verified.',
-                'user' => $this->userPayload($user),
-            ]);
         }
 
         $challenge = $this->resolveEmailVerificationChallenge($user);
@@ -522,13 +505,9 @@ class AuthController extends Controller
         $challenge->forceFill(['consumed_at' => now()])->save();
         $user->refresh();
 
-        if (! $sessionUser instanceof User) {
-            Auth::guard('web')->login($user);
-            $request->session()->regenerate();
-        }
-
         return response()->json([
             'message' => 'Email verified successfully.',
+            ...$this->accessTokenPayload($user),
             'user' => $this->userPayload($user),
             'redirect_to' => '/',
         ]);
@@ -536,11 +515,8 @@ class AuthController extends Controller
 
     public function logout(Request $request): JsonResponse
     {
-        Auth::guard('web')->logout();
+        $request->user()?->currentAccessToken()?->delete();
         Auth::guard('sanctum')->forgetUser();
-
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
 
         return response()->json([
             'message' => 'Logged out successfully.',
@@ -600,12 +576,21 @@ class AuthController extends Controller
         };
     }
 
-    protected function issueTwoFactorChallenge(Request $request, User $user, bool $remember): AuthChallenge
+    protected function accessTokenPayload(User $user): array
+    {
+        return [
+            'token' => $user->createToken('web')->plainTextToken,
+            'token_type' => 'Bearer',
+        ];
+    }
+
+    protected function issueTwoFactorChallenge(Request $request, User $user, bool $remember): array
     {
         $this->markExpiredChallenges($user);
         $this->invalidateActiveChallenges($user);
 
         $code = $this->generateTwoFactorCode();
+        $challengeToken = Str::random(64);
         $challenge = AuthChallenge::create([
             'user_id' => $user->id,
             'purpose' => self::TWO_FACTOR_PURPOSE,
@@ -618,39 +603,33 @@ class AuthController extends Controller
             'sent_to' => $user->email,
             'metadata' => [
                 'remember' => $remember,
+                'challenge_token_hash' => hash('sha256', $challengeToken),
                 'ip' => $request->ip(),
                 'user_agent' => Str::limit((string) $request->userAgent(), 255, ''),
                 'issued_at' => now()->toISOString(),
             ],
         ]);
 
-        $request->session()->put([
-            'auth.two_factor.user_id' => $user->id,
-            'auth.two_factor.challenge_id' => $challenge->id,
-            'auth.two_factor.redirect_to' => $this->redirectForUser($user),
-            'auth.two_factor.remember' => $remember,
-        ]);
-
         $this->sendTwoFactorChallenge($user, $challenge, $code);
 
-        return $challenge;
+        return [$challenge, $challengeToken];
     }
 
-    protected function resolvePendingChallenge(Request $request, ?int $challengeId = null): ?AuthChallenge
+    protected function resolvePendingChallenge(int $challengeId, string $challengeToken): ?AuthChallenge
     {
-        $sessionChallengeId = (int) $request->session()->get('auth.two_factor.challenge_id', 0);
-        $sessionUserId = (int) $request->session()->get('auth.two_factor.user_id', 0);
-        $resolvedChallengeId = $challengeId ?: $sessionChallengeId;
+        $challenge = AuthChallenge::query()
+            ->whereKey($challengeId)
+            ->where('purpose', self::TWO_FACTOR_PURPOSE)
+            ->whereNull('consumed_at')
+            ->first();
 
-        if ($resolvedChallengeId <= 0 || $sessionUserId <= 0) {
+        $expectedHash = $challenge?->metadata['challenge_token_hash'] ?? null;
+
+        if (! is_string($expectedHash) || ! hash_equals($expectedHash, hash('sha256', $challengeToken))) {
             return null;
         }
 
-        return AuthChallenge::query()
-            ->whereKey($resolvedChallengeId)
-            ->where('user_id', $sessionUserId)
-            ->where('purpose', self::TWO_FACTOR_PURPOSE)
-            ->first();
+        return $challenge;
     }
 
     protected function generateTwoFactorCode(): string
@@ -663,7 +642,7 @@ class AuthController extends Controller
         $digits = preg_replace('/\D+/', '', $phone) ?? '';
 
         if (str_starts_with($digits, '63')) {
-            return '+' . $digits;
+            return '+'.$digits;
         }
 
         if (str_starts_with($digits, '0')) {
@@ -671,7 +650,7 @@ class AuthController extends Controller
         }
 
         if (str_starts_with($digits, '9') && strlen($digits) === 10) {
-            return '+63' . $digits;
+            return '+63'.$digits;
         }
 
         return $phone;

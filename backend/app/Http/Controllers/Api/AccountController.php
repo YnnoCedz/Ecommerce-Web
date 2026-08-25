@@ -6,12 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\Address;
 use App\Models\UserPreference;
 use App\Services\MediaStorageService;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rules\Password as PasswordRule;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password as PasswordRule;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class AccountController extends Controller
 {
@@ -225,14 +227,21 @@ class AccountController extends Controller
 
         $user->forceFill([
             'password' => Hash::make($data['password']),
-            'remember_token' => \Illuminate\Support\Str::random(60),
+            'remember_token' => Str::random(60),
         ])->save();
 
         $sessions = DB::table('sessions')->where('user_id', $user->id);
-        if ($request->hasSession()) {
-            $sessions->where('id', '!=', $request->session()->getId());
-        }
         $sessions->delete();
+
+        $currentToken = $user->currentAccessToken();
+        $currentTokenId = $currentToken instanceof PersonalAccessToken
+            ? $currentToken->getKey()
+            : null;
+        $otherTokens = $user->tokens();
+        if ($currentTokenId) {
+            $otherTokens->whereKeyNot($currentTokenId);
+        }
+        $otherTokens->delete();
 
         return response()->json([
             'message' => 'Password updated.',

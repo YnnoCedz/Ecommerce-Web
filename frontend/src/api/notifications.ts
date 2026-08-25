@@ -1,5 +1,4 @@
 import { apiFetch } from "./client";
-import { ensureAuthCsrfCookie } from "./auth";
 import { singleFlight } from "./requestCache";
 
 export type NotificationRecord = {
@@ -57,21 +56,18 @@ export async function fetchNotifications(params?: {
 }
 
 export async function markNotificationRead(notificationId: number) {
-  await ensureAuthCsrfCookie();
   return apiFetch<{ message: string; data: NotificationRecord }>(`/notifications/${notificationId}/read`, {
     method: "PATCH",
   });
 }
 
 export async function dismissNotification(notificationId: number) {
-  await ensureAuthCsrfCookie();
   return apiFetch<{ message: string; data: NotificationRecord }>(`/notifications/${notificationId}/dismiss`, {
     method: "PATCH",
   });
 }
 
 export async function markAllNotificationsRead() {
-  await ensureAuthCsrfCookie();
   return apiFetch<{ message: string; data: { updated: number } }>("/notifications/mark-all-read", {
     method: "POST",
   });

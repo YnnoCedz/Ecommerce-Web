@@ -1,5 +1,4 @@
 import { apiFetch } from "./client";
-import { ensureAuthCsrfCookie } from "./auth";
 import { singleFlight } from "./requestCache";
 
 export type SellerApplicationDocument = {
@@ -105,8 +104,6 @@ export async function fetchSellerApplication(id: number) {
 }
 
 export async function submitSellerApplication(payload: SellerApplicationPayload) {
-  await ensureAuthCsrfCookie();
-
   const formData = new FormData();
   formData.append("first_name", payload.first_name);
   formData.append("last_name", payload.last_name);
@@ -159,14 +156,12 @@ export async function fetchSellerApplications(params?: {
 }
 
 export async function approveSellerApplication(id: number) {
-  await ensureAuthCsrfCookie();
   return apiFetch<{ message: string; data: SellerApplicationSummary }>(`/admin/seller-applications/${id}/approve`, {
     method: "POST",
   });
 }
 
 export async function rejectSellerApplication(id: number, rejection_reason: string) {
-  await ensureAuthCsrfCookie();
   return apiFetch<{ message: string; data: SellerApplicationSummary }>(`/admin/seller-applications/${id}/reject`, {
     method: "POST",
     body: JSON.stringify({ rejection_reason }),

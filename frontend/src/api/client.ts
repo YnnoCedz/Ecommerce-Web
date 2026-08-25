@@ -1,17 +1,13 @@
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim().replace(/\/+$/, "");
 // Development requests stay on the frontend origin so the Vite proxy owns
-// the browser cookie path. Production can use the configured API origin.
+// local routing. Production uses the configured Laravel API origin.
 export const API_BASE_URL = import.meta.env.DEV ? "/api" : configuredApiBaseUrl;
 
 if (!API_BASE_URL) {
   throw new Error("VITE_API_BASE_URL is required for production builds.");
 }
 
-const API_ORIGIN = import.meta.env.DEV
-  ? window.location.origin
-  : new URL(API_BASE_URL).origin;
-
-if (!import.meta.env.DEV && API_ORIGIN === window.location.origin) {
+if (!import.meta.env.DEV && new URL(API_BASE_URL).origin === window.location.origin) {
   throw new Error(
     "VITE_API_BASE_URL points to the frontend origin. Configure it with the public Laravel API URL ending in /api.",
   );
@@ -29,9 +25,46 @@ function normalizeApiPath(path: string): string {
   return path;
 }
 
-type ApiOptions = RequestInit & { authToken?: string };
+type ApiOptions = RequestInit & { authToken?: string | null };
 
-let csrfToken: string | null = null;
+const AUTH_TOKEN_KEY = "maketo.auth-token";
+
+function readStorage(storage: Storage): string | null {
+  try {
+    return storage.getItem(AUTH_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function getAuthToken(): string | null {
+  if (typeof window === "undefined") return null;
+
+  return readStorage(window.sessionStorage) ?? readStorage(window.localStorage);
+}
+
+export function hasAuthToken(): boolean {
+  return getAuthToken() !== null;
+}
+
+export function storeAuthToken(token: string, remember = false): void {
+  if (typeof window === "undefined") return;
+
+  clearAuthToken();
+  const storage = remember ? window.localStorage : window.sessionStorage;
+  storage.setItem(AUTH_TOKEN_KEY, token);
+}
+
+export function clearAuthToken(): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.sessionStorage.removeItem(AUTH_TOKEN_KEY);
+    window.localStorage.removeItem(AUTH_TOKEN_KEY);
+  } catch {
+    // Storage can be unavailable in hardened browser contexts.
+  }
+}
 
 export class ApiError extends Error {
   status: number;
@@ -57,50 +90,6 @@ export class ApiError extends Error {
   }
 }
 
-function readCookie(name: string): string | null {
-  if (typeof document === "undefined") {
-    return null;
-  }
-
-  const match = document.cookie
-    .split("; ")
-    .find((cookie) => cookie.startsWith(`${name}=`));
-
-  if (!match) {
-    return null;
-  }
-
-  return decodeURIComponent(match.split("=").slice(1).join("="));
-}
-
-export function hasCookie(name: string): boolean {
-  return readCookie(name) !== null;
-}
-
-export async function ensureCsrfCookie(): Promise<void> {
-  const response = await fetch(`${API_ORIGIN}/sanctum/csrf-cookie`, {
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-    },
-  });
-
-  if (!response.ok) {
-    const payload = await readResponseBody(response);
-    const message = response.status === 405
-      ? "GET /sanctum/csrf-cookie is not allowed by the configured API host. Check VITE_API_BASE_URL and the deployed Laravel routes."
-      : `CSRF request failed: GET /sanctum/csrf-cookie returned ${response.status}.`;
-
-    throw new ApiError(message, response.status, payload);
-  }
-
-  csrfToken = response.headers.get("X-CSRF-TOKEN") ?? readCookie("XSRF-TOKEN");
-
-  if (!csrfToken) {
-    throw new Error("The API did not provide a CSRF token. Check the Laravel CORS and session configuration.");
-  }
-}
-
 async function readResponseBody(response: Response): Promise<unknown> {
   const contentType = response.headers.get("content-type") ?? "";
   if (contentType.includes("application/json")) {
@@ -117,13 +106,9 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
   const headers = new Headers(options.headers);
   headers.set("Accept", "application/json");
 
-  if (csrfToken && !headers.has("X-CSRF-TOKEN")) {
-    headers.set("X-CSRF-TOKEN", csrfToken);
-  } else {
-    const xsrfToken = readCookie("XSRF-TOKEN");
-    if (xsrfToken && !headers.has("X-XSRF-TOKEN")) {
-      headers.set("X-XSRF-TOKEN", xsrfToken);
-    }
+  const authToken = options.authToken === undefined ? getAuthToken() : options.authToken;
+  if (authToken && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${authToken}`);
   }
 
   const body = options.body;
@@ -138,12 +123,11 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
   if (body && !headers.has("Content-Type") && !isFormData && !isBlob && !isUrlSearchParams && !isArrayBuffer) {
     headers.set("Content-Type", "application/json");
   }
-  if (options.authToken) headers.set("Authorization", `Bearer ${options.authToken}`);
+  const { authToken: _authToken, ...requestOptions } = options;
 
   const response = await fetch(`${API_BASE_URL}${normalizedPath}`, {
-    ...options,
+    ...requestOptions,
     headers,
-    credentials: "include",
   });
 
   if (!response.ok) {
