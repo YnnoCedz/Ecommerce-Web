@@ -176,6 +176,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       storeAuthToken(response.token, Boolean(payload.remember));
       updateUser(response.user as AuthUser);
+      setLoading(false);
       setError(null);
       return {
         user: response.user as AuthUser,
@@ -211,6 +212,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     storeAuthToken(response.token);
     updateUser(response.user as AuthUser);
+    setLoading(false);
     setError(null);
 
     return {
@@ -248,6 +250,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     storeAuthToken(response.token, pendingTwoFactor?.remember ?? false);
     updateUser(response.user as AuthUser);
+    setLoading(false);
     setError(null);
     setPendingTwoFactor(null);
     writePendingTwoFactor(null);

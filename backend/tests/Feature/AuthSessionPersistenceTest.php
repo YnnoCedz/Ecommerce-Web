@@ -6,6 +6,7 @@ use App\Models\Seller;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Laravel\Sanctum\PersonalAccessToken;
 use Tests\TestCase;
 
 class AuthSessionPersistenceTest extends TestCase
@@ -42,6 +43,9 @@ class AuthSessionPersistenceTest extends TestCase
         $this->withToken($token)->getJson('/api/auth/me')
             ->assertOk()
             ->assertJsonPath('user.id', $buyer->id);
+
+        $tokenId = (int) strstr($token, '|', true);
+        $this->assertNotNull(PersonalAccessToken::findOrFail($tokenId)->last_used_at);
 
         $this->withToken($token)->getJson('/api/orders')->assertOk();
         $this->withToken($token)->getJson('/api/cart')->assertOk();
