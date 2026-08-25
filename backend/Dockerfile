@@ -39,16 +39,23 @@ RUN a2enconf maketo \
     && sed -ri 's!/var/www/html!/var/www/html/public!g' /etc/apache2/sites-available/000-default.conf \
     && chmod +x docker/start-apache.sh
 
-RUN mkdir -p \
-    bootstrap/cache \
-    storage/framework/cache \
-    storage/framework/sessions \
-    storage/framework/views \
-    storage/logs \
-    && chmod -R 775 storage bootstrap/cache
+RUN set -eux; \
+    . /etc/apache2/envvars; \
+    mkdir -p \
+        bootstrap/cache \
+        storage/framework/cache \
+        storage/framework/sessions \
+        storage/framework/views \
+        storage/logs; \
+    chown -R "${APACHE_RUN_USER}:${APACHE_RUN_GROUP}" storage bootstrap/cache; \
+    chmod -R ug+rwX,o-rwx storage bootstrap/cache
 
-RUN rm -f bootstrap/cache/*.php \
-    && composer dump-autoload --optimize --no-dev
+RUN set -eux; \
+    rm -f bootstrap/cache/*.php; \
+    composer dump-autoload --optimize --no-dev; \
+    . /etc/apache2/envvars; \
+    chown -R "${APACHE_RUN_USER}:${APACHE_RUN_GROUP}" storage bootstrap/cache; \
+    chmod -R ug+rwX,o-rwx storage bootstrap/cache
 
 EXPOSE 10000
 CMD ["docker/start-apache.sh"]
