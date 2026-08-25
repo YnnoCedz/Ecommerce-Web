@@ -60,7 +60,7 @@ class AuthController extends Controller
 
         try {
             $user = DB::transaction(function () use ($data, $email, $phone) {
-                $user = User::create([
+                return User::create([
                     'first_name' => $data['first_name'],
                     'last_name' => $data['last_name'],
                     'name' => trim($data['first_name'].' '.$data['last_name']),
@@ -75,10 +75,6 @@ class AuthController extends Controller
                     'last_active_at' => now(),
                     'two_factor_enabled' => false,
                 ]);
-
-                $user->sendEmailVerificationNotification();
-
-                return $user;
             });
         } catch (\Throwable $e) {
             report($e);
@@ -89,12 +85,31 @@ class AuthController extends Controller
             ], 500);
         }
 
+        $verificationEmailSent = true;
+
+        try {
+            $user->sendEmailVerificationNotification();
+        } catch (\Throwable $e) {
+            $verificationEmailSent = false;
+
+            Log::warning('Registration completed but verification email delivery failed.', [
+                'user_id' => $user->id,
+                'exception_class' => $e::class,
+            ]);
+        }
+
+        $message = $verificationEmailSent
+            ? 'Registration successful. Please verify your email before signing in.'
+            : 'Your account was created, but the verification email could not be sent. Please use Resend code.';
+
         return response()->json([
-            'message' => 'Registration successful. Please verify your email before signing in.',
+            'message' => $message,
             'user' => $this->userPayload($user),
             'requires_email_verification' => true,
             'verification_email' => $user->email,
-            'redirect_to' => '/auth/verify-email?email='.urlencode($user->email),
+            'verification_email_sent' => $verificationEmailSent,
+            'redirect_to' => '/auth/verify-email?email='.urlencode($user->email)
+                .($verificationEmailSent ? '' : '&delivery=pending'),
         ], 201);
     }
 

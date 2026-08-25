@@ -38,6 +38,7 @@ export type AuthSessionResponse = {
   code?: string;
   requires_email_verification?: boolean;
   verification_email?: string;
+  verification_email_sent?: boolean;
 };
 
 export type EmailVerificationResendResponse = {

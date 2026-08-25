@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { useAuth } from "../../auth/AuthContext";
 import { ApiError } from "../../api/client";
 import { resendEmailVerificationRequest } from "../../api/auth";
@@ -9,14 +9,25 @@ type NavFn = (page: string, params?: Record<string, string>) => void;
 
 export default function VerifyEmailPage({ onNavigate }: { onNavigate: NavFn }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
+  const registrationState = location.state as {
+    registrationMessage?: string;
+    verificationEmailSent?: boolean;
+  } | null;
   const { user, verifyEmail, pendingVerificationEmail } = useAuth();
   const [email, setEmail] = useState(searchParams.get("email") ?? pendingVerificationEmail ?? user?.email ?? "");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(() =>
+    registrationState?.verificationEmailSent === false ? null : registrationState?.registrationMessage ?? null
+  );
+  const [error, setError] = useState<string | null>(() =>
+    registrationState?.verificationEmailSent === false || searchParams.get("delivery") === "pending"
+      ? registrationState?.registrationMessage ?? "Your account was created, but the verification email could not be sent. Please use Resend code."
+      : null
+  );
   const [resendCooldown, setResendCooldown] = useState(0);
 
   useEffect(() => {

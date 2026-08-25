@@ -238,6 +238,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       redirectTo: response.redirect_to,
       message: response.message,
       requiresEmailVerification: response.requires_email_verification,
+      verificationEmailSent: response.verification_email_sent,
     };
   };
 

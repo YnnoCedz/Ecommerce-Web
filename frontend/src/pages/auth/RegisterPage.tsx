@@ -83,8 +83,22 @@ export default function RegisterPage({ onNavigate }: { onNavigate: NavFn }) {
 
       setSuccess(true);
       setMessage(response.message ?? "Your account was created. Please enter the verification code sent to your email.");
-      navigate(response.redirectTo ?? `/auth/verify-email?email=${encodeURIComponent(email.trim())}`, { replace: true });
+      navigate(response.redirectTo ?? `/auth/verify-email?email=${encodeURIComponent(email.trim())}`, {
+        replace: true,
+        state: {
+          registrationMessage: response.message,
+          verificationEmailSent: response.verificationEmailSent,
+        },
+      });
     } catch (err) {
+      if (import.meta.env.DEV && err instanceof ApiError) {
+        console.error("Registration request failed", {
+          status: err.status,
+          message: err.message,
+          validationErrors: err.errors,
+        });
+      }
+
       if (err instanceof ApiError && err.errors) {
         setErrors({
           firstName: err.errors.first_name?.[0],

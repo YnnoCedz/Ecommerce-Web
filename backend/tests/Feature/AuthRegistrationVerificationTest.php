@@ -43,6 +43,7 @@ class AuthRegistrationVerificationTest extends TestCase
             ->assertStatus(201)
             ->assertJsonPath('requires_email_verification', true)
             ->assertJsonPath('verification_email', $email)
+            ->assertJsonPath('verification_email_sent', true)
             ->assertJsonPath('user.email', $email);
 
         $this->withHeaders($this->browserHeaders())
@@ -365,7 +366,7 @@ class AuthRegistrationVerificationTest extends TestCase
             ->assertJsonPath('code', 'verification_code_invalid');
     }
 
-    public function test_registration_rolls_back_when_verification_mail_fails(): void
+    public function test_registration_keeps_unverified_account_when_verification_mail_fails(): void
     {
         Notification::shouldReceive('send')
             ->once()
@@ -383,11 +384,15 @@ class AuthRegistrationVerificationTest extends TestCase
         ]);
 
         $response
-            ->assertStatus(500)
-            ->assertJsonPath('code', 'registration_failed');
+            ->assertCreated()
+            ->assertJsonPath('verification_email_sent', false)
+            ->assertJsonPath('requires_email_verification', true)
+            ->assertJsonPath('verification_email', $email)
+            ->assertJsonMissingPath('token');
 
-        $this->assertDatabaseMissing('users', [
-            'email' => $email,
-        ]);
+        $user = User::where('email', $email)->firstOrFail();
+
+        $this->assertNull($user->email_verified_at);
+        $this->assertNotNull($user->authChallenges()->latest('id')->firstOrFail()->consumed_at);
     }
 }

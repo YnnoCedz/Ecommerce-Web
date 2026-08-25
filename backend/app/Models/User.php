@@ -177,7 +177,17 @@ class User extends Authenticatable implements MustVerifyEmailContract
             ],
         ]);
 
-        Notification::send($this, new EmailVerificationCodeNotification($challenge, $code));
+        try {
+            Notification::send($this, new EmailVerificationCodeNotification($challenge, $code));
+        } catch (\Throwable $e) {
+            // Failed delivery must not leave an unusable resend cooldown.
+            $challenge->forceFill([
+                'consumed_at' => now(),
+                'resend_available_at' => now(),
+            ])->save();
+
+            throw $e;
+        }
     }
 
     public function sendPasswordResetNotification($token): void
