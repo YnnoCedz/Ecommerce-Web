@@ -1,14 +1,14 @@
 <?php
 
 use App\Http\Controllers\Api\AccountController;
+use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AdminDisputeController;
 use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\CatalogController;
 use App\Http\Controllers\Api\CommerceController;
 use App\Http\Controllers\Api\HealthController;
-use App\Http\Controllers\Api\ModerationController;
 use App\Http\Controllers\Api\MessagingController;
+use App\Http\Controllers\Api\ModerationController;
 use App\Http\Controllers\Api\OrderResolutionController;
 use App\Http\Controllers\Api\SellerApplicationController;
 use App\Http\Controllers\Api\SellerController;
@@ -92,45 +92,54 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
 Route::prefix('seller')
     ->middleware(['auth:sanctum', 'account.active', 'role:seller', 'seller.approved'])
     ->group(function () {
-    Route::get('/dashboard', [SellerController::class, 'dashboard']);
-    Route::get('/me', [SellerController::class, 'me']);
-    Route::patch('/me', [SellerController::class, 'updateMe']);
-    Route::get('/orders', [SellerController::class, 'orders']);
-    Route::patch('/orders/{sellerOrder}/status', [SellerController::class, 'updateOrderStatus']);
-    Route::post('/orders/{sellerOrder}/cancel', [OrderResolutionController::class, 'sellerCancel']);
-    Route::get('/reviews', [SellerController::class, 'reviews']);
-    Route::post('/reviews/{review}/reply', [SellerController::class, 'replyToReview']);
-    Route::delete('/reviews/{review}/reply', [SellerController::class, 'destroyReviewReply']);
-    Route::get('/returns', [OrderResolutionController::class, 'sellerReturns']);
-    Route::patch('/returns/{returnRequest}', [OrderResolutionController::class, 'updateReturn']);
-    Route::get('/products', [SellerController::class, 'products']);
-    Route::get('/products/{product}', [SellerController::class, 'show']);
-    Route::post('/products', [SellerController::class, 'store']);
-    Route::patch('/products/{product}', [SellerController::class, 'update']);
-    Route::patch('/products/{product}/inventory', [SellerController::class, 'updateInventory']);
-    Route::delete('/products/{product}', [SellerController::class, 'destroy']);
-    Route::get('/customers', [SellerController::class, 'customers']);
-    Route::get('/promotions', [SellerController::class, 'promotions']);
-});
+        Route::get('/dashboard', [SellerController::class, 'dashboard']);
+        Route::get('/me', [SellerController::class, 'me']);
+        Route::patch('/me', [SellerController::class, 'updateMe']);
+        Route::get('/orders', [SellerController::class, 'orders']);
+        Route::patch('/orders/{sellerOrder}/status', [SellerController::class, 'updateOrderStatus']);
+        Route::post('/orders/{sellerOrder}/cancel', [OrderResolutionController::class, 'sellerCancel']);
+        Route::get('/reviews', [SellerController::class, 'reviews']);
+        Route::post('/reviews/{review}/reply', [SellerController::class, 'replyToReview']);
+        Route::delete('/reviews/{review}/reply', [SellerController::class, 'destroyReviewReply']);
+        Route::get('/returns', [OrderResolutionController::class, 'sellerReturns']);
+        Route::patch('/returns/{returnRequest}', [OrderResolutionController::class, 'updateReturn']);
+        Route::get('/products', [SellerController::class, 'products']);
+        Route::get('/products/{product}', [SellerController::class, 'show']);
+        Route::post('/products', [SellerController::class, 'store']);
+        Route::patch('/products/{product}', [SellerController::class, 'update']);
+        Route::patch('/products/{product}/inventory', [SellerController::class, 'updateInventory']);
+        Route::delete('/products/{product}', [SellerController::class, 'destroy']);
+        Route::get('/customers', [SellerController::class, 'customers']);
+        Route::get('/promotions', [SellerController::class, 'promotions']);
+    });
 
 Route::prefix('admin')
     ->middleware(['auth:sanctum', 'account.active', 'role:admin'])
     ->group(function () {
-    Route::get('/dashboard', [AdminController::class, 'dashboard']);
-    Route::get('/me', [AuthController::class, 'me']);
-    Route::get('/users', [AdminController::class, 'users']);
-    Route::get('/sellers', [AdminController::class, 'sellers']);
-    Route::get('/seller-applications', [SellerApplicationController::class, 'index']);
-    Route::get('/seller-applications/{sellerApplication}', [SellerApplicationController::class, 'show']);
-    Route::post('/seller-applications/{sellerApplication}/approve', [SellerApplicationController::class, 'approve']);
-    Route::post('/seller-applications/{sellerApplication}/reject', [SellerApplicationController::class, 'reject']);
-    Route::get('/seller-documents/{sellerDocument}/view', [SellerApplicationController::class, 'viewDocument']);
-    Route::get('/reports', [ModerationController::class, 'adminReports']);
-    Route::get('/reports/{report}', [ModerationController::class, 'adminReport']);
-    Route::patch('/reports/{report}', [ModerationController::class, 'updateReport']);
-    Route::get('/reports/{report}/attachments/{attachment}', [ModerationController::class, 'reportAttachment']);
-    Route::get('/disputes', [AdminDisputeController::class, 'index']);
-    Route::get('/disputes/{dispute}', [AdminDisputeController::class, 'show']);
-    Route::patch('/disputes/{dispute}/resolve', [AdminDisputeController::class, 'resolve']);
-    Route::get('/disputes/{dispute}/evidence/{evidence}', [AdminDisputeController::class, 'evidence']);
-});
+        Route::get('/dashboard', [AdminController::class, 'dashboard']);
+        Route::get('/me', [AuthController::class, 'me']);
+        Route::get('/users', [AdminController::class, 'users']);
+        Route::patch('/users/{user}/status', [AdminController::class, 'updateUserStatus']);
+        Route::get('/sellers', [AdminController::class, 'sellers']);
+        Route::patch('/sellers/{seller}/status', [AdminController::class, 'updateSellerStatus']);
+        Route::get('/products', [AdminController::class, 'products']);
+        Route::patch('/products/{product}/status', [AdminController::class, 'updateProductStatus']);
+        Route::get('/orders', [AdminController::class, 'orders']);
+        Route::get('/categories', [AdminController::class, 'categories']);
+        Route::post('/categories', [AdminController::class, 'storeCategory']);
+        Route::patch('/categories/{category}', [AdminController::class, 'updateCategory']);
+        Route::get('/analytics', [AdminController::class, 'analytics']);
+        Route::get('/seller-applications', [SellerApplicationController::class, 'index']);
+        Route::get('/seller-applications/{sellerApplication}', [SellerApplicationController::class, 'show']);
+        Route::post('/seller-applications/{sellerApplication}/approve', [SellerApplicationController::class, 'approve']);
+        Route::post('/seller-applications/{sellerApplication}/reject', [SellerApplicationController::class, 'reject']);
+        Route::get('/seller-documents/{sellerDocument}/view', [SellerApplicationController::class, 'viewDocument']);
+        Route::get('/reports', [ModerationController::class, 'adminReports']);
+        Route::get('/reports/{report}', [ModerationController::class, 'adminReport']);
+        Route::patch('/reports/{report}', [ModerationController::class, 'updateReport']);
+        Route::get('/reports/{report}/attachments/{attachment}', [ModerationController::class, 'reportAttachment']);
+        Route::get('/disputes', [AdminDisputeController::class, 'index']);
+        Route::get('/disputes/{dispute}', [AdminDisputeController::class, 'show']);
+        Route::patch('/disputes/{dispute}/resolve', [AdminDisputeController::class, 'resolve']);
+        Route::get('/disputes/{dispute}/evidence/{evidence}', [AdminDisputeController::class, 'evidence']);
+    });
