@@ -40,6 +40,16 @@ class AuthSessionPersistenceTest extends TestCase
         $buyer = $this->createUser('buyer');
         $token = $this->login($buyer);
 
+        $accessToken = PersonalAccessToken::findToken($token);
+
+        $this->assertNotNull($accessToken);
+        $this->assertSame(User::class, $accessToken->tokenable_type);
+        $this->assertSame($buyer->id, $accessToken->tokenable_id);
+        $this->assertSame(['*'], $accessToken->abilities);
+        $this->assertNotEmpty($accessToken->token);
+        $this->assertNotNull($accessToken->created_at);
+        $this->assertTrue($accessToken->tokenable->is($buyer));
+
         $this->withToken($token)->getJson('/api/auth/me')
             ->assertOk()
             ->assertJsonPath('user.id', $buyer->id);
