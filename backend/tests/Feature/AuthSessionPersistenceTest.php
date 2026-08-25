@@ -44,6 +44,15 @@ class AuthSessionPersistenceTest extends TestCase
             ->assertJsonPath('user.id', $buyer->id);
 
         $this->withToken($token)->getJson('/api/orders')->assertOk();
+        $this->withToken($token)->getJson('/api/cart')->assertOk();
+        $this->withToken($token)->getJson('/api/wishlists')->assertOk();
+        $this->withToken($token)->getJson('/api/notifications')->assertOk();
+        $this->withToken($token)->getJson('/api/admin/dashboard')
+            ->assertForbidden()
+            ->assertJsonPath('code', 'insufficient_role');
+        $this->withToken($token)->getJson('/api/seller/dashboard')
+            ->assertForbidden()
+            ->assertJsonPath('code', 'insufficient_role');
 
         $this->withToken($token)->patchJson('/api/account/password', [
             'current_password' => 'wrong-password',
@@ -72,6 +81,7 @@ class AuthSessionPersistenceTest extends TestCase
 
         $token = $this->login($sellerUser);
 
+        $this->withToken($token)->getJson('/api/seller/me')->assertOk();
         $this->withToken($token)->getJson('/api/seller/dashboard')->assertOk();
         $this->withToken($token)->getJson('/api/admin/dashboard')
             ->assertForbidden()
@@ -81,12 +91,37 @@ class AuthSessionPersistenceTest extends TestCase
             ->assertJsonPath('user.id', $sellerUser->id);
     }
 
+    public function test_non_approved_seller_can_authenticate_but_cannot_enter_seller_area(): void
+    {
+        $sellerUser = $this->createUser('seller');
+        Seller::factory()->create([
+            'user_id' => $sellerUser->id,
+            'status' => 'pending',
+            'verified' => false,
+        ]);
+
+        $login = $this->postJson('/api/auth/login', [
+            'email' => $sellerUser->email,
+            'password' => 'Password123!',
+        ])->assertOk()
+            ->assertJsonPath('user.seller_approved', false)
+            ->assertJsonPath('redirect_to', '/seller-center/onboarding/status');
+
+        $token = $login->json('token');
+        $this->withToken($token)->getJson('/api/auth/me')->assertOk();
+        $this->withToken($token)->getJson('/api/seller/me')
+            ->assertForbidden()
+            ->assertJsonPath('code', 'seller_not_approved');
+    }
+
     public function test_admin_token_preserves_role_boundaries(): void
     {
         $admin = $this->createUser('admin');
         $token = $this->login($admin);
 
+        $this->withToken($token)->getJson('/api/admin/me')->assertOk();
         $this->withToken($token)->getJson('/api/admin/dashboard')->assertOk();
+        $this->withToken($token)->getJson('/api/admin/users')->assertOk();
         $this->withToken($token)->getJson('/api/seller/dashboard')
             ->assertForbidden()
             ->assertJsonPath('code', 'insufficient_role');

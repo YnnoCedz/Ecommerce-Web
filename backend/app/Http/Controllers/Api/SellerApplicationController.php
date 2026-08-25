@@ -38,6 +38,13 @@ class SellerApplicationController extends Controller
     {
         $user = $request->user();
 
+        if (! $user->isBuyer()) {
+            return response()->json([
+                'message' => 'Only buyer accounts can submit a seller application.',
+                'code' => 'seller_application_role_invalid',
+            ], 403);
+        }
+
         if (! $user->hasVerifiedEmail()) {
             return response()->json([
                 'message' => 'Please verify your email address before applying to become a seller.',
@@ -90,19 +97,19 @@ class SellerApplicationController extends Controller
         $slug = $this->generateUniqueSlug($businessName);
         $uploadedPaths = [];
 
-        $ownerDoc = $this->storeDocument($storage, $request->file('owner_id_file'), $user, 'owner-id');
-        $uploadedPaths[] = $ownerDoc['file_path'];
-
-        $certificateDoc = $this->storeDocument($storage, $request->file('seller_certificate_file'), $user, 'seller-certificate');
-        $uploadedPaths[] = $certificateDoc['file_path'];
-
-        $businessDoc = null;
-        if ($request->hasFile('business_document_file')) {
-            $businessDoc = $this->storeDocument($storage, $request->file('business_document_file'), $user, 'business-document');
-            $uploadedPaths[] = $businessDoc['file_path'];
-        }
-
         try {
+            $ownerDoc = $this->storeDocument($storage, $request->file('owner_id_file'), $user, 'owner-id');
+            $uploadedPaths[] = $ownerDoc['storage_path'];
+
+            $certificateDoc = $this->storeDocument($storage, $request->file('seller_certificate_file'), $user, 'seller-certificate');
+            $uploadedPaths[] = $certificateDoc['storage_path'];
+
+            $businessDoc = null;
+            if ($request->hasFile('business_document_file')) {
+                $businessDoc = $this->storeDocument($storage, $request->file('business_document_file'), $user, 'business-document');
+                $uploadedPaths[] = $businessDoc['storage_path'];
+            }
+
             $application = DB::transaction(function () use ($user, $data, $slug, $ownerDoc, $certificateDoc, $businessDoc) {
                 $application = SellerApplication::create([
                     'applicant_user_id' => $user->id,
@@ -136,7 +143,7 @@ class SellerApplicationController extends Controller
                         'document_type' => 'owner_id',
                         'storage_disk' => $ownerDoc['storage_disk'],
                         'file_name' => $ownerDoc['file_name'],
-                        'file_path' => $ownerDoc['file_path'],
+                        'file_path' => $ownerDoc['storage_path'],
                         'original_filename' => $ownerDoc['original_filename'],
                         'mime_type' => $ownerDoc['mime_type'],
                         'file_size' => $ownerDoc['file_size'],
@@ -148,7 +155,7 @@ class SellerApplicationController extends Controller
                         'document_type' => 'seller_certificate',
                         'storage_disk' => $certificateDoc['storage_disk'],
                         'file_name' => $certificateDoc['file_name'],
-                        'file_path' => $certificateDoc['file_path'],
+                        'file_path' => $certificateDoc['storage_path'],
                         'original_filename' => $certificateDoc['original_filename'],
                         'mime_type' => $certificateDoc['mime_type'],
                         'file_size' => $certificateDoc['file_size'],
@@ -160,7 +167,7 @@ class SellerApplicationController extends Controller
                         'document_type' => 'business_document',
                         'storage_disk' => $businessDoc['storage_disk'],
                         'file_name' => $businessDoc['file_name'],
-                        'file_path' => $businessDoc['file_path'],
+                        'file_path' => $businessDoc['storage_path'],
                         'original_filename' => $businessDoc['original_filename'],
                         'mime_type' => $businessDoc['mime_type'],
                         'file_size' => $businessDoc['file_size'],

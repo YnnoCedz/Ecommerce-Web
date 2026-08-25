@@ -117,6 +117,45 @@ class AuthRegistrationVerificationTest extends TestCase
         Notification::assertNothingSent();
     }
 
+    public function test_public_registration_assigns_buyer_security_defaults_and_normalizes_duplicate_mobile_numbers(): void
+    {
+        Notification::fake();
+
+        $response = $this->postJson('/api/auth/register', [
+            'first_name' => 'Public',
+            'last_name' => 'Buyer',
+            'email' => 'public-buyer@maketo.local',
+            'phone' => '0917 555 0444',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+            'role' => 'admin',
+            'status' => 'suspended',
+            'email_verified_at' => now()->toISOString(),
+            'two_factor_enabled' => true,
+        ])->assertCreated()
+            ->assertJsonPath('user.role', 'buyer')
+            ->assertJsonPath('user.status', 'active')
+            ->assertJsonPath('user.email_verified_at', null)
+            ->assertJsonMissingPath('token');
+
+        $user = User::where('email', 'public-buyer@maketo.local')->firstOrFail();
+        $this->assertSame('buyer', $user->role);
+        $this->assertSame('active', $user->status);
+        $this->assertSame('+639175550444', $user->mobile);
+        $this->assertFalse($user->two_factor_enabled);
+        $this->assertTrue(Hash::check('Password123!', $user->password));
+
+        $this->postJson('/api/auth/register', [
+            'first_name' => 'Duplicate',
+            'last_name' => 'Mobile',
+            'email' => 'different-email@maketo.local',
+            'phone' => '+63 917 555 0444',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors(['phone']);
+    }
+
     public function test_verification_code_email_has_prominent_code_and_exact_expiration_text(): void
     {
         Notification::fake();

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { useAuth } from "../../auth/AuthContext";
 import { ApiError } from "../../api/client";
@@ -20,6 +20,7 @@ export default function RegisterPage({ onNavigate }: { onNavigate: NavFn }) {
   const [success, setSuccess] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<string | null>(null);
+  const submissionInFlightRef = useRef(false);
   const passwordRequirements = {
     length: password.length >= 8,
     maxLength: password.length <= 16,
@@ -45,6 +46,8 @@ export default function RegisterPage({ onNavigate }: { onNavigate: NavFn }) {
   const displayPhone = phoneLocal.replace(/\D/g, "").slice(0, 10);
 
   const submit = async () => {
+    if (submissionInFlightRef.current) return;
+
     const e: Record<string, string> = {};
     if (!firstName.trim()) e.firstName = "First name is required";
     if (!lastName.trim()) e.lastName = "Last name is required";
@@ -61,6 +64,7 @@ export default function RegisterPage({ onNavigate }: { onNavigate: NavFn }) {
       return;
     }
 
+    submissionInFlightRef.current = true;
     setErrors({});
     setLoading(true);
     setMessage(null);
@@ -96,6 +100,7 @@ export default function RegisterPage({ onNavigate }: { onNavigate: NavFn }) {
           : "Unable to create your account right now. Please try again."
       );
     } finally {
+      submissionInFlightRef.current = false;
       setLoading(false);
     }
   };

@@ -31,7 +31,16 @@ const AUTH_TOKEN_KEY = "maketo.auth-token";
 
 function readStorage(storage: Storage): string | null {
   try {
-    return storage.getItem(AUTH_TOKEN_KEY);
+    const token = storage.getItem(AUTH_TOKEN_KEY);
+    if (!token) return null;
+
+    const normalized = token.trim();
+    if (!normalized || /\s/.test(normalized) || normalized === "undefined" || normalized === "null") {
+      storage.removeItem(AUTH_TOKEN_KEY);
+      return null;
+    }
+
+    return normalized;
   } catch {
     return null;
   }
@@ -50,9 +59,14 @@ export function hasAuthToken(): boolean {
 export function storeAuthToken(token: string, remember = false): void {
   if (typeof window === "undefined") return;
 
+  const normalized = token.trim();
+  if (!normalized || /\s/.test(normalized)) {
+    throw new Error("The API returned an invalid authentication token.");
+  }
+
   clearAuthToken();
   const storage = remember ? window.localStorage : window.sessionStorage;
-  storage.setItem(AUTH_TOKEN_KEY, token);
+  storage.setItem(AUTH_TOKEN_KEY, normalized);
 }
 
 export function clearAuthToken(): void {

@@ -44,6 +44,7 @@ class AuthController extends Controller
     {
         $request->merge([
             'email' => $this->normalizeEmail((string) $request->input('email')),
+            'phone' => $this->normalizePhilippinePhone((string) $request->input('phone')),
         ]);
 
         $data = $request->validate([
@@ -55,7 +56,7 @@ class AuthController extends Controller
         ]);
 
         $email = $this->normalizeEmail($data['email']);
-        $phone = $this->normalizePhilippinePhone($data['phone']);
+        $phone = $data['phone'];
 
         try {
             $user = DB::transaction(function () use ($data, $email, $phone) {

@@ -1,5 +1,4 @@
 import { apiFetch } from "./client";
-import { singleFlight } from "./requestCache";
 
 export type AuthUser = {
   id: number;
@@ -89,18 +88,22 @@ export type RegisterPayload = {
   password_confirmation: string;
 };
 
-let currentUserPromise: Promise<{ user: AuthUser }> | null = null;
+let currentUserRequest: { token: string; promise: Promise<{ user: AuthUser }> } | null = null;
 
-export async function fetchCurrentUser() {
-  return singleFlight("auth:me", () => {
-    if (!currentUserPromise) {
-      currentUserPromise = apiFetch<{ user: AuthUser }>("/auth/me").finally(() => {
-        currentUserPromise = null;
-      });
+export function fetchCurrentUser(token: string): Promise<{ user: AuthUser }> {
+  if (currentUserRequest?.token === token) {
+    return currentUserRequest.promise;
+  }
+
+  let request: Promise<{ user: AuthUser }>;
+  request = apiFetch<{ user: AuthUser }>("/auth/me", { authToken: token }).finally(() => {
+    if (currentUserRequest?.promise === request) {
+      currentUserRequest = null;
     }
-
-    return currentUserPromise;
   });
+
+  currentUserRequest = { token, promise: request };
+  return request;
 }
 
 export async function loginRequest(payload: LoginPayload) {

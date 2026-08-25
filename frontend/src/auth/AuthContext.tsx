@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   fetchCurrentUser,
@@ -13,7 +13,7 @@ import {
   type LoginPayload,
   type RegisterPayload,
 } from "../api/auth";
-import { ApiError, clearAuthToken, hasAuthToken, storeAuthToken } from "../api/client";
+import { ApiError, clearAuthToken, getAuthToken, hasAuthToken, storeAuthToken } from "../api/client";
 
 type AuthState = {
   user: AuthUser | null;
@@ -95,13 +95,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [pendingTwoFactor, setPendingTwoFactor] = useState<TwoFactorChallenge | null>(() => readPendingTwoFactor());
   const loginInFlightRef = useRef<Promise<LoginResult> | null>(null);
 
-  const updateUser = (nextUser: AuthUser | null) => {
+  const updateUser = useCallback((nextUser: AuthUser | null) => {
     userRef.current = nextUser;
     setUser(nextUser);
-  };
+  }, []);
 
-  const refreshUser = async () => {
-    if (!hasAuthToken()) {
+  const refreshUser = useCallback(async () => {
+    const tokenAtRequestStart = getAuthToken();
+    if (!tokenAtRequestStart) {
       updateUser(null);
       setError(null);
       setLoading(false);
@@ -109,16 +110,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const response = await fetchCurrentUser();
+      const response = await fetchCurrentUser(tokenAtRequestStart);
+      if (getAuthToken() !== tokenAtRequestStart) {
+        return userRef.current;
+      }
+
       updateUser(response.user);
       setError(null);
       return response.user;
     } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
+      if (err instanceof ApiError && err.status === 401 && getAuthToken() === tokenAtRequestStart) {
         clearAuthToken();
         updateUser(null);
         setError(null);
-      } else {
+      } else if (getAuthToken() === tokenAtRequestStart) {
         setError(extractErrorMessage(err, "Unable to load your session."));
       }
       // A transport failure is not proof that the API token was revoked.
@@ -127,11 +132,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [updateUser]);
 
   useEffect(() => {
     void refreshUser();
-  }, []);
+  }, [refreshUser]);
 
   const login = (payload: LoginPayload): Promise<LoginResult> => {
     if (loginInFlightRef.current) {
