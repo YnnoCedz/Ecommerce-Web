@@ -27,4 +27,8 @@ php artisan config:cache
 chown -R "${APACHE_RUN_USER}:${APACHE_RUN_GROUP}" storage bootstrap/cache
 chmod -R ug+rwX,o-rwx storage bootstrap/cache
 
+apachectl configtest
+apachectl -M
+apachectl -t -D DUMP_RUN_CFG
+
 exec apache2-foreground

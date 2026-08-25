@@ -9,9 +9,6 @@ Route::get('/', function () {
     ]);
 });
 
-Route::get('/up', function () {
-    return response('OK', 200);
-});
 Route::get('/db-check', function () {
     try {
         DB::select('SELECT 1');
@@ -20,7 +17,7 @@ Route::get('/db-check', function () {
             'status' => 'ok',
             'database' => 'connected',
         ]);
-    } catch (\Throwable $e) {
+    } catch (Throwable $e) {
         report($e);
 
         return response()->json([

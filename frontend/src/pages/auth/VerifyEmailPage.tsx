@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { useAuth } from "../../auth/AuthContext";
 import { ApiError } from "../../api/client";
@@ -20,6 +20,7 @@ export default function VerifyEmailPage({ onNavigate }: { onNavigate: NavFn }) {
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
+  const resendInFlight = useRef(false);
   const [message, setMessage] = useState<string | null>(() =>
     registrationState?.verificationEmailSent === false ? null : registrationState?.registrationMessage ?? null
   );
@@ -94,7 +95,7 @@ export default function VerifyEmailPage({ onNavigate }: { onNavigate: NavFn }) {
   };
 
   const resend = async () => {
-    if (resending || resendCooldown > 0) {
+    if (resendInFlight.current || resending || resendCooldown > 0) {
       return;
     }
 
@@ -103,6 +104,7 @@ export default function VerifyEmailPage({ onNavigate }: { onNavigate: NavFn }) {
       return;
     }
 
+    resendInFlight.current = true;
     setResending(true);
     setError(null);
     setMessage(null);
@@ -125,6 +127,7 @@ export default function VerifyEmailPage({ onNavigate }: { onNavigate: NavFn }) {
         setError("Unable to resend the verification code right now.");
       }
     } finally {
+      resendInFlight.current = false;
       setResending(false);
     }
   };

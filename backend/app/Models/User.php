@@ -6,20 +6,24 @@ use App\Notifications\EmailVerificationCodeNotification;
 use App\Notifications\PasswordResetLinkNotification;
 use Illuminate\Auth\MustVerifyEmail as MustVerifyEmailTrait;
 use Illuminate\Contracts\Auth\MustVerifyEmail as MustVerifyEmailContract;
-use Laravel\Sanctum\HasApiTokens;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable implements MustVerifyEmailContract
 {
-    use HasApiTokens, HasFactory, Notifiable, MustVerifyEmailTrait;
+    use HasApiTokens, HasFactory, MustVerifyEmailTrait, Notifiable;
 
     public const EMAIL_VERIFICATION_PURPOSE = 'email_verification';
+
     public const EMAIL_VERIFICATION_EXPIRES_MINUTES = 10;
+
     public const EMAIL_VERIFICATION_RESEND_SECONDS = 30;
+
     public const EMAIL_VERIFICATION_MAX_ATTEMPTS = 5;
 
     protected $fillable = [
@@ -177,16 +181,35 @@ class User extends Authenticatable implements MustVerifyEmailContract
             ],
         ]);
 
+        $deliveryStartedAt = hrtime(true);
+
         try {
             Notification::send($this, new EmailVerificationCodeNotification($challenge, $code));
         } catch (\Throwable $e) {
+            $deliveryMs = (hrtime(true) - $deliveryStartedAt) / 1_000_000;
+
             // Failed delivery must not leave an unusable resend cooldown.
             $challenge->forceFill([
                 'consumed_at' => now(),
                 'resend_available_at' => now(),
             ])->save();
 
+            Log::error('Verification email delivery failed.', [
+                'user_id' => $this->getKey(),
+                'mailer' => config('mail.default'),
+                'transport_ms' => round($deliveryMs, 2),
+                'exception_class' => $e::class,
+            ]);
+
             throw $e;
+        }
+
+        if (config('performance.logging_enabled')) {
+            Log::info('Verification email delivered.', [
+                'user_id' => $this->getKey(),
+                'mailer' => config('mail.default'),
+                'transport_ms' => round((hrtime(true) - $deliveryStartedAt) / 1_000_000, 2),
+            ]);
         }
     }
 

@@ -19,9 +19,19 @@ class ProductionHealthTest extends TestCase
 
         $this->get('/up')
             ->assertOk()
+            ->assertHeader('Content-Type', 'text/plain; charset=UTF-8')
+            ->assertHeaderMissing('Set-Cookie')
             ->assertSeeText('OK');
 
         $this->assertSame([], $queries);
+    }
+
+    public function test_apache_health_file_is_static_plain_text(): void
+    {
+        $healthFile = public_path('up');
+
+        $this->assertFileExists($healthFile);
+        $this->assertSame('OK', trim((string) file_get_contents($healthFile)));
     }
 
     public function test_blade_can_write_to_the_configured_compiled_view_directory(): void
