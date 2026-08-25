@@ -54,7 +54,7 @@ export default function PublicLayout() {
   useEffect(() => {
     let cancelled = false;
 
-    if (!user) {
+    if (!user || user.role !== "buyer") {
       setCartCount(0);
       setWishlistCount(0);
       return () => {

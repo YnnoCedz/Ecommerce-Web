@@ -20,8 +20,7 @@ class CatalogController extends Controller
     public function __construct(
         private readonly ProductSearchService $searchService,
         private readonly MediaStorageService $mediaStorage,
-    ) {
-    }
+    ) {}
 
     public function categories(): JsonResponse
     {
@@ -30,7 +29,7 @@ class CatalogController extends Controller
                 $query->where('status', 'active')->whereNull('deleted_at');
             }])
             ->with(['children' => function ($query) {
-                $query->orderBy('sort_order')->orderBy('name');
+                $query->select(['id', 'parent_id', 'name'])->orderBy('sort_order')->orderBy('name');
             }])
             ->whereNull('parent_id')
             ->where('active', true)
@@ -45,10 +44,17 @@ class CatalogController extends Controller
     public function products(Request $request): JsonResponse
     {
         $query = Product::query()
+            ->select([
+                'id', 'seller_id', 'category_id', 'slug', 'name', 'price', 'sale_price',
+                'stock_quantity', 'track_inventory', 'free_shipping', 'published_at',
+            ])
             ->with([
-                'seller.user',
-                'category',
-                'images' => fn ($images) => $images->orderBy('sort_order')->orderBy('id'),
+                'seller:id,user_id,slug,business_name,trade_name',
+                'category:id,slug,name',
+                'images' => fn ($images) => $images
+                    ->select(['id', 'product_id', 'file_path', 'storage_disk', 'sort_order'])
+                    ->orderBy('sort_order')
+                    ->orderBy('id'),
             ])
             ->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
             ->withCount(['reviews as rating_count' => fn ($reviews) => $reviews->where('status', 'approved')])
@@ -73,12 +79,16 @@ class CatalogController extends Controller
         if ($request->filled('search')) {
             $search = trim((string) $request->query('search'));
             $query->where(function ($productQuery) use ($search) {
-                $productQuery->where('name', 'like', '%' . $search . '%')
-                    ->orWhere('description', 'like', '%' . $search . '%')
-                    ->orWhere('sku', 'like', '%' . $search . '%')
-                    ->orWhereHas('seller', fn ($sellerQuery) => $sellerQuery->where('business_name', 'like', '%' . $search . '%')->orWhere('trade_name', 'like', '%' . $search . '%'))
-                    ->orWhereHas('category', fn ($categoryQuery) => $categoryQuery->where('name', 'like', '%' . $search . '%'));
+                $productQuery->where('name', 'like', '%'.$search.'%')
+                    ->orWhere('description', 'like', '%'.$search.'%')
+                    ->orWhere('sku', 'like', '%'.$search.'%')
+                    ->orWhereHas('seller', fn ($sellerQuery) => $sellerQuery->where('business_name', 'like', '%'.$search.'%')->orWhere('trade_name', 'like', '%'.$search.'%'))
+                    ->orWhereHas('category', fn ($categoryQuery) => $categoryQuery->where('name', 'like', '%'.$search.'%'));
             });
+        }
+
+        if ($request->filled('limit')) {
+            $query->limit(min(100, max(1, (int) $request->query('limit'))));
         }
 
         $products = $query
@@ -264,16 +274,14 @@ class CatalogController extends Controller
     public function sellers(): JsonResponse
     {
         $sellers = Seller::query()
+            ->select([
+                'id', 'user_id', 'slug', 'business_name', 'trade_name', 'description',
+                'logo_path', 'banner_path', 'verified', 'city', 'province', 'joined_year',
+                'created_at',
+            ])
             ->with([
-                'user',
-                'categories',
-                'products' => fn ($query) => $query
-                    ->with(['seller.user', 'category', 'images'])
-                    ->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
-                    ->withCount(['reviews as rating_count' => fn ($reviews) => $reviews->where('status', 'approved')])
-                    ->withSum(['orderItems as sold_count' => fn ($items) => $items->whereHas('sellerOrder', fn ($orders) => $orders->whereIn('status', ['delivered', 'completed']))], 'quantity')
-                    ->where('status', 'active')
-                    ->whereNull('deleted_at'),
+                'user:id,avatar_path',
+                'categories:id,name',
             ])
             ->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
             ->withCount([

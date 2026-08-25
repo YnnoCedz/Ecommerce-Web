@@ -1,5 +1,5 @@
 import { apiFetch } from "./client";
-import { singleFlight } from "./requestCache";
+import { cachedSingleFlight, singleFlight } from "./requestCache";
 
 export type CatalogCategory = {
   id: number;
@@ -159,16 +159,17 @@ export type SearchSuggestion = {
 };
 
 export async function fetchCatalogCategories() {
-  return singleFlight("catalog:categories", () => apiFetch<{ data: CatalogCategory[] }>("/categories"));
+  return cachedSingleFlight("catalog:categories", 60_000, (signal) => apiFetch<{ data: CatalogCategory[] }>("/categories", { signal }));
 }
 
-export async function fetchCatalogProducts(params?: { search?: string; category?: string; seller?: string }) {
+export async function fetchCatalogProducts(params?: { search?: string; category?: string; seller?: string; limit?: number }) {
   const searchParams = new URLSearchParams();
   if (params?.search) searchParams.set("search", params.search);
   if (params?.category) searchParams.set("category", params.category);
   if (params?.seller) searchParams.set("seller", params.seller);
+  if (params?.limit) searchParams.set("limit", String(params.limit));
   const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
-  return singleFlight(`catalog:products:${suffix}`, () => apiFetch<{ data: CatalogProduct[] }>(`/products${suffix}`));
+  return singleFlight(`catalog:products:${suffix}`, (signal) => apiFetch<{ data: CatalogProduct[] }>(`/products${suffix}`, { signal }));
 }
 
 export async function searchMarketplace(params: MarketplaceSearchParams) {
@@ -197,7 +198,7 @@ export async function fetchProductReviews(slug: string, page = 1, perPage = 10) 
 }
 
 export async function fetchCatalogSellers() {
-  return singleFlight("catalog:sellers", () => apiFetch<{ data: CatalogSeller[] }>("/sellers"));
+  return singleFlight("catalog:sellers", (signal) => apiFetch<{ data: CatalogSeller[] }>("/sellers", { signal }));
 }
 
 export async function fetchCatalogSeller(slug: string) {

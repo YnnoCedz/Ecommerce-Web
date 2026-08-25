@@ -34,6 +34,8 @@ type AuthContextValue = AuthState & {
   clearPendingTwoFactor: () => void;
 };
 
+type LoginResult = { user: AuthUser; redirectTo?: string; requiresTwoFactor?: boolean };
+
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 const PENDING_TWO_FACTOR_STORAGE_KEY = "maketo.pending-two-factor";
@@ -91,6 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingTwoFactor, setPendingTwoFactor] = useState<TwoFactorChallenge | null>(() => readPendingTwoFactor());
+  const loginInFlightRef = useRef<Promise<LoginResult> | null>(null);
 
   const updateUser = (nextUser: AuthUser | null) => {
     userRef.current = nextUser;
@@ -130,45 +133,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void refreshUser();
   }, []);
 
-  const login = async (payload: LoginPayload) => {
-    const response = await loginRequest(payload);
-    if (response.requires_two_factor) {
-      if (!response.two_factor_challenge_id || !response.two_factor_challenge_token) {
-        throw new Error("The API did not provide a complete two-factor challenge.");
+  const login = (payload: LoginPayload): Promise<LoginResult> => {
+    if (loginInFlightRef.current) {
+      return loginInFlightRef.current;
+    }
+
+    const request = (async () => {
+      const response = await loginRequest(payload);
+      if (response.requires_two_factor) {
+        if (!response.two_factor_challenge_id || !response.two_factor_challenge_token) {
+          throw new Error("The API did not provide a complete two-factor challenge.");
+        }
+
+        const challenge = {
+          challengeId: response.two_factor_challenge_id,
+          challengeToken: response.two_factor_challenge_token,
+          email: payload.email,
+          remember: Boolean(payload.remember),
+          redirectTo: response.redirect_to,
+          expiresAt: response.two_factor_expires_at ?? null,
+          resendAvailableAt: response.two_factor_resend_available_at ?? null,
+        };
+        setPendingTwoFactor(challenge);
+        writePendingTwoFactor(challenge);
+        updateUser(null);
+        setError(null);
+        return {
+          user: response.user as AuthUser,
+          redirectTo: response.redirect_to,
+          requiresTwoFactor: true,
+        };
       }
 
-      const challenge = {
-        challengeId: response.two_factor_challenge_id,
-        challengeToken: response.two_factor_challenge_token,
-        email: payload.email,
-        remember: Boolean(payload.remember),
-        redirectTo: response.redirect_to,
-        expiresAt: response.two_factor_expires_at ?? null,
-        resendAvailableAt: response.two_factor_resend_available_at ?? null,
-      };
-      setPendingTwoFactor(challenge);
-      writePendingTwoFactor(challenge);
-      updateUser(null);
+      if (!response.token || !response.user) {
+        throw new Error("The API did not provide an authentication token.");
+      }
+
+      storeAuthToken(response.token, Boolean(payload.remember));
+      updateUser(response.user as AuthUser);
       setError(null);
       return {
         user: response.user as AuthUser,
         redirectTo: response.redirect_to,
-        requiresTwoFactor: true,
+        requiresTwoFactor: false,
       };
-    }
+    })().finally(() => {
+      loginInFlightRef.current = null;
+    });
 
-    if (!response.token || !response.user) {
-      throw new Error("The API did not provide an authentication token.");
-    }
-
-    storeAuthToken(response.token, Boolean(payload.remember));
-    updateUser(response.user as AuthUser);
-    setError(null);
-    return {
-      user: response.user as AuthUser,
-      redirectTo: response.redirect_to,
-      requiresTwoFactor: false,
-    };
+    loginInFlightRef.current = request;
+    return request;
   };
 
   const register = async (payload: RegisterPayload) => {

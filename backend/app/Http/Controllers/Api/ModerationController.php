@@ -25,8 +25,7 @@ class ModerationController extends Controller
     public function __construct(
         private readonly MediaStorageService $media,
         private readonly NotificationService $notifications,
-    ) {
-    }
+    ) {}
 
     public function reports(Request $request): JsonResponse
     {
@@ -131,14 +130,20 @@ class ModerationController extends Controller
         });
 
         $reports = $query->latest('submitted_at')->latest('id')->limit((int) ($data['limit'] ?? 100))->get();
+        $counts = Report::query()
+            ->selectRaw('COUNT(*) as total_count')
+            ->selectRaw("SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_count")
+            ->selectRaw("SUM(CASE WHEN status = 'reviewing' THEN 1 ELSE 0 END) as reviewing_count")
+            ->selectRaw("SUM(CASE WHEN status = 'pending' AND severity = 'critical' THEN 1 ELSE 0 END) as critical_pending_count")
+            ->first();
 
         return response()->json([
             'data' => $reports->map(fn (Report $report) => $this->reportPayload($report))->values(),
             'meta' => [
-                'total_count' => Report::count(),
-                'pending_count' => Report::where('status', 'pending')->count(),
-                'reviewing_count' => Report::where('status', 'reviewing')->count(),
-                'critical_pending_count' => Report::where('status', 'pending')->where('severity', 'critical')->count(),
+                'total_count' => (int) $counts->total_count,
+                'pending_count' => (int) $counts->pending_count,
+                'reviewing_count' => (int) $counts->reviewing_count,
+                'critical_pending_count' => (int) $counts->critical_pending_count,
             ],
         ]);
     }
@@ -209,8 +214,6 @@ class ModerationController extends Controller
             $baseQuery->where('category', $category);
         }
 
-        $totalQuery = clone $baseQuery;
-        $unreadQuery = clone $baseQuery;
         $categoryQuery = clone $baseQuery;
 
         $limit = (int) $request->input('limit', 25);
@@ -239,12 +242,16 @@ class ModerationController extends Controller
                 'unread_count' => (int) $row->unread_count,
             ])
             ->values();
+        $counts = (clone $baseQuery)
+            ->selectRaw('COUNT(*) as total_count')
+            ->selectRaw('SUM(CASE WHEN read_at IS NULL THEN 1 ELSE 0 END) as unread_count')
+            ->first();
 
         return response()->json([
             'data' => $notifications,
             'meta' => [
-                'total_count' => (clone $totalQuery)->count(),
-                'unread_count' => (clone $unreadQuery)->whereNull('read_at')->count(),
+                'total_count' => (int) $counts->total_count,
+                'unread_count' => (int) $counts->unread_count,
                 'categories' => $categoryStats,
                 'limit' => $limit,
             ],
@@ -340,6 +347,7 @@ class ModerationController extends Controller
         return match ($type) {
             'seller' => (function () use ($id) {
                 $seller = Seller::query()->findOrFail($id);
+
                 return $seller->trade_name ?: $seller->business_name;
             })(),
             'buyer' => User::query()->where('role', 'buyer')->findOrFail($id)->display_name,

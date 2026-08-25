@@ -105,7 +105,7 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
   useEffect(() => {
     void Promise.all([
       fetchCatalogCategories(),
-      fetchCatalogProducts(),
+      fetchCatalogProducts({ limit: 24 }),
       fetchCatalogSellers(),
     ]).then(([cats, prods, sellersResponse]) => {
       setCategories(cats.data);

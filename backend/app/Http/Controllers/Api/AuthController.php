@@ -99,7 +99,9 @@ class AuthController extends Controller
 
     public function login(Request $request): JsonResponse
     {
-        $timings = app()->isLocal() ? ['total_started_at' => hrtime(true)] : null;
+        $timings = app()->isLocal() || config('performance.logging_enabled')
+            ? ['total_started_at' => hrtime(true)]
+            : null;
 
         $request->merge([
             'email' => $this->normalizeEmail((string) $request->input('email')),

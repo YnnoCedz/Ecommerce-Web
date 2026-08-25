@@ -8,8 +8,7 @@ import {
   markNotificationRead,
   type NotificationRecord,
 } from "../api/notifications";
-import { fetchSellerApplications } from "../api/sellerApplications";
-import { fetchAdminDisputes, fetchAdminReports } from "../api/adminModeration";
+import { fetchAdminDashboard } from "../api/admin";
 import ConfirmDialog from "../components/ConfirmDialog";
 import {
   IconDashboard, IconUsers, IconSellers, IconProducts, IconOrders,
@@ -132,32 +131,34 @@ export default function AdminShell({ children, activeNav = "dashboard", onNavCha
   useEffect(() => {
     let active = true;
 
-    void (async () => {
-      try {
-        setNotificationsLoading(true);
-        const [applicationsResponse, notificationsResponse, reportsResponse, disputesResponse] = await Promise.all([
-          fetchSellerApplications({ status: "pending", per_page: 1 }),
-          fetchNotifications({ limit: 5 }),
-          fetchAdminReports(),
-          fetchAdminDisputes(),
-        ]);
+    void fetchAdminDashboard(30)
+      .then((dashboardResponse) => {
         if (!active) return;
         setBadgeCounts((current) => ({
           ...current,
-          sellers: applicationsResponse.data.total ?? applicationsResponse.data.length,
-          reports: reportsResponse.meta.pending_count + reportsResponse.meta.reviewing_count,
-          disputes: disputesResponse.meta.open_count,
+          sellers: dashboardResponse.data.metrics.pending_seller_applications ?? 0,
+          reports: dashboardResponse.data.metrics.open_reports ?? 0,
+          disputes: dashboardResponse.data.metrics.open_disputes ?? 0,
+        }));
+      })
+      .catch(() => undefined);
+
+    setNotificationsLoading(true);
+    void fetchNotifications({ limit: 5 })
+      .then((notificationsResponse) => {
+        if (!active) return;
+        setBadgeCounts((current) => ({
+          ...current,
           notifications: notificationsResponse.meta.unread_count ?? 0,
         }));
         setNotifications(notificationsResponse.data.filter((notification) => !notification.dismissed_at));
-      } catch {
-        if (!active) return;
-      } finally {
+      })
+      .catch(() => undefined)
+      .finally(() => {
         if (active) {
           setNotificationsLoading(false);
         }
-      }
-    })();
+      });
 
     return () => {
       active = false;

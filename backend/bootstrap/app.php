@@ -3,6 +3,7 @@
 use App\Http\Middleware\EnsureAccountIsActive;
 use App\Http\Middleware\EnsureSellerApproved;
 use App\Http\Middleware\EnsureUserRole;
+use App\Http\Middleware\MeasureApiPerformance;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -15,6 +16,8 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/health',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        $middleware->api(append: [MeasureApiPerformance::class]);
+
         $middleware->alias([
             'account.active' => EnsureAccountIsActive::class,
             'role' => EnsureUserRole::class,

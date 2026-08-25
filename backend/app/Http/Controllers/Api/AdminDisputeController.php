@@ -19,8 +19,7 @@ class AdminDisputeController extends Controller
     public function __construct(
         private readonly AdminDisputeResolutionService $resolutions,
         private readonly MediaStorageService $media,
-    ) {
-    }
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -47,13 +46,18 @@ class AdminDisputeController extends Controller
         });
 
         $disputes = $query->latest('opened_at')->latest('id')->limit((int) ($data['limit'] ?? 100))->get();
+        $counts = Dispute::query()
+            ->selectRaw('COUNT(*) as total_count')
+            ->selectRaw("SUM(CASE WHEN status IN ('open', 'reviewing') THEN 1 ELSE 0 END) as open_count")
+            ->selectRaw("SUM(CASE WHEN status IN ('resolved', 'rejected') THEN 1 ELSE 0 END) as resolved_count")
+            ->first();
 
         return response()->json([
             'data' => $disputes->map(fn (Dispute $dispute) => $this->summaryPayload($dispute))->values(),
             'meta' => [
-                'total_count' => Dispute::count(),
-                'open_count' => Dispute::whereIn('status', ['open', 'reviewing'])->count(),
-                'resolved_count' => Dispute::whereIn('status', ['resolved', 'rejected'])->count(),
+                'total_count' => (int) $counts->total_count,
+                'open_count' => (int) $counts->open_count,
+                'resolved_count' => (int) $counts->resolved_count,
             ],
         ]);
     }

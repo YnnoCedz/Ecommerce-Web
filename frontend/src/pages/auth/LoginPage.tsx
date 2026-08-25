@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { Check, Loader2 } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
 import { ApiError } from "../../api/client";
+import { cancelInFlight } from "../../api/requestCache";
 import AuthLayout, { Field, AuthAlert, FormDivider } from "./AuthLayout";
 
 type NavFn = (page: string, params?: Record<string, string>) => void;
@@ -16,8 +17,15 @@ export default function LoginPage({ onNavigate }: { onNavigate: NavFn }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
+  const submissionInFlightRef = useRef(false);
+
+  useEffect(() => {
+    cancelInFlight(["catalog:categories", "catalog:products", "catalog:sellers"]);
+  }, []);
 
   const submit = async () => {
+    if (submissionInFlightRef.current) return;
+
     const fe: typeof fieldErrors = {};
     if (!email.trim()) fe.email = "Email address is required";
     else if (!/\S+@\S+\.\S+/.test(email)) fe.email = "Enter a valid email address";
@@ -27,6 +35,7 @@ export default function LoginPage({ onNavigate }: { onNavigate: NavFn }) {
       return;
     }
 
+    submissionInFlightRef.current = true;
     setFieldErrors({});
     setLoading(true);
     setError(null);
@@ -53,6 +62,7 @@ export default function LoginPage({ onNavigate }: { onNavigate: NavFn }) {
           : "Unable to sign in right now. Please try again."
       );
     } finally {
+      submissionInFlightRef.current = false;
       setLoading(false);
     }
   };

@@ -9,18 +9,18 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Models\Review;
 use App\Models\Seller;
 use App\Models\SellerOrder;
-use App\Models\Review;
 use App\Models\WishlistItem;
 use App\Services\CheckoutService;
+use App\Services\MediaStorageService;
 use App\Services\NotificationService;
 use App\Services\OrderLifecycleService;
-use App\Services\MediaStorageService;
 use App\Services\PaymentService;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -32,14 +32,12 @@ class CommerceController extends Controller
         private readonly NotificationService $notifications,
         private readonly PaymentService $payments,
         private readonly MediaStorageService $media,
-    ) {
-    }
+    ) {}
 
     public function cart(Request $request): JsonResponse
     {
         $cart = $this->loadCurrentCart($request);
         $this->recalculateCartTotals($cart);
-        $cart = $cart->fresh();
 
         return response()->json([
             'data' => $this->cartPayload($cart),
@@ -259,6 +257,7 @@ class CommerceController extends Controller
                 ->get()
                 ->map(function (Order $order) {
                     $firstItem = $order->items->first();
+
                     return [
                         'id' => $order->id,
                         'order_number' => $order->order_number,
@@ -665,14 +664,7 @@ class CommerceController extends Controller
             ]
         );
 
-        return $cart->load([
-            'items.seller',
-            'items.product.images',
-            'items.variant',
-            'savedItems.seller',
-            'savedItems.product.images',
-            'savedItems.variant',
-        ]);
+        return $cart;
     }
 
     private function upsertCartItem(Cart $cart, Product $product, ?ProductVariant $variant, int $quantity, bool $savedForLater): CartItem
@@ -745,13 +737,10 @@ class CommerceController extends Controller
 
     private function cartPayload(Cart $cart): array
     {
-        $cart->load([
+        $cart->loadMissing([
             'items.seller',
             'items.product.images',
             'items.variant',
-            'savedItems.seller',
-            'savedItems.product.images',
-            'savedItems.variant',
         ]);
 
         $sellerGroups = $cart->items
@@ -788,7 +777,8 @@ class CommerceController extends Controller
                 ->where('saved_for_later', false)
                 ->map(fn (CartItem $item) => $this->cartItemPayload($item))
                 ->values(),
-            'saved_items' => $cart->savedItems
+            'saved_items' => $cart->items
+                ->where('saved_for_later', true)
                 ->map(fn (CartItem $item) => $this->cartItemPayload($item, true))
                 ->values(),
             'sellers' => $sellerGroups,

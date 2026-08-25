@@ -9,7 +9,6 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\Report;
 use App\Models\Seller;
-use App\Models\SellerApplication;
 use App\Models\User;
 use App\Services\NotificationService;
 use Illuminate\Database\Eloquent\Builder;
@@ -27,33 +26,52 @@ class AdminController extends Controller
     {
         $days = $this->validatedDays($request);
         $from = now()->subDays($days - 1)->startOfDay();
+        $summary = DB::selectOne(<<<'SQL'
+            SELECT
+                (SELECT COUNT(*) FROM users) AS users_total,
+                (SELECT COUNT(*) FROM users WHERE role = 'buyer') AS buyers_total,
+                (SELECT COUNT(*) FROM users WHERE status = 'active') AS active_users,
+                (SELECT COUNT(*) FROM sellers WHERE deleted_at IS NULL) AS sellers_total,
+                (SELECT COUNT(*) FROM sellers WHERE status = 'approved' AND deleted_at IS NULL) AS approved_sellers,
+                (SELECT COUNT(*) FROM products WHERE deleted_at IS NULL) AS products_total,
+                (SELECT COUNT(*) FROM products WHERE status = 'active' AND deleted_at IS NULL) AS active_products,
+                (SELECT COUNT(*) FROM orders) AS orders_total,
+                (SELECT COUNT(*) FROM orders WHERE status IN ('pending', 'processing')) AS pending_orders,
+                (SELECT COUNT(*) FROM orders WHERE status IN ('delivered', 'completed')) AS completed_orders,
+                (SELECT COUNT(*) FROM orders WHERE status IN ('cancelled', 'failed', 'returned', 'refunded')) AS cancelled_orders,
+                (SELECT COALESCE(SUM(grand_total), 0) FROM orders WHERE payment_status IN ('paid', 'partially_refunded') AND created_at >= ?) AS gmv,
+                (SELECT COUNT(*) FROM reports) AS reports_total,
+                (SELECT COUNT(*) FROM reports WHERE status IN ('pending', 'reviewing')) AS open_reports,
+                (SELECT COUNT(*) FROM disputes WHERE status IN ('open', 'reviewing')) AS open_disputes,
+                (SELECT COUNT(*) FROM seller_applications WHERE status IN ('pending', 'reviewing')) AS pending_seller_applications
+            SQL, [$from]);
 
         return response()->json(['data' => [
             'range_days' => $days,
             'generated_at' => now()->toISOString(),
             // Retain the original summary keys for existing admin clients.
-            'users' => User::count(),
-            'buyers' => User::where('role', 'buyer')->count(),
-            'sellers' => Seller::count(),
-            'approved_sellers' => Seller::where('status', 'approved')->count(),
-            'products' => Product::count(),
-            'orders' => Order::count(),
-            'reports' => Report::count(),
+            'users' => (int) $summary->users_total,
+            'buyers' => (int) $summary->buyers_total,
+            'sellers' => (int) $summary->sellers_total,
+            'approved_sellers' => (int) $summary->approved_sellers,
+            'products' => (int) $summary->products_total,
+            'orders' => (int) $summary->orders_total,
+            'reports' => (int) $summary->reports_total,
             'metrics' => [
-                'gmv' => (float) Order::whereIn('payment_status', ['paid', 'partially_refunded'])->where('created_at', '>=', $from)->sum('grand_total'),
-                'total_users' => User::count(),
-                'active_users' => User::where('status', 'active')->count(),
-                'total_sellers' => Seller::count(),
-                'approved_sellers' => Seller::where('status', 'approved')->count(),
-                'pending_seller_applications' => SellerApplication::whereIn('status', ['pending', 'reviewing'])->count(),
-                'total_products' => Product::count(),
-                'active_products' => Product::where('status', 'active')->count(),
-                'total_orders' => Order::count(),
-                'pending_orders' => Order::whereIn('status', ['pending', 'processing'])->count(),
-                'completed_orders' => Order::whereIn('status', ['delivered', 'completed'])->count(),
-                'cancelled_orders' => Order::whereIn('status', ['cancelled', 'failed', 'returned', 'refunded'])->count(),
-                'open_reports' => Report::whereIn('status', ['pending', 'reviewing'])->count(),
-                'open_disputes' => Dispute::whereIn('status', ['open', 'reviewing'])->count(),
+                'gmv' => (float) $summary->gmv,
+                'total_users' => (int) $summary->users_total,
+                'active_users' => (int) $summary->active_users,
+                'total_sellers' => (int) $summary->sellers_total,
+                'approved_sellers' => (int) $summary->approved_sellers,
+                'pending_seller_applications' => (int) $summary->pending_seller_applications,
+                'total_products' => (int) $summary->products_total,
+                'active_products' => (int) $summary->active_products,
+                'total_orders' => (int) $summary->orders_total,
+                'pending_orders' => (int) $summary->pending_orders,
+                'completed_orders' => (int) $summary->completed_orders,
+                'cancelled_orders' => (int) $summary->cancelled_orders,
+                'open_reports' => (int) $summary->open_reports,
+                'open_disputes' => (int) $summary->open_disputes,
             ],
             'series' => $this->timeSeries($from, $days),
             'recent_users' => User::query()->latest()->limit(5)->get()->map(fn (User $user) => $this->userPayload($user))->values(),
@@ -244,15 +262,32 @@ class AdminController extends Controller
 
     private function timeSeries(Carbon $from, int $days): array
     {
-        $orders = Order::query()->where('created_at', '>=', $from)->get(['created_at', 'grand_total', 'payment_status'])->groupBy(fn (Order $order) => $order->created_at->toDateString());
-        $users = User::query()->where('created_at', '>=', $from)->get(['created_at'])->countBy(fn (User $user) => $user->created_at->toDateString());
-        $sellers = Seller::query()->where('created_at', '>=', $from)->get(['created_at'])->countBy(fn (Seller $seller) => $seller->created_at->toDateString());
+        $orders = Order::query()
+            ->where('created_at', '>=', $from)
+            ->selectRaw('DATE(created_at) as activity_date, COUNT(*) as order_count')
+            ->selectRaw("COALESCE(SUM(CASE WHEN payment_status IN ('paid', 'partially_refunded') THEN grand_total ELSE 0 END), 0) as gmv")
+            ->groupByRaw('DATE(created_at)')
+            ->get()
+            ->keyBy('activity_date');
+        $userActivity = User::query()
+            ->where('created_at', '>=', $from)
+            ->selectRaw("'users' as activity_type, DATE(created_at) as activity_date, COUNT(*) as aggregate_count")
+            ->groupByRaw('DATE(created_at)');
+        $activity = Seller::query()
+            ->where('created_at', '>=', $from)
+            ->selectRaw("'sellers' as activity_type, DATE(created_at) as activity_date, COUNT(*) as aggregate_count")
+            ->groupByRaw('DATE(created_at)')
+            ->unionAll($userActivity)
+            ->get()
+            ->groupBy('activity_type');
+        $users = $activity->get('users', collect())->pluck('aggregate_count', 'activity_date');
+        $sellers = $activity->get('sellers', collect())->pluck('aggregate_count', 'activity_date');
 
         return collect(range(0, $days - 1))->map(function (int $offset) use ($from, $orders, $users, $sellers) {
             $date = $from->copy()->addDays($offset)->toDateString();
-            $dailyOrders = $orders->get($date, collect());
+            $dailyOrders = $orders->get($date);
 
-            return ['date' => $date, 'orders' => $dailyOrders->count(), 'gmv' => (float) $dailyOrders->whereIn('payment_status', ['paid', 'partially_refunded'])->sum('grand_total'), 'users' => (int) $users->get($date, 0), 'sellers' => (int) $sellers->get($date, 0)];
+            return ['date' => $date, 'orders' => (int) ($dailyOrders?->order_count ?? 0), 'gmv' => (float) ($dailyOrders?->gmv ?? 0), 'users' => (int) $users->get($date, 0), 'sellers' => (int) $sellers->get($date, 0)];
         })->values()->all();
     }
 

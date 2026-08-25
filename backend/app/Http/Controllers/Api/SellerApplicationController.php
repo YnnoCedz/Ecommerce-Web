@@ -4,11 +4,11 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Category;
+use App\Models\MarketplaceNotification;
 use App\Models\Seller;
 use App\Models\SellerApplication;
 use App\Models\SellerDocument;
 use App\Models\User;
-use App\Models\MarketplaceNotification;
 use App\Notifications\SellerApplicationReviewedNotification;
 use App\Services\MediaStorageService;
 use Illuminate\Http\JsonResponse;
@@ -120,7 +120,7 @@ class SellerApplicationController extends Controller
                     'province' => trim($data['province']),
                     'city' => trim($data['city']),
                     'postal_code' => trim($data['postal_code']),
-                    'contact_name' => trim($data['first_name'] . ' ' . $data['last_name']),
+                    'contact_name' => trim($data['first_name'].' '.$data['last_name']),
                     'contact_email' => trim($data['contact_email']),
                     'public_email' => $this->nullableTrim($data['public_email'] ?? null),
                     'contact_phone' => trim($data['contact_phone']),
@@ -194,19 +194,24 @@ class SellerApplicationController extends Controller
     public function index(Request $request): JsonResponse
     {
         $query = SellerApplication::query()
-            ->with(['applicant', 'categories', 'documents', 'reviewer', 'approvedSeller']);
+            ->with([
+                'applicant:id,name,first_name,last_name,email,mobile,phone',
+                'categories:id,name,slug',
+                'reviewer:id,name,first_name,last_name',
+                'approvedSeller:id,slug,status',
+            ]);
 
         if ($search = trim((string) $request->input('search', ''))) {
             $query->where(function ($builder) use ($search) {
                 $builder
-                    ->where('business_name', 'like', '%' . $search . '%')
-                    ->orWhere('trade_name', 'like', '%' . $search . '%')
-                    ->orWhere('slug', 'like', '%' . $search . '%')
+                    ->where('business_name', 'like', '%'.$search.'%')
+                    ->orWhere('trade_name', 'like', '%'.$search.'%')
+                    ->orWhere('slug', 'like', '%'.$search.'%')
                     ->orWhereHas('applicant', function ($applicantQuery) use ($search) {
                         $applicantQuery
-                            ->where('email', 'like', '%' . $search . '%')
-                            ->orWhere('name', 'like', '%' . $search . '%')
-                            ->orWhereRaw("CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, '')) LIKE ?", ['%' . $search . '%']);
+                            ->where('email', 'like', '%'.$search.'%')
+                            ->orWhere('name', 'like', '%'.$search.'%')
+                            ->orWhereRaw("CONCAT(COALESCE(first_name, ''), ' ', COALESCE(last_name, '')) LIKE ?", ['%'.$search.'%']);
                     });
             });
         }
@@ -410,7 +415,7 @@ class SellerApplicationController extends Controller
             $body = $decision === 'approved'
                 ? 'Your seller application has been approved. You can now access your seller dashboard.'
                 : ($reason
-                    ? 'Your seller application was not approved. Reason: ' . $reason
+                    ? 'Your seller application was not approved. Reason: '.$reason
                     : 'Your seller application was not approved. Please review the details and try again.');
 
             MarketplaceNotification::create([
@@ -522,7 +527,7 @@ class SellerApplicationController extends Controller
             || Seller::where('slug', $slug)->exists()
         ) {
             $attempt++;
-            $slug = $base . '-' . Str::lower(Str::random(6 + $attempt));
+            $slug = $base.'-'.Str::lower(Str::random(6 + $attempt));
         }
 
         return $slug;

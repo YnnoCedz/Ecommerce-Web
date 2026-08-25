@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { fetchCatalogCategories, fetchSearchSuggestions, type CatalogCategory, type SearchSuggestion } from "../api/catalog";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -86,6 +86,7 @@ function getAccountLinks(user: ReturnType<typeof useAuth>["user"]) {
 
 export default function PublicShell({ children, cartCount = 0, wishlistCount = 0, isLoggedIn = false, activePage }: PublicShellProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [navCategories, setNavCategories] = useState<CatalogCategory[]>([]);
@@ -128,12 +129,28 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
     navigate(href);
   };
 
+  useEffect(() => {
+    if (location.pathname.startsWith("/auth/")) {
+      setNavCategories([]);
+      return;
+    }
+
+    let active = true;
+    void fetchCatalogCategories()
+      .then((response) => {
+        if (active) setNavCategories(response.data);
+      })
+      .catch(() => {
+        if (active) setNavCategories([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [location.pathname]);
+
   // Close menus on outside click
   useEffect(() => {
-    void fetchCatalogCategories()
-      .then((response) => setNavCategories(response.data))
-      .catch(() => setNavCategories([]));
-
     const handler = (e: MouseEvent) => {
       if (megaRef.current && !megaRef.current.contains(e.target as Node)) setMegaMenuCategory(null);
       if (megaRef.current && !megaRef.current.contains(e.target as Node)) setMoreMenuOpen(false);
