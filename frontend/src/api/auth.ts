@@ -21,8 +21,8 @@ export type AuthUser = {
   two_factor_enabled: boolean;
   two_factor_method: string | null;
   joined_at: string | null;
-  order_count: number;
-  wishlist_count: number;
+  order_count?: number;
+  wishlist_count?: number;
 };
 
 export type AuthSessionResponse = {

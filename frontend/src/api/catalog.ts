@@ -168,7 +168,7 @@ export async function fetchCatalogProducts(params?: { search?: string; category?
   if (params?.category) searchParams.set("category", params.category);
   if (params?.seller) searchParams.set("seller", params.seller);
   const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
-  return apiFetch<{ data: CatalogProduct[] }>(`/products${suffix}`);
+  return singleFlight(`catalog:products:${suffix}`, () => apiFetch<{ data: CatalogProduct[] }>(`/products${suffix}`));
 }
 
 export async function searchMarketplace(params: MarketplaceSearchParams) {
@@ -197,7 +197,7 @@ export async function fetchProductReviews(slug: string, page = 1, perPage = 10) 
 }
 
 export async function fetchCatalogSellers() {
-  return apiFetch<{ data: CatalogSeller[] }>("/sellers");
+  return singleFlight("catalog:sellers", () => apiFetch<{ data: CatalogSeller[] }>("/sellers"));
 }
 
 export async function fetchCatalogSeller(slug: string) {

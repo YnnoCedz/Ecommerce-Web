@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
@@ -98,6 +99,8 @@ class AuthController extends Controller
 
     public function login(Request $request): JsonResponse
     {
+        $timings = app()->isLocal() ? ['total_started_at' => hrtime(true)] : null;
+
         $request->merge([
             'email' => $this->normalizeEmail((string) $request->input('email')),
         ]);
@@ -108,9 +111,17 @@ class AuthController extends Controller
             'remember' => ['sometimes', 'boolean'],
         ]);
 
+        $operationStartedAt = hrtime(true);
         $user = User::where('email', $this->normalizeEmail($data['email']))->first();
+        $this->recordTiming($timings, 'email_lookup_ms', $operationStartedAt);
 
-        if (! $user || ! Hash::check($data['password'], $user->password)) {
+        $operationStartedAt = hrtime(true);
+        $passwordMatches = $user && Hash::check($data['password'], $user->password);
+        $this->recordTiming($timings, 'password_verification_ms', $operationStartedAt);
+
+        if (! $passwordMatches) {
+            $this->logLoginTimings($timings, 'invalid_credentials');
+
             return response()->json([
                 'message' => 'The provided credentials are incorrect.',
                 'code' => 'invalid_credentials',
@@ -121,6 +132,8 @@ class AuthController extends Controller
         }
 
         if (! $user->email_verified_at) {
+            $this->logLoginTimings($timings, 'email_unverified');
+
             return response()->json([
                 'message' => 'Please verify your email address before signing in.',
                 'code' => 'email_unverified',
@@ -128,6 +141,8 @@ class AuthController extends Controller
         }
 
         if (in_array($user->status, ['suspended', 'restricted', 'pending'], true)) {
+            $this->logLoginTimings($timings, 'account_inactive');
+
             return response()->json([
                 'message' => match ($user->status) {
                     'suspended' => 'This account has been suspended.',
@@ -145,7 +160,7 @@ class AuthController extends Controller
         if ($user->two_factor_enabled) {
             [$challenge, $challengeToken] = $this->issueTwoFactorChallenge($request, $user, $request->boolean('remember'));
 
-            return response()->json([
+            $response = response()->json([
                 'message' => 'Two-factor verification is required.',
                 'code' => 'two_factor_required',
                 'requires_two_factor' => true,
@@ -156,17 +171,35 @@ class AuthController extends Controller
                 'two_factor_expires_at' => optional($challenge->expires_at)->toISOString(),
                 'two_factor_resend_available_at' => optional($challenge->resend_available_at)->toISOString(),
             ], 202);
+
+            $this->logLoginTimings($timings, 'two_factor_required');
+
+            return $response;
         }
 
+        $operationStartedAt = hrtime(true);
         $user->forceFill(['last_active_at' => now()])->save();
-        $user->refresh();
+        $this->recordTiming($timings, 'activity_update_ms', $operationStartedAt);
 
-        return response()->json([
+        $operationStartedAt = hrtime(true);
+        $tokenPayload = $this->accessTokenPayload($user);
+        $this->recordTiming($timings, 'token_creation_ms', $operationStartedAt);
+
+        $operationStartedAt = hrtime(true);
+        $userPayload = $this->userPayload($user);
+        $redirectTo = $this->redirectForUser($user);
+        $this->recordTiming($timings, 'response_payload_ms', $operationStartedAt);
+
+        $response = response()->json([
             'message' => 'Authenticated successfully.',
-            ...$this->accessTokenPayload($user),
-            'user' => $this->userPayload($user),
-            'redirect_to' => $this->redirectForUser($user),
+            ...$tokenPayload,
+            'user' => $userPayload,
+            'redirect_to' => $redirectTo,
         ]);
+
+        $this->logLoginTimings($timings, 'authenticated');
+
+        return $response;
     }
 
     public function verifyTwoFactor(Request $request): JsonResponse
@@ -243,7 +276,6 @@ class AuthController extends Controller
 
         $challenge->forceFill(['consumed_at' => now()])->save();
         $user->forceFill(['last_active_at' => now()])->save();
-        $user->refresh();
 
         return response()->json([
             'message' => 'Authenticated successfully.',
@@ -503,7 +535,6 @@ class AuthController extends Controller
         $user->markEmailAsVerified();
         $user->forceFill(['last_active_at' => now()])->save();
         $challenge->forceFill(['consumed_at' => now()])->save();
-        $user->refresh();
 
         return response()->json([
             'message' => 'Email verified successfully.',
@@ -540,6 +571,18 @@ class AuthController extends Controller
 
     protected function userPayload(User $user): array
     {
+        $seller = null;
+        if ($user->isSeller()) {
+            if (! $user->relationLoaded('seller')) {
+                $user->setRelation(
+                    'seller',
+                    $user->seller()->select(['id', 'user_id', 'status'])->first(),
+                );
+            }
+
+            $seller = $user->getRelation('seller');
+        }
+
         return [
             'id' => $user->id,
             'name' => $user->name,
@@ -552,16 +595,14 @@ class AuthController extends Controller
             'phone' => $user->phone ?? $user->mobile,
             'role' => $user->role,
             'status' => $user->status,
-            'seller_status' => $user->seller?->status,
-            'seller_approved' => (bool) $user->hasApprovedSellerProfile(),
+            'seller_status' => $seller?->status,
+            'seller_approved' => $seller?->status === 'approved',
             'location_label' => $user->location_label,
             'email_verified_at' => optional($user->email_verified_at)->toISOString(),
             'last_active_at' => optional($user->last_active_at)->toISOString(),
             'two_factor_enabled' => (bool) $user->two_factor_enabled,
             'two_factor_method' => $user->two_factor_method,
             'joined_at' => optional($user->created_at)->toISOString(),
-            'order_count' => $user->orders()->count(),
-            'wishlist_count' => $user->wishlistItems()->count(),
         ];
     }
 
@@ -582,6 +623,31 @@ class AuthController extends Controller
             'token' => $user->createToken('web')->plainTextToken,
             'token_type' => 'Bearer',
         ];
+    }
+
+    protected function recordTiming(?array &$timings, string $operation, int $startedAt): void
+    {
+        if ($timings === null) {
+            return;
+        }
+
+        $timings[$operation] = round((hrtime(true) - $startedAt) / 1_000_000, 2);
+    }
+
+    protected function logLoginTimings(?array $timings, string $outcome): void
+    {
+        if ($timings === null) {
+            return;
+        }
+
+        $totalStartedAt = $timings['total_started_at'];
+        unset($timings['total_started_at']);
+
+        Log::debug('Authentication login timing', [
+            'outcome' => $outcome,
+            ...$timings,
+            'total_ms' => round((hrtime(true) - $totalStartedAt) / 1_000_000, 2),
+        ]);
     }
 
     protected function issueTwoFactorChallenge(Request $request, User $user, bool $remember): array

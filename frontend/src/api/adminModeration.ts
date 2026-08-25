@@ -1,4 +1,5 @@
 import { apiFetch } from "./client";
+import { singleFlight } from "./requestCache";
 
 export type ReportStatus = "pending" | "reviewing" | "resolved" | "dismissed";
 export type ReportTargetType = "seller" | "buyer" | "courier" | "product" | "conversation";
@@ -84,7 +85,7 @@ export function submitReport(payload: {
 }
 
 export function fetchAdminReports() {
-  return apiFetch<AdminReportResponse>("/admin/reports");
+  return singleFlight("admin:reports", () => apiFetch<AdminReportResponse>("/admin/reports"));
 }
 
 export function fetchAdminReport(id: number) {
@@ -99,7 +100,7 @@ export function updateAdminReport(id: number, payload: { status: ReportStatus; m
 }
 
 export function fetchAdminDisputes() {
-  return apiFetch<AdminDisputeResponse>("/admin/disputes");
+  return singleFlight("admin:disputes", () => apiFetch<AdminDisputeResponse>("/admin/disputes"));
 }
 
 export function fetchAdminDispute(id: number) {

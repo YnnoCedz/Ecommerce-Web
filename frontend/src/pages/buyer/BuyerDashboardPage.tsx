@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { fetchCurrentUser, type AuthUser } from "../../api/auth";
+import { useAuth } from "../../auth/AuthContext";
 import { fetchBuyerNotifications, fetchBuyerOrders, fetchWishlistItems, type BuyerOrderListItem, type WishlistItemRecord } from "../../api/buyer";
 
 type DashboardOrder = BuyerOrderListItem & {
@@ -75,7 +75,7 @@ function normalizeWishlist(items: WishlistItemRecord[]): SavedItem[] {
 
 export default function BuyerDashboardPage() {
   const navigate = useNavigate();
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const { user } = useAuth();
   const [orders, setOrders] = useState<DashboardOrder[]>([]);
   const [wishlist, setWishlist] = useState<SavedItem[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
@@ -86,8 +86,7 @@ export default function BuyerDashboardPage() {
 
     void (async () => {
       try {
-        const [userResponse, ordersResponse, wishlistResponse, notificationsResponse] = await Promise.all([
-          fetchCurrentUser(),
+        const [ordersResponse, wishlistResponse, notificationsResponse] = await Promise.all([
           fetchBuyerOrders(),
           fetchWishlistItems(),
           fetchBuyerNotifications(),
@@ -102,13 +101,11 @@ export default function BuyerDashboardPage() {
           displayImage: order.main_image ?? "",
         }));
 
-        setUser(userResponse.user);
         setOrders(normalizedOrders);
         setWishlist(normalizeWishlist(wishlistResponse.data));
         setUnreadNotifications(notificationsResponse.meta?.unread_count ?? 0);
       } catch {
         if (!active) return;
-        setUser(null);
         setOrders([]);
         setWishlist([]);
         setUnreadNotifications(0);

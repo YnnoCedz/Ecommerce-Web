@@ -1,4 +1,5 @@
 import { apiFetch } from "./client";
+import { singleFlight } from "./requestCache";
 
 export type PaginationMeta = { current_page: number; last_page: number; per_page: number; total: number };
 export type AdminUser = { id: number; name: string; email: string; mobile: string; role: "buyer" | "seller" | "admin"; status: string; location: string | null; verified: boolean; orders: number; total_spent: number; joined_at: string | null; last_active_at: string | null };
@@ -17,7 +18,7 @@ function queryString(params: Record<string, string | number | undefined>) {
   return value ? `?${value}` : "";
 }
 
-export const fetchAdminDashboard = (days: 7 | 30 | 90) => apiFetch<{ data: AdminDashboardData }>(`/admin/dashboard?days=${days}`);
+export const fetchAdminDashboard = (days: 7 | 30 | 90) => singleFlight(`admin:dashboard:${days}`, () => apiFetch<{ data: AdminDashboardData }>(`/admin/dashboard?days=${days}`));
 export const fetchAdminUsers = (params: Record<string, string | number | undefined> = {}) => apiFetch<{ data: AdminUser[]; meta: PaginationMeta }>(`/admin/users${queryString(params)}`);
 export const updateAdminUserStatus = (id: number, status: string, reason?: string) => apiFetch<{ message: string; data: AdminUser }>(`/admin/users/${id}/status`, { method: "PATCH", body: JSON.stringify({ status, reason }) });
 export const fetchAdminSellers = (params: Record<string, string | number | undefined> = {}) => apiFetch<{ data: AdminSeller[]; meta: PaginationMeta }>(`/admin/sellers${queryString(params)}`);

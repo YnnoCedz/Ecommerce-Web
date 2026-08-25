@@ -3,6 +3,7 @@ import { Outlet, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import PublicShell from "../shells/PublicShell";
 import { fetchCart } from "../api/cart";
+import { fetchWishlistItems } from "../api/buyer";
 
 // ── NavFn context ──────────────────────────────────────────────
 // Bridges the existing onNavigate(page, params) pattern to React Router
@@ -48,33 +49,37 @@ export default function PublicLayout() {
   const { user } = useAuth();
   const navFn = buildNavFn(navigate);
   const [cartCount, setCartCount] = useState(0);
+  const [wishlistCount, setWishlistCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
 
     if (!user) {
       setCartCount(0);
+      setWishlistCount(0);
       return () => {
         cancelled = true;
       };
     }
 
-    void fetchCart()
-      .then((response) => {
+    void Promise.all([fetchCart(), fetchWishlistItems()])
+      .then(([cartResponse, wishlistResponse]) => {
         if (cancelled) {
           return;
         }
 
-        const count = response.data.sellers.reduce(
+        const count = cartResponse.data.sellers.reduce(
           (sum, seller) => sum + seller.items.reduce((itemSum, item) => itemSum + item.quantity, 0),
           0,
         );
 
         setCartCount(count);
+        setWishlistCount(wishlistResponse.data.length);
       })
       .catch(() => {
         if (!cancelled) {
           setCartCount(0);
+          setWishlistCount(0);
         }
       });
 
@@ -85,7 +90,7 @@ export default function PublicLayout() {
 
   return (
     <NavCtx.Provider value={navFn}>
-      <PublicShell cartCount={cartCount} wishlistCount={user?.wishlist_count ?? 0} isLoggedIn={Boolean(user)}>
+      <PublicShell cartCount={cartCount} wishlistCount={wishlistCount} isLoggedIn={Boolean(user)}>
         <Outlet />
       </PublicShell>
     </NavCtx.Provider>
