@@ -99,7 +99,7 @@ return new class extends Migration
             $table->timestamp('reviewed_at')->nullable();
             $table->timestamps();
 
-            $table->unique(['seller_id', 'category_id'], 'seller_categories_unique');
+            $table->primary(['seller_id', 'category_id'], 'seller_categories_primary');
         });
 
         $createTable('products', function (Blueprint $table) {
