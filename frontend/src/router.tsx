@@ -5,6 +5,7 @@ import { useAuth } from "./auth/AuthContext";
 import type { AccountUser } from "./pages/account/AccountLayout";
 import PublicLayout, { useNav } from "./layouts/PublicLayout";
 import SpecLayout from "./layouts/SpecLayout";
+import RouteErrorPage from "./pages/errors/RouteErrorPage";
 
 const SellerLayout = lazy(() => import("./layouts/SellerLayout"));
 const AdminLayout = lazy(() => import("./layouts/AdminLayout"));
@@ -315,15 +316,17 @@ function NotFoundRoute() {
 export const router = createBrowserRouter([
   {
     path: "/spec",
+    errorElement: <RouteErrorPage />,
     children: [
       { index: true, element: <Navigate to="/spec/01" replace /> },
       { path: ":partId", Component: SpecLayout },
     ],
   },
-  { path: "/seller-center/onboarding", Component: SellerOnboarding },
-  { path: "/seller-center/onboarding/status", element: <SellerOnboarding view="status" /> },
+  { path: "/seller-center/onboarding", Component: SellerOnboarding, errorElement: <RouteErrorPage /> },
+  { path: "/seller-center/onboarding/status", element: <SellerOnboarding view="status" />, errorElement: <RouteErrorPage /> },
   {
     path: "/seller-center",
+    errorElement: <RouteErrorPage />,
     element: <RequireSellerAccess />,
     children: [
       {
@@ -350,6 +353,7 @@ export const router = createBrowserRouter([
   },
   {
     path: "/admin",
+    errorElement: <RouteErrorPage />,
     element: <RequireAdminAccess />,
     children: [
       {
@@ -374,6 +378,7 @@ export const router = createBrowserRouter([
   {
     path: "/",
     Component: PublicLayout,
+    errorElement: <RouteErrorPage />,
     children: [
       { index: true, Component: HomeRoute },
       { path: "search", Component: SearchRoute },
@@ -425,6 +430,6 @@ export const router = createBrowserRouter([
       },
     ],
   },
-  { path: "/403", Component: ForbiddenPage },
-  { path: "*", Component: NotFoundRoute },
+  { path: "/403", Component: ForbiddenPage, errorElement: <RouteErrorPage /> },
+  { path: "*", Component: NotFoundRoute, errorElement: <RouteErrorPage /> },
 ]);

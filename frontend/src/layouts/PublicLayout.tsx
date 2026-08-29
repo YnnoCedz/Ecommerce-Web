@@ -3,7 +3,7 @@ import { Outlet, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import PublicShell from "../shells/PublicShell";
 import { fetchCart } from "../api/cart";
-import { fetchWishlistItems } from "../api/buyer";
+import { useWishlist } from "../wishlist/WishlistContext";
 
 // ── NavFn context ──────────────────────────────────────────────
 // Bridges the existing onNavigate(page, params) pattern to React Router
@@ -44,26 +44,25 @@ function buildNavFn(navigate: ReturnType<typeof useNavigate>): NavFn {
   };
 }
 
-export default function PublicLayout() {
+function PublicLayoutContent() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const navFn = buildNavFn(navigate);
   const [cartCount, setCartCount] = useState(0);
-  const [wishlistCount, setWishlistCount] = useState(0);
+  const { count: wishlistCount } = useWishlist();
 
   useEffect(() => {
     let cancelled = false;
 
     if (!user || user.role !== "buyer") {
       setCartCount(0);
-      setWishlistCount(0);
       return () => {
         cancelled = true;
       };
     }
 
-    void Promise.all([fetchCart(), fetchWishlistItems()])
-      .then(([cartResponse, wishlistResponse]) => {
+    void fetchCart()
+      .then((cartResponse) => {
         if (cancelled) {
           return;
         }
@@ -74,12 +73,10 @@ export default function PublicLayout() {
         );
 
         setCartCount(count);
-        setWishlistCount(wishlistResponse.data.length);
       })
       .catch(() => {
         if (!cancelled) {
           setCartCount(0);
-          setWishlistCount(0);
         }
       });
 
@@ -95,4 +92,8 @@ export default function PublicLayout() {
       </PublicShell>
     </NavCtx.Provider>
   );
+}
+
+export default function PublicLayout() {
+  return <PublicLayoutContent />;
 }
