@@ -120,9 +120,11 @@ export type WishlistItemRecord = {
     slug: string;
     status: string;
     price: number;
-    sale_price: number | null;
+    original_price: number | null;
+    discount_percentage: number;
+    pricing_source: "regular" | "sale" | "promotion";
     stock_quantity: number;
-    low_stock_threshold: number;
+    in_stock: boolean;
     seller?: {
       id: number;
       business_name: string;
@@ -131,7 +133,7 @@ export type WishlistItemRecord = {
     } | null;
     images?: Array<{
       id: number;
-      file_path: string;
+      url: string;
       is_primary: boolean;
       sort_order: number;
     }>;
@@ -145,8 +147,14 @@ export type BuyerAddress = {
   phone: string;
   line1: string;
   line2: string | null;
+  region: string | null;
+  region_code: string | null;
   city: string;
-  province: string;
+  city_code: string | null;
+  province: string | null;
+  province_code: string | null;
+  barangay: string | null;
+  barangay_code: string | null;
   postal_code: string;
   is_default: boolean;
 };
@@ -205,24 +213,28 @@ export async function fetchAccountAddresses() {
   return singleFlight("buyer:addresses", () => apiFetch<{ data: BuyerAddress[] }>("/account/addresses"));
 }
 
-export async function storeAccountAddress(payload: {
+export type BuyerAddressInput = {
   label: string;
   recipient_name: string;
   phone: string;
   line1: string;
   line2?: string | null;
-  city: string;
-  province: string;
+  region_code: string;
+  province_code?: string | null;
+  city_code: string;
+  barangay_code: string;
   postal_code: string;
   is_default?: boolean;
-}) {
+};
+
+export async function storeAccountAddress(payload: BuyerAddressInput) {
   return apiFetch<{ message: string; data: BuyerAddress }>("/account/addresses", {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
-export async function updateAccountAddress(addressId: number, payload: Omit<BuyerAddress, "id">) {
+export async function updateAccountAddress(addressId: number, payload: BuyerAddressInput | { is_default: true }) {
   return apiFetch<{ message: string; data: BuyerAddress }>(`/account/addresses/${addressId}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
@@ -251,6 +263,43 @@ export type CheckoutResult = {
   sandbox: boolean;
 };
 
+export type CheckoutPreviewItem = {
+  id: number;
+  product_id: number;
+  product_slug: string | null;
+  product_name: string;
+  product_variant_id: number | null;
+  variant_name: string | null;
+  image: string | null;
+  quantity: number;
+  unit_price: number;
+  line_total: number;
+};
+
+export type CheckoutPreview = {
+  cart_item_ids: number[];
+  promo_code: string | null;
+  sellers: Array<{
+    slug: string | null;
+    name: string;
+    subtotal: number;
+    shipping: number;
+    items: CheckoutPreviewItem[];
+  }>;
+  subtotal: number;
+  shipping_total: number;
+  discount_total: number;
+  grand_total: number;
+  item_count: number;
+};
+
+export async function fetchCheckoutPreview(cart_item_ids: number[]) {
+  return apiFetch<{ data: CheckoutPreview }>("/checkout/preview", {
+    method: "POST",
+    body: JSON.stringify({ cart_item_ids }),
+  });
+}
+
 export async function submitCheckout(payload: {
   address_id: number;
   payment_method: "cod" | "gcash" | "maya" | "card";
@@ -260,7 +309,7 @@ export async function submitCheckout(payload: {
     card_last4?: string;
     card_brand?: string;
   };
-  cart_item_ids?: number[];
+  cart_item_ids: number[];
   buyer_notes?: string | null;
 }) {
   return apiFetch<{ message: string; data: CheckoutResult }>("/checkout", {
