@@ -1,33 +1,13 @@
-import { useEffect, useState } from "react";
-import { addWishlistItem, fetchWishlistStatus, removeWishlistItem } from "../api/buyer";
 import { useAuth } from "../auth/AuthContext";
 import { useToast } from "../components/ToastProvider";
+import { useWishlist } from "../wishlist/WishlistContext";
 
 export function usePersistedWishlist(productId: number, productName: string, onRequireLogin: () => void) {
   const { user } = useAuth();
   const { showToast } = useToast();
-  const [wished, setWished] = useState(false);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (!user) {
-      setWished(false);
-      return;
-    }
-
-    let active = true;
-    void fetchWishlistStatus(productId)
-      .then((response) => {
-        if (active) setWished(response.data.wishlisted);
-      })
-      .catch(() => {
-        if (active) setWished(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [productId, user]);
+  const wishlist = useWishlist();
+  const wished = wishlist.isWished(productId);
+  const busy = wishlist.isBusy(productId);
 
   const toggle = async () => {
     if (!user) {
@@ -35,25 +15,21 @@ export function usePersistedWishlist(productId: number, productName: string, onR
       return;
     }
 
-    setBusy(true);
     try {
-      if (wished) {
-        await removeWishlistItem(productId);
-        setWished(false);
+      const next = await wishlist.toggle(productId);
+      if (!next) {
         showToast({ kind: "wishlist", title: "Removed from wishlist", message: `${productName} was removed.` });
       } else {
-        await addWishlistItem(productId);
-        setWished(true);
         showToast({ kind: "wishlist", title: "Saved to wishlist", message: `${productName} was saved successfully.` });
       }
     } catch (error) {
       showToast({
         kind: "error",
         title: "Could not update wishlist",
-        message: error instanceof Error ? error.message : "Unable to update your wishlist.",
+        error,
+        errorContext: "product",
+        fallbackMessage: "Unable to update your wishlist. Please try again.",
       });
-    } finally {
-      setBusy(false);
     }
   };
 

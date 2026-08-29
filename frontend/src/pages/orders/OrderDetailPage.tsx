@@ -157,7 +157,7 @@ export default function OrderDetailPage({ orderNumber, deliveryState }: { orderN
       setReviewComment("");
       showToast({ title: "Order received", message: response.message });
     } catch (err) {
-      showToast({ kind: "error", title: "Order not completed", message: err instanceof Error ? err.message : "Please try again." });
+      showToast({ kind: "error", title: "Order not completed", error: err, errorContext: "orders" });
     } finally {
       setCompletingId(null);
     }
@@ -180,7 +180,7 @@ export default function OrderDetailPage({ orderNumber, deliveryState }: { orderN
       if (remaining.length === 0) setReviewSellerOrderId(null);
       showToast({ title: "Review submitted", message: response.message });
     } catch (err) {
-      showToast({ kind: "error", title: "Review not saved", message: err instanceof Error ? err.message : "Please try again." });
+      showToast({ kind: "error", title: "Review not saved", error: err, errorContext: "orders" });
     } finally {
       setSavingReview(false);
     }
@@ -195,7 +195,7 @@ export default function OrderDetailPage({ orderNumber, deliveryState }: { orderN
     try {
       const response = await startConversation({ seller_id: sellerOrder.seller_id, order_id: order.id, seller_order_id: sellerOrder.id, subject: `Order ${order.order_number}` });
       navigate(`/account/messages?conversation=${response.data.id}`);
-    } catch (error) { showToast({ kind: "error", title: "Conversation unavailable", message: error instanceof Error ? error.message : "Please try again." }); }
+    } catch (error) { showToast({ kind: "error", title: "Conversation unavailable", error, errorContext: "messaging" }); }
   };
 
   const submitResolution = async () => {
@@ -212,14 +212,14 @@ export default function OrderDetailPage({ orderNumber, deliveryState }: { orderN
         showToast({ title: "Return requested", message: response.message });
       }
       await refresh(); setAction(null); setActionReason(""); setSelectedReturnItems({}); setEvidence([]);
-    } catch (error) { showToast({ kind: "error", title: "Request not saved", message: error instanceof Error ? error.message : "Please try again." }); }
+    } catch (error) { showToast({ kind: "error", title: "Request not saved", error, errorContext: "orders" }); }
     finally { setActionBusy(false); }
   };
 
   const retryPayment = async () => {
     if (!orderNumber) return;
     try { const response = await retryOrderPayment(orderNumber); await refresh(); showToast({ title: response.data.status === "paid" ? "Demo payment successful" : "Payment attempt saved", message: response.message }); }
-    catch (error) { showToast({ kind: "error", title: "Payment retry failed", message: error instanceof Error ? error.message : "Please try again." }); }
+    catch (error) { showToast({ kind: "error", title: "Payment retry failed", error, errorContext: "checkout" }); }
   };
 
   if (loading) {

@@ -1,3 +1,5 @@
+import { safeApiErrorMessage, safeValidationErrors } from "../utils/errorMapper";
+
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim().replace(/\/+$/, "");
 // Development requests stay on the frontend origin so the Vite proxy owns
 // local routing. Production uses the configured Laravel API origin.
@@ -83,19 +85,21 @@ export function clearAuthToken(): void {
 export class ApiError extends Error {
   status: number;
   payload: unknown;
+  technicalMessage: string;
   errors?: Record<string, string[]>;
   code?: string;
 
   constructor(message: string, status: number, payload: unknown) {
-    super(message);
+    super(safeApiErrorMessage(message, status, payload));
     this.name = "ApiError";
     this.status = status;
     this.payload = payload;
+    this.technicalMessage = message;
 
     if (payload && typeof payload === "object") {
       const record = payload as Record<string, unknown>;
       if (record.errors && typeof record.errors === "object") {
-        this.errors = record.errors as Record<string, string[]>;
+        this.errors = safeValidationErrors(record.errors as Record<string, string[]>);
       }
       if (typeof record.code === "string") {
         this.code = record.code;
@@ -172,4 +176,55 @@ export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promi
   }
 
   return response.json() as Promise<T>;
+}
+
+export type ApiDownload = {
+  blob: Blob;
+  filename: string | null;
+};
+
+function downloadFilename(response: Response): string | null {
+  const disposition = response.headers.get("content-disposition");
+  if (!disposition) return null;
+
+  const utf8 = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  const plain = disposition.match(/filename="?([^";]+)"?/i);
+  const encoded = utf8?.[1] ?? plain?.[1];
+
+  if (!encoded) return null;
+
+  try {
+    return decodeURIComponent(encoded).replace(/[\\/]/g, "-");
+  } catch {
+    return encoded.replace(/[\\/]/g, "-");
+  }
+}
+
+export async function apiDownload(path: string): Promise<ApiDownload> {
+  const normalizedPath = normalizeApiPath(path);
+  const headers = new Headers({ Accept: "application/octet-stream, application/pdf" });
+  const authToken = getAuthToken();
+
+  if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
+
+  const response = await fetch(`${API_BASE_URL}${normalizedPath}`, { headers });
+
+  if (!response.ok) {
+    const payload = await readResponseBody(response);
+    const message =
+      payload && typeof payload === "object" && "message" in payload && typeof (payload as { message?: unknown }).message === "string"
+        ? (payload as { message: string }).message
+        : payload && typeof payload === "object" && "errors" in payload && payload.errors && typeof payload.errors === "object"
+          ? Object.values(payload.errors as Record<string, unknown>)
+              .flatMap((value) => Array.isArray(value) ? value : [])
+              .find((value): value is string => typeof value === "string") ?? "Unable to export the requested report."
+          : "Unable to export the requested report.";
+
+    throw new ApiError(message, response.status, payload);
+  }
+
+  return {
+    blob: await response.blob(),
+    filename: downloadFilename(response),
+  };
 }

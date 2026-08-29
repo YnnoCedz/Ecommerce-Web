@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { addCartItem } from "../../api/cart";
-import { fetchWishlistItems, removeWishlistItem, type WishlistItemRecord } from "../../api/buyer";
+import { fetchWishlistItems, type WishlistItemRecord } from "../../api/buyer";
+import { useWishlist } from "../../wishlist/WishlistContext";
 import { useToast } from "../../components/ToastProvider";
 
 type WishlistItem = {
@@ -11,6 +12,9 @@ type WishlistItem = {
   seller: string;
   slug: string;
   price: number;
+  originalPrice: number | null;
+  discountPercentage: number;
+  pricingSource: "regular" | "sale" | "promotion";
   image: string;
   inStock: boolean;
   dateAdded: string;
@@ -22,7 +26,7 @@ function mapWishlist(items: WishlistItemRecord[]): WishlistItem[] {
       const product = item.product;
       if (!product) return null;
 
-      const image = product.images?.sort((a, b) => Number(b.is_primary) - Number(a.is_primary) || a.sort_order - b.sort_order)[0]?.file_path ?? "";
+      const image = product.images?.sort((a, b) => Number(b.is_primary) - Number(a.is_primary) || a.sort_order - b.sort_order)[0]?.url ?? "";
       const seller = product.seller?.trade_name ?? product.seller?.business_name ?? "Seller";
 
       return {
@@ -31,9 +35,12 @@ function mapWishlist(items: WishlistItemRecord[]): WishlistItem[] {
         product: product.name,
         seller,
         slug: product.slug,
-        price: product.sale_price ?? product.price,
+        price: product.price,
+        originalPrice: product.original_price,
+        discountPercentage: product.discount_percentage,
+        pricingSource: product.pricing_source,
         image,
-        inStock: product.status === "active" && product.stock_quantity > 0,
+        inStock: product.status === "active" && product.in_stock,
         dateAdded: item.added_at ? new Date(item.added_at).toLocaleDateString() : "Recently",
       };
     })
@@ -45,6 +52,7 @@ function currency(value: number) {
 }
 
 export default function WishlistPage() {
+  const wishlist = useWishlist();
   const navigate = useNavigate();
   const { showToast } = useToast();
   const [items, setItems] = useState<WishlistItem[]>([]);
@@ -87,14 +95,16 @@ export default function WishlistPage() {
     setBusyProductId(item.productId);
     setError(null);
     try {
-      await removeWishlistItem(item.productId);
+      await wishlist.remove(item.productId);
       setItems((current) => current.filter((entry) => entry.productId !== item.productId));
       showToast({ kind: "wishlist", title: "Removed from wishlist", message: `${item.product} was removed.` });
     } catch (err) {
       showToast({
         kind: "error",
         title: "Could not update wishlist",
-        message: err instanceof Error ? err.message : "Unable to remove this wishlist item.",
+        error: err,
+        errorContext: "product",
+        fallbackMessage: "We couldn't remove this wishlist item. Please try again.",
       });
     } finally {
       setBusyProductId(null);
@@ -106,7 +116,7 @@ export default function WishlistPage() {
     setError(null);
     try {
       await addCartItem({ product_id: item.productId, quantity: 1 });
-      await removeWishlistItem(item.productId);
+      await wishlist.remove(item.productId);
       setItems((current) => current.filter((entry) => entry.productId !== item.productId));
       showToast({ kind: "cart", title: "Moved to cart", message: `${item.product} was added to your cart.` });
       navigate("/cart");
@@ -114,7 +124,9 @@ export default function WishlistPage() {
       showToast({
         kind: "error",
         title: "Could not move item",
-        message: err instanceof Error ? err.message : "Unable to move this item to your cart.",
+        error: err,
+        errorContext: "cart",
+        fallbackMessage: "We couldn't move this item to your cart. Please try again.",
       });
     } finally {
       setBusyProductId(null);
@@ -181,11 +193,15 @@ export default function WishlistPage() {
                   {!item.inStock && (
                     <span className="absolute top-2 left-2 font-[var(--font-mono)] text-[9px] px-1.5 py-0.5 bg-[var(--color-ink)] text-white rounded">Out of stock</span>
                   )}
+                  {item.inStock && item.pricingSource === "promotion" && (
+                    <span className="absolute top-2 left-2 font-[var(--font-mono)] text-[9px] px-1.5 py-0.5 bg-[var(--color-navy)] text-white rounded">DEAL</span>
+                  )}
                   </div>
                   <div className="p-3 pb-2">
                   <p className="text-sm font-[500] text-[var(--color-ink)] leading-snug line-clamp-2 mb-1">{item.product}</p>
                   <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] mb-1">{item.seller}</p>
-                  <p className="text-sm font-[600] text-[var(--color-ink)]">{currency(item.price)}</p>
+                  <p className="text-sm font-[600] text-[var(--color-ink)]">{currency(item.price)} {item.originalPrice !== null && <span className="ml-1 text-[10px] font-[400] text-[var(--color-ink-disabled)] line-through">{currency(item.originalPrice)}</span>}</p>
+                  {item.discountPercentage > 0 && <p className="font-[var(--font-mono)] text-[9px] text-[var(--color-red)]">{item.discountPercentage}% OFF</p>}
                   <p className="font-[var(--font-mono)] text-[9px] text-[var(--color-ink-disabled)] mt-1">Saved {item.dateAdded}</p>
                   </div>
                 </button>

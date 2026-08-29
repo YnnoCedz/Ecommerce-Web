@@ -56,7 +56,7 @@ export default function PersonalInfoPage() {
       if (error instanceof ApiError && error.errors) {
         setErrors(Object.fromEntries(Object.entries(error.errors).map(([key, messages]) => [key, messages[0]])));
       }
-      showToast({ kind: "error", title: "Profile not saved", message: error instanceof Error ? error.message : "Please try again." });
+      showToast({ kind: "error", title: "Profile not saved", error, errorContext: "profile" });
     } finally {
       setSaving(false);
     }

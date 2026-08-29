@@ -16,7 +16,7 @@ export default function SellerReviewsPage() {
       setReviews(response.data);
       setDrafts(Object.fromEntries(response.data.map((review) => [review.id, review.reply?.body ?? ""])));
     } catch (error) {
-      showToast({ kind: "error", title: "Reviews unavailable", message: error instanceof Error ? error.message : "Please try again." });
+      showToast({ kind: "error", title: "Reviews unavailable", error, errorContext: "seller" });
     } finally { setLoading(false); }
   };
 
@@ -27,14 +27,14 @@ export default function SellerReviewsPage() {
     if (!body) return;
     setBusyId(review.id);
     try { const response = await saveSellerReviewReply(review.id, body); await load(); showToast({ title: "Reply saved", message: response.message }); }
-    catch (error) { showToast({ kind: "error", title: "Reply not saved", message: error instanceof Error ? error.message : "Please try again." }); }
+    catch (error) { showToast({ kind: "error", title: "Reply not saved", error, errorContext: "seller" }); }
     finally { setBusyId(null); }
   };
 
   const remove = async (review: SellerReview) => {
     setBusyId(review.id);
     try { await deleteSellerReviewReply(review.id); await load(); showToast({ title: "Reply removed" }); }
-    catch (error) { showToast({ kind: "error", title: "Reply not removed", message: error instanceof Error ? error.message : "Please try again." }); }
+    catch (error) { showToast({ kind: "error", title: "Reply not removed", error, errorContext: "seller" }); }
     finally { setBusyId(null); }
   };
 

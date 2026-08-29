@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { CheckCircle2, CircleAlert, Heart, ShoppingCart, X } from "lucide-react";
+import { mapErrorToMessage, sanitizeErrorToastMessage, type ErrorContext } from "../utils/errorMapper";
 
 export type ToastKind = "success" | "error" | "cart" | "wishlist";
 
@@ -8,6 +9,9 @@ export type ToastInput = {
   kind?: ToastKind;
   title: string;
   message?: string;
+  error?: unknown;
+  errorContext?: ErrorContext;
+  fallbackMessage?: string;
   duration?: number;
 };
 
@@ -57,7 +61,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const showToast = useCallback((input: ToastInput) => {
     const id = nextId.current++;
     const duration = input.duration ?? (input.kind === "error" ? 5000 : 3500);
-    setToasts((current) => [...current.slice(-3), { ...input, id }]);
+    const normalized = input.kind === "error"
+      ? {
+          ...input,
+          message: input.error === undefined
+            ? sanitizeErrorToastMessage(input.message, input.fallbackMessage)
+            : mapErrorToMessage(input.error, {
+                context: input.errorContext,
+                fallback: input.fallbackMessage,
+              }),
+        }
+      : input;
+    setToasts((current) => [...current.slice(-3), { ...normalized, id }]);
     timers.current.set(id, setTimeout(() => dismissToast(id), duration));
     return id;
   }, [dismissToast]);

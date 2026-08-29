@@ -24,7 +24,7 @@ export default function SecurityPage() {
       setValues({ current_password: "", password: "", password_confirmation: "" });
       showToast({ title: "Password changed", message: response.message });
     } catch (error) {
-      showToast({ kind: "error", title: "Password not changed", message: error instanceof Error ? error.message : "Please try again." });
+      showToast({ kind: "error", title: "Password not changed", error, errorContext: "profile" });
     } finally { setSaving(false); }
   };
 

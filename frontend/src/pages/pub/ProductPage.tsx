@@ -5,13 +5,30 @@ import { Rating, Price } from "../../Part03";
 import { IconChevronRight, IconChevronLeft, IconHeart, IconCart, IconStore } from "../../shells/icons";
 import { fetchCatalogProduct, fetchProductReviews, type CatalogProduct, type ProductReview } from "../../api/catalog";
 import { addCartItem } from "../../api/cart";
-import { addWishlistItem, fetchWishlistStatus, removeWishlistItem } from "../../api/buyer";
 import { useAuth } from "../../auth/AuthContext";
 import { useToast } from "../../components/ToastProvider";
 import { startConversation } from "../../api/account";
 import ReportDialog from "../../components/ReportDialog";
+import { usePersistedWishlist } from "../../hooks/usePersistedWishlist";
+import { useUrlTab } from "../../hooks/useUrlTab";
 
 const PRODUCT_PLACEHOLDER = "/images/product-placeholder.svg";
+const PRODUCT_TABS = ["description", "specs", "reviews"] as const;
+const PRODUCT_TAB_OPTIONS: ReadonlyArray<{
+  id: (typeof PRODUCT_TABS)[number];
+  label: string;
+}> = [
+  { id: "description", label: "Description" },
+  { id: "specs", label: "Specifications" },
+  { id: "reviews", label: "Reviews" },
+];
+
+function dealTimeLeft(endsAt: string, now: number) {
+  const total = Math.max(0, Math.floor((new Date(endsAt).getTime() - now) / 1000));
+  const days = Math.floor(total / 86400);
+  const clock = [Math.floor((total % 86400) / 3600), Math.floor((total % 3600) / 60), total % 60].map(value => String(value).padStart(2, "0")).join(":");
+  return days ? `${days}d ${clock}` : clock;
+}
 
 type NavFn = (page: string, params?: Record<string, string>) => void;
 
@@ -110,6 +127,9 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
   const [product, setProduct] = useState<CatalogProduct | null>(null);
   const [productLoading, setProductLoading] = useState(true);
   const [productError, setProductError] = useState<string | null>(null);
+  const [dealNow, setDealNow] = useState(Date.now());
+  const [serverClockOffset, setServerClockOffset] = useState(0);
+  const [refreshedPromotionId, setRefreshedPromotionId] = useState<number | null>(null);
   const [reviews, setReviews] = useState<ProductReview[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [reviewsError, setReviewsError] = useState<string | null>(null);
@@ -118,10 +138,8 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
   const [activeImg, setActiveImg] = useState(0);
   const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null);
   const [qty, setQty] = useState(1);
-  const [wished, setWished] = useState(false);
-  const [activeTab, setActiveTab] = useState("description");
+  const { activeTab, setActiveTab } = useUrlTab(PRODUCT_TABS, "description");
   const [cartBusy, setCartBusy] = useState(false);
-  const [wishlistBusy, setWishlistBusy] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
 
   useEffect(() => {
@@ -134,7 +152,12 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
 
     void fetchCatalogProduct(slug)
       .then((response) => {
-        if (active) setProduct(response.data);
+        if (active) {
+          const offset = new Date(response.server_time).getTime() - Date.now();
+          setServerClockOffset(offset);
+          setDealNow(Date.now() + offset);
+          setProduct(response.data);
+        }
       })
       .catch((error) => {
         if (active) setProductError(error instanceof Error ? error.message : "Unable to load this product.");
@@ -183,25 +206,7 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
     setQty(1);
   }, [product]);
 
-  useEffect(() => {
-    if (!user || !product) {
-      setWished(false);
-      return;
-    }
-
-    let active = true;
-    void fetchWishlistStatus(product.id)
-      .then((response) => {
-        if (active) setWished(response.data.wishlisted);
-      })
-      .catch(() => {
-        if (active) setWished(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [product, user]);
+  const { wished, busy: wishlistBusy, toggle: toggleWishlist } = usePersistedWishlist(product?.id ?? 0, product?.name ?? "Product", () => onNavigate("login"));
 
   const images = useMemo(() => {
     if (!product) return [PRODUCT_PLACEHOLDER];
@@ -210,8 +215,19 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
   }, [product]);
 
   const related = product?.related ?? [];
-  const selectedVariant = product?.variants?.find((variant) => variant.id === selectedVariantId) ?? null;
-  const currentPrice = selectedVariant?.price ?? product?.price ?? 0;
+  const activeVariants = product?.variants?.filter((variant) => variant.active) ?? [];
+  const defaultVariant = product?.track_inventory
+    ? activeVariants.find((variant) => variant.stock_quantity > 0) ?? activeVariants[0]
+    : activeVariants[0];
+  const selectedVariant = activeVariants.find((variant) => variant.id === selectedVariantId) ?? defaultVariant ?? null;
+  const currentPrice = selectedVariant?.price ?? product?.price ?? null;
+  const currentOriginalPrice = selectedVariant
+    ? selectedVariant.original_price
+    : product?.original_price ?? null;
+  const currentBadge = selectedVariant
+    ? (currentOriginalPrice !== null ? (selectedVariant.is_deal ? "DEAL" : "SALE") : null)
+    : product?.badge ?? null;
+  const currentIsDeal = selectedVariant ? selectedVariant.is_deal : product?.is_deal;
   const currentStock = selectedVariant?.stock_quantity ?? product?.stock_quantity ?? 0;
   const currentInStock = product ? (product.track_inventory ? currentStock > 0 : true) : false;
   const categoryLabel = product ? getCategoryLabel(product.category) : "Uncategorized";
@@ -224,6 +240,23 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
     rating_distribution: { "1": 0, "2": 0, "3": 0, "4": 0, "5": 0 },
   };
 
+  useEffect(() => {
+    if (!product?.promotion) return;
+    const timer = window.setInterval(() => setDealNow(Date.now() + serverClockOffset), 1000);
+    return () => window.clearInterval(timer);
+  }, [product?.promotion, serverClockOffset]);
+
+  useEffect(() => {
+    if (!product?.promotion || refreshedPromotionId === product.promotion.id || new Date(product.promotion.ends_at).getTime() > dealNow) return;
+    setRefreshedPromotionId(product.promotion.id);
+    void fetchCatalogProduct(slug).then(response => {
+      const offset = new Date(response.server_time).getTime() - Date.now();
+      setServerClockOffset(offset);
+      setDealNow(Date.now() + offset);
+      setProduct(response.data);
+    });
+  }, [dealNow, product?.promotion, refreshedPromotionId, slug]);
+
   const handleAddToCart = async () => {
     if (!product) return;
     if ((product.variants?.length ?? 0) > 0 && !selectedVariant) {
@@ -232,6 +265,10 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
     }
     if (!currentInStock) {
       showToast({ kind: "error", title: "Item unavailable", message: "This product is currently out of stock." });
+      return;
+    }
+    if (currentPrice === null || !Number.isFinite(currentPrice)) {
+      showToast({ kind: "error", title: "Price unavailable", message: "This product cannot be purchased until its price is corrected." });
       return;
     }
 
@@ -254,39 +291,12 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
       showToast({
         kind: "error",
         title: "Could not update cart",
-        message: error instanceof Error ? error.message : "Unable to add this item to your cart.",
+        error,
+        errorContext: "cart",
+        fallbackMessage: "We couldn't add this item to your cart. Please try again.",
       });
     } finally {
       setCartBusy(false);
-    }
-  };
-
-  const handleWishlist = async () => {
-    if (!product) return;
-    if (!user) {
-      onNavigate("login");
-      return;
-    }
-
-    setWishlistBusy(true);
-    try {
-      if (wished) {
-        await removeWishlistItem(product.id);
-        setWished(false);
-        showToast({ kind: "wishlist", title: "Removed from wishlist", message: `${product.name} was removed.` });
-      } else {
-        await addWishlistItem(product.id);
-        setWished(true);
-        showToast({ kind: "wishlist", title: "Saved to wishlist", message: `${product.name} was saved successfully.` });
-      }
-    } catch (error) {
-      showToast({
-        kind: "error",
-        title: "Could not update wishlist",
-        message: error instanceof Error ? error.message : "Unable to update your wishlist.",
-      });
-    } finally {
-      setWishlistBusy(false);
     }
   };
 
@@ -296,7 +306,7 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
     try {
       const response = await startConversation({ seller_id: seller.id, product_id: product.id, subject: product.name });
       navigate(`/account/messages?conversation=${response.data.id}`);
-    } catch (error) { showToast({ kind: "error", title: "Conversation unavailable", message: error instanceof Error ? error.message : "Please try again." }); }
+    } catch (error) { showToast({ kind: "error", title: "Conversation unavailable", error, errorContext: "messaging" }); }
   };
 
   const handleBuyNow = async () => {
@@ -307,6 +317,10 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
     }
     if (!currentInStock) {
       showToast({ kind: "error", title: "Item unavailable", message: "This product is currently out of stock." });
+      return;
+    }
+    if (currentPrice === null || !Number.isFinite(currentPrice)) {
+      showToast({ kind: "error", title: "Price unavailable", message: "This product cannot be purchased until its price is corrected." });
       return;
     }
     setCartBusy(true);
@@ -324,7 +338,9 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
       showToast({
         kind: "error",
         title: "Could not start checkout",
-        message: error instanceof Error ? error.message : "Unable to start checkout.",
+        error,
+        errorContext: "checkout",
+        fallbackMessage: "We couldn't start checkout. Please try again.",
       });
     } finally {
       setCartBusy(false);
@@ -391,14 +407,17 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
 
           <div>
             <div className="mb-4">
-              {product.badge && <span className="inline-block font-[var(--font-mono)] text-[10px] font-[500] px-2.5 py-1 rounded-sm bg-[var(--color-navy)] text-white mb-3">{product.badge}</span>}
+              {currentBadge && <span className="inline-block font-[var(--font-mono)] text-[10px] font-[500] px-2.5 py-1 rounded-sm bg-[var(--color-navy)] text-white mb-3">{currentBadge}</span>}
               <h1 className="font-[var(--font-display)] text-2xl font-[400] text-[var(--color-ink)] leading-snug mb-3">{product.name}</h1>
               <div className="flex items-center gap-3 mb-3">
                 <Rating value={product.rating} count={product.rating_count} />
                 <span className="text-xs text-[var(--color-ink-muted)]">·</span>
                 <span className="text-xs text-[var(--color-ink-muted)]">{product.sold_count.toLocaleString()} sold</span>
               </div>
-              <Price amount={currentPrice} original={selectedVariant ? undefined : product.original_price ?? undefined} size="lg" />
+              {currentPrice !== null && Number.isFinite(currentPrice)
+                ? <Price amount={currentPrice} original={currentOriginalPrice ?? undefined} size="lg" />
+                : <p className="text-sm text-[var(--color-red)]">Price unavailable</p>}
+              {currentIsDeal && product.promotion && new Date(product.promotion.ends_at).getTime() > dealNow && <p className="mt-1.5 text-xs font-[var(--font-mono)] text-[var(--color-red)]" aria-label={`Deal ends at ${new Date(product.promotion.ends_at).toLocaleString()}`}>Today's Deal ends in {dealTimeLeft(product.promotion.ends_at, dealNow)}</p>}
               {product.free_shipping && <p className="text-xs text-[var(--color-green)] font-[var(--font-mono)] mt-1.5">Free Standard Shipping</p>}
             </div>
 
@@ -432,12 +451,12 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
                 <IconCart size={15} />
                 {cartBusy ? "Adding..." : "Add to Cart"}
               </button>
-              <button onClick={() => void handleWishlist()} disabled={wishlistBusy} aria-pressed={wished} aria-label={wished ? "Remove from wishlist" : "Add to wishlist"} className={`w-12 h-12 flex items-center justify-center border rounded-sm transition-all cursor-pointer disabled:opacity-60 ${wished ? "border-[var(--color-red-border)] bg-[var(--color-red-light)] text-[var(--color-red)]" : "border-[var(--color-border)] text-[var(--color-ink-muted)] hover:border-[var(--color-red-border)] hover:text-[var(--color-red)]"}`}>
-                <IconHeart size={16} />
+              <button onClick={() => void toggleWishlist()} disabled={wishlistBusy} aria-pressed={wished} aria-label={wished ? "Remove from wishlist" : "Add to wishlist"} className={`w-12 h-12 flex items-center justify-center border rounded-sm transition-all cursor-pointer disabled:opacity-60 ${wished ? "border-[var(--color-red-border)] bg-[var(--color-red-light)] text-[var(--color-red)]" : "border-[var(--color-border)] text-[var(--color-ink-muted)] hover:border-[var(--color-red-border)] hover:text-[var(--color-red)]"}`}>
+                <IconHeart size={16} fill={wished ? "currentColor" : "none"} />
               </button>
             </div>
             <button onClick={() => void handleBuyNow()} disabled={cartBusy || !currentInStock} className="w-full py-3 bg-[var(--color-amber)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-amber-hover)] transition-colors cursor-pointer disabled:opacity-60 mb-5">
-              Buy Now — ₱{(currentPrice * qty).toLocaleString()}
+              Buy Now — {currentPrice !== null && Number.isFinite(currentPrice) ? `₱${(currentPrice * qty).toLocaleString()}` : "Price unavailable"}
             </button>
 
             <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-sm p-4 mb-4 space-y-3">
@@ -479,11 +498,7 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
 
         <div className="mt-10 bg-white border border-[var(--color-border)] rounded-sm overflow-hidden">
           <div className="border-b border-[var(--color-border)] flex">
-            {[
-              { id: "description", label: "Description" },
-              { id: "specs", label: "Specifications" },
-              { id: "reviews", label: "Reviews" },
-            ].map(tab => (
+            {PRODUCT_TAB_OPTIONS.map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-5 py-3.5 text-sm font-[500] border-b-2 transition-all cursor-pointer ${activeTab === tab.id ? "border-[var(--color-navy)] text-[var(--color-navy)]" : "border-transparent text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"}`}>
                 {tab.label}
               </button>

@@ -17,7 +17,7 @@ export default function MessagingPage() {
 
   const loadInbox = async () => {
     try { setConversations((await fetchConversations()).data); }
-    catch (error) { showToast({ kind: "error", title: "Messages unavailable", message: error instanceof Error ? error.message : "Please try again." }); }
+    catch (error) { showToast({ kind: "error", title: "Messages unavailable", error, errorContext: "messaging" }); }
     finally { setLoading(false); }
   };
 
@@ -38,7 +38,7 @@ export default function MessagingPage() {
         await markConversationRead(conversation.id);
         setConversations((current) => current.map((item) => item.id === conversation.id ? { ...item, unread_count: 0 } : item));
       }
-    } catch (error) { showToast({ kind: "error", title: "Conversation unavailable", message: error instanceof Error ? error.message : "Please try again." }); }
+    } catch (error) { showToast({ kind: "error", title: "Conversation unavailable", error, errorContext: "messaging" }); }
     finally { setLoadingThread(false); }
   };
 
@@ -53,7 +53,7 @@ export default function MessagingPage() {
       setAttachments([]);
       await loadInbox();
       showToast({ title: "Message sent" });
-    } catch (error) { showToast({ kind: "error", title: "Message not sent", message: error instanceof Error ? error.message : "Please try again." }); }
+    } catch (error) { showToast({ kind: "error", title: "Message not sent", error, errorContext: "messaging" }); }
     finally { setSending(false); }
   };
 

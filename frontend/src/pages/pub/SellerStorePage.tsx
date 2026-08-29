@@ -9,11 +9,13 @@ import { useToast } from "../../components/ToastProvider";
 import { startConversation } from "../../api/account";
 import { Flag } from "lucide-react";
 import ReportDialog from "../../components/ReportDialog";
+import { useUrlTab } from "../../hooks/useUrlTab";
 
 type NavFn = (page: string, params?: Record<string, string>) => void;
+const STORE_FRONT_TABS = ["products", "reviews", "about"] as const;
 
 function ProductCard({ product, onNavigate }: { product: CatalogProduct; onNavigate: NavFn }) {
-  const discount = product.original_price ? Math.round(((product.original_price - product.price) / product.original_price) * 100) : null;
+  const discount = product.discount_percentage || null;
   return (
     <div className="group bg-white border border-[var(--color-border)] rounded-sm overflow-hidden hover:shadow-[0_4px_16px_rgba(28,27,24,0.10)] hover:border-[var(--color-border-strong)] transition-all cursor-pointer" onClick={() => onNavigate("product", { slug: product.slug })}>
       <div className="relative bg-[var(--color-surface)] aspect-square overflow-hidden">
@@ -37,7 +39,7 @@ export default function SellerStorePage({ sellerSlug, onNavigate }: { sellerSlug
   const { showToast } = useToast();
   const [seller, setSeller] = useState<CatalogSeller | null>(null);
   const [followed, setFollowed] = useState(false);
-  const [activeTab, setActiveTab] = useState("products");
+  const { activeTab, setActiveTab } = useUrlTab(STORE_FRONT_TABS, "products");
   const [sort, setSort] = useState("relevance");
   const [reportOpen, setReportOpen] = useState(false);
 
@@ -45,7 +47,7 @@ export default function SellerStorePage({ sellerSlug, onNavigate }: { sellerSlug
     if (!user) { onNavigate("login"); return; }
     if (!seller) return;
     try { const response = await startConversation({ seller_id: seller.id, subject: seller.name }); navigate(`/account/messages?conversation=${response.data.id}`); }
-    catch (error) { showToast({ kind: "error", title: "Conversation unavailable", message: error instanceof Error ? error.message : "Please try again." }); }
+    catch (error) { showToast({ kind: "error", title: "Conversation unavailable", error, errorContext: "messaging" }); }
   };
 
   useEffect(() => {
@@ -145,13 +147,13 @@ export default function SellerStorePage({ sellerSlug, onNavigate }: { sellerSlug
           </div>
 
           <div className="flex gap-0">
-            {[
-              { id: "products", label: `Products (${displayProducts.length})` },
-              { id: "reviews", label: `Reviews (${seller.rating_count.toLocaleString()})` },
-              { id: "about", label: "About" },
-            ].map(tab => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`px-5 py-3 text-sm font-[500] border-b-2 transition-all cursor-pointer ${activeTab === tab.id ? "border-[var(--color-navy)] text-[var(--color-navy)]" : "border-transparent text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"}`}>
-                {tab.label}
+            {STORE_FRONT_TABS.map(tab => (
+              <button key={tab} onClick={() => setActiveTab(tab)} className={`px-5 py-3 text-sm font-[500] border-b-2 transition-all cursor-pointer ${activeTab === tab ? "border-[var(--color-navy)] text-[var(--color-navy)]" : "border-transparent text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"}`}>
+                {tab === "products"
+                  ? `Products (${displayProducts.length})`
+                  : tab === "reviews"
+                    ? `Reviews (${seller.rating_count.toLocaleString()})`
+                    : "About"}
               </button>
             ))}
           </div>

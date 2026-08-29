@@ -1,5 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
-import { fetchSellerDashboard, type SellerDashboard as SellerDashboardData } from "../../api/seller";
+import { useEffect, useState } from "react";
+import { Download, X } from "lucide-react";
+import { exportSellerSalesReport, fetchSellerDashboard, type SellerDashboard as SellerDashboardData } from "../../api/seller";
+import { useToast } from "../../components/ToastProvider";
+import { useUrlTab } from "../../hooks/useUrlTab";
 
 type Range = "7d" | "30d" | "90d";
 
@@ -57,20 +60,32 @@ function BarChart({ data }: { data: number[] }) {
 }
 
 export default function AnalyticsPage() {
-  const [range, setRange] = useState<Range>("30d");
+  const { activeTab: range, setActiveTab: setRange } = useUrlTab<Range>(["7d", "30d", "90d"], "30d", { parameter: "range" });
+  const { showToast } = useToast();
   const [dashboard, setDashboard] = useState<SellerDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportFormat, setExportFormat] = useState<"xlsx" | "pdf">("xlsx");
+  const [exportFrom, setExportFrom] = useState("");
+  const [exportTo, setExportTo] = useState("");
 
   useEffect(() => {
     let active = true;
+    setLoading(true);
 
     void (async () => {
       try {
-        const response = await fetchSellerDashboard();
+        const response = await fetchSellerDashboard(Number.parseInt(range, 10) as 7 | 30 | 90);
         if (!active) return;
         setDashboard(response.data);
-      } catch {
-        if (active) setDashboard(null);
+        setExportFrom(response.data.reporting_period.from);
+        setExportTo(response.data.reporting_period.to);
+      } catch (error) {
+        if (active) {
+          setDashboard(null);
+          showToast({ kind: "error", title: "Analytics unavailable", error, errorContext: "seller" });
+        }
       } finally {
         if (active) setLoading(false);
       }
@@ -79,29 +94,45 @@ export default function AnalyticsPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [range, showToast]);
 
-  const slicedRevenue = useMemo(() => {
-    const series = dashboard?.revenue_series ?? [];
-    if (range === "7d") return series.slice(-7);
-    if (range === "90d") return series;
-    return series.slice(-30);
-  }, [dashboard?.revenue_series, range]);
-
-  const slicedOrders = useMemo(() => {
-    const series = dashboard?.order_series ?? [];
-    if (range === "7d") return series.slice(-7);
-    if (range === "90d") return series;
-    return series.slice(-30);
-  }, [dashboard?.order_series, range]);
-
-  const totalRevenue = slicedRevenue.length > 0 ? slicedRevenue[slicedRevenue.length - 1].value : 0;
-  const totalOrders = slicedOrders.reduce((sum, point) => sum + point.value, 0);
-  const averageOrderValue = Math.round(totalRevenue / Math.max(1, totalOrders));
+  const revenueSeries = dashboard?.revenue_series ?? [];
+  const orderSeries = dashboard?.order_series ?? [];
+  const totalRevenue = dashboard?.sales_summary?.net_product_sales ?? 0;
+  const totalOrders = dashboard?.sales_summary?.total_orders ?? 0;
+  const averageOrderValue = dashboard?.sales_summary?.average_order_value ?? 0;
 
   const topProducts = dashboard?.top_products ?? [];
   const categoryBreakdown = dashboard?.category_breakdown ?? [];
   const sellerName = dashboard?.seller?.business_name ?? "Seller";
+
+  const runExport = async () => {
+    if (exporting || !exportFrom || !exportTo) return;
+
+    if (exportFrom > exportTo) {
+      showToast({ kind: "error", title: "Invalid date range", message: "The start date must be on or before the end date." });
+      return;
+    }
+
+    setExporting(true);
+    try {
+      const result = await exportSellerSalesReport({ from: exportFrom, to: exportTo, format: exportFormat });
+      const objectUrl = URL.createObjectURL(result.blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = result.filename ?? `maketo-sales-report-${exportFrom}-to-${exportTo}.${exportFormat}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+      setExportOpen(false);
+      showToast({ kind: "success", title: "Sales report exported successfully." });
+    } catch (error) {
+      showToast({ kind: "error", title: "Unable to export sales report", error, errorContext: "seller" });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   if (loading) {
     return <div className="p-6 max-w-screen-xl mx-auto text-sm text-[var(--color-ink-muted)]">Loading analytics...</div>;
@@ -109,7 +140,7 @@ export default function AnalyticsPage() {
 
   return (
     <div className="p-6 max-w-screen-xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <h1 className="font-[var(--font-display)] text-2xl font-[400] text-[var(--color-ink)]">Analytics</h1>
           <p className="text-sm text-[var(--color-ink-muted)]">{sellerName} performance overview</p>
@@ -126,12 +157,62 @@ export default function AnalyticsPage() {
               </button>
             ))}
           </div>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setExportOpen((current) => !current)}
+              className="inline-flex items-center gap-2 rounded-sm bg-[var(--color-navy)] px-3 py-2 text-xs font-[600] text-white transition-opacity hover:opacity-90"
+              aria-expanded={exportOpen}
+            >
+              <Download size={14} aria-hidden="true" />
+              Export report
+            </button>
+            {exportOpen && (
+              <div className="absolute right-0 z-20 mt-2 w-[min(22rem,calc(100vw-3rem))] rounded-sm border border-[var(--color-border)] bg-white p-4 shadow-lg">
+                <div className="mb-4 flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-sm font-[600] text-[var(--color-ink)]">Export sales report</h2>
+                    <p className="mt-0.5 text-xs text-[var(--color-ink-muted)]">Uses authoritative completed sales data.</p>
+                  </div>
+                  <button type="button" onClick={() => setExportOpen(false)} className="text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]" aria-label="Close export options">
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="text-xs text-[var(--color-ink-muted)]">
+                    From
+                    <input type="date" value={exportFrom} onChange={(event) => setExportFrom(event.target.value)} className="mt-1 w-full rounded-sm border border-[var(--color-border)] px-2.5 py-2 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-navy)]" />
+                  </label>
+                  <label className="text-xs text-[var(--color-ink-muted)]">
+                    To
+                    <input type="date" value={exportTo} onChange={(event) => setExportTo(event.target.value)} className="mt-1 w-full rounded-sm border border-[var(--color-border)] px-2.5 py-2 text-sm text-[var(--color-ink)] outline-none focus:border-[var(--color-navy)]" />
+                  </label>
+                </div>
+                <fieldset className="mt-4 space-y-2">
+                  <legend className="mb-2 text-xs font-[600] text-[var(--color-ink)]">Format</legend>
+                  {([
+                    ["xlsx", "Excel (.xlsx)", "Best for sorting, filtering, and calculations"],
+                    ["pdf", "PDF - A4 Landscape", "Best for printing and records"],
+                  ] as const).map(([value, label, description]) => (
+                    <label key={value} className="flex cursor-pointer items-start gap-2 rounded-sm border border-[var(--color-border)] p-2.5">
+                      <input type="radio" name="export-format" value={value} checked={exportFormat === value} onChange={() => setExportFormat(value)} className="mt-0.5" />
+                      <span><span className="block text-xs font-[600] text-[var(--color-ink)]">{label}</span><span className="block text-[11px] text-[var(--color-ink-muted)]">{description}</span></span>
+                    </label>
+                  ))}
+                </fieldset>
+                <div className="mt-4 flex justify-end gap-2">
+                  <button type="button" onClick={() => setExportOpen(false)} disabled={exporting} className="rounded-sm border border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-ink-muted)] disabled:opacity-50">Cancel</button>
+                  <button type="button" onClick={() => void runExport()} disabled={exporting || !exportFrom || !exportTo} className="rounded-sm bg-[var(--color-navy)] px-3 py-2 text-xs font-[600] text-white disabled:cursor-not-allowed disabled:opacity-50">{exporting ? "Preparing report..." : "Export"}</button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
         {[
-          { label: "Total revenue", value: `PHP ${totalRevenue.toLocaleString()}`, accent: "var(--color-navy)" },
+          { label: "Net product sales", value: `PHP ${totalRevenue.toLocaleString()}`, accent: "var(--color-navy)" },
           { label: "Total orders", value: totalOrders.toString() },
           { label: "Avg. order value", value: `PHP ${averageOrderValue.toLocaleString()}` },
           { label: "Pending orders", value: `${dashboard?.summary?.pending_orders ?? 0}` },
@@ -155,7 +236,7 @@ export default function AnalyticsPage() {
               <p className="text-xs text-[var(--color-ink-muted)]">Pulled from seller dashboard series data</p>
             </div>
           </div>
-          <LineChart data={slicedRevenue.map((point) => point.value)} />
+          <LineChart data={revenueSeries.map((point) => point.value)} />
         </div>
 
         <div className="bg-white border border-[var(--color-border)] rounded-sm p-5">
@@ -184,7 +265,7 @@ export default function AnalyticsPage() {
         <div className="bg-white border border-[var(--color-border)] rounded-sm p-5">
           <h2 className="text-sm font-[600] text-[var(--color-ink)] mb-1">Orders</h2>
           <p className="font-[var(--font-display)] text-2xl font-[400] text-[var(--color-ink)] mb-4">{totalOrders}</p>
-          <BarChart data={slicedOrders.map((point) => point.value)} />
+          <BarChart data={orderSeries.map((point) => point.value)} />
         </div>
 
         <div className="lg:col-span-2 bg-white border border-[var(--color-border)] rounded-sm">
@@ -235,7 +316,7 @@ export default function AnalyticsPage() {
 
       <div className="bg-white border border-[var(--color-border)] rounded-sm p-5">
         <h2 className="text-sm font-[600] text-[var(--color-ink)] mb-4">Orders over time</h2>
-        <LineChart data={slicedOrders.map((point) => point.value)} color="var(--color-amber)" height={80} />
+        <LineChart data={orderSeries.map((point) => point.value)} color="var(--color-amber)" height={80} />
       </div>
     </div>
   );

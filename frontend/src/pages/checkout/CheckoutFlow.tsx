@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { fetchCart, type CartData } from "../../api/cart";
-import { fetchAccountAddresses, storeAccountAddress, submitCheckout, type BuyerAddress, type CheckoutResult } from "../../api/buyer";
+import { fetchAccountAddresses, fetchCheckoutPreview, storeAccountAddress, submitCheckout, type BuyerAddress, type CheckoutPreview, type CheckoutResult } from "../../api/buyer";
 import { useToast } from "../../components/ToastProvider";
+import PhilippineAddressSelector, { EMPTY_PHILIPPINE_ADDRESS } from "../../components/PhilippineAddressSelector";
+import PhilippinePhoneField from "../../components/PhilippinePhoneField";
+import { useAuth } from "../../auth/AuthContext";
 
 type Step = 1 | 2 | 3 | 4;
 type PaymentMethod = "cod" | "gcash" | "maya" | "card";
@@ -31,10 +33,15 @@ function currency(value: number) {
 
 export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { showToast } = useToast();
   const [searchParams] = useSearchParams();
+  const selectedItemIds = useMemo(() => [...new Set((searchParams.get("items") ?? "")
+    .split(",")
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value) && value > 0))], [searchParams]);
   const [step, setStep] = useState<Step>(initialStep);
-  const [cart, setCart] = useState<CartData | null>(null);
+  const [preview, setPreview] = useState<CheckoutPreview | null>(null);
   const [addresses, setAddresses] = useState<BuyerAddress[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<number | null>(null);
   const [selectedPayment, setSelectedPayment] = useState<PaymentMethod>("cod");
@@ -55,23 +62,31 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
     phone: "",
     line1: "",
     line2: "",
-    city: "",
-    province: "",
-    postal_code: "",
+    ...EMPTY_PHILIPPINE_ADDRESS,
     is_default: false,
   });
+
+  useEffect(() => {
+    if (user) setNewAddress((current) => ({ ...current, phone: current.phone || user.phone || user.mobile || "", recipient_name: current.recipient_name || user.name }));
+  }, [user]);
 
   useEffect(() => {
     let active = true;
 
     void (async () => {
+      if (selectedItemIds.length === 0) {
+        setError("No products were selected for checkout.");
+        setLoading(false);
+        return;
+      }
+
       try {
-        const [cartResponse, addressResponse] = await Promise.all([fetchCart(), fetchAccountAddresses()]);
+        const [previewResponse, addressResponse] = await Promise.all([fetchCheckoutPreview(selectedItemIds), fetchAccountAddresses()]);
         if (!active) return;
 
-        setCart(cartResponse.data);
+        setPreview(previewResponse.data);
         setAddresses(addressResponse.data);
-        setSelectedAddressId(addressResponse.data.find((address) => address.is_default)?.id ?? null);
+        setSelectedAddressId(addressResponse.data.find((address) => address.is_default)?.id ?? addressResponse.data[0]?.id ?? null);
         setError(null);
       } catch (err) {
         if (!active) return;
@@ -84,49 +99,32 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
     return () => {
       active = false;
     };
-  }, []);
+  }, [searchParams]);
 
   const selectedAddress = useMemo(
     () => addresses.find((address) => address.id === selectedAddressId) ?? null,
     [addresses, selectedAddressId],
   );
 
-  const selectedItemIds = useMemo(() => {
-    const ids = (searchParams.get("items") ?? "")
-      .split(",")
-      .map((value) => Number(value))
-      .filter((value) => Number.isInteger(value) && value > 0);
-    return new Set(ids);
-  }, [searchParams]);
-
-  const lineItems = useMemo(() => (cart?.sellers ?? [])
-    .map((seller) => {
-      const items = selectedItemIds.size > 0
-        ? seller.items.filter((item) => selectedItemIds.has(item.id))
-        : seller.items;
-      const subtotal = items.reduce((sum, item) => sum + item.line_total, 0);
-      return {
-        ...seller,
-        items,
-        subtotal,
-        shipping: subtotal > 0 && subtotal < seller.freeShippingThreshold ? seller.shippingFee : 0,
-      };
-    })
-    .filter((seller) => seller.items.length > 0), [cart, selectedItemIds]);
-
-  const totals = useMemo(() => {
-    const subtotal = lineItems.reduce((sum, seller) => sum + seller.subtotal, 0);
-    const shipping = lineItems.reduce((sum, seller) => sum + seller.shipping, 0);
-    const discount = cart?.promo_code === "WELCOME10" ? Math.round(subtotal * 10) / 100 : 0;
-    return { subtotal, shipping, discount, grandTotal: Math.max(0, subtotal + shipping - discount) };
-  }, [cart?.promo_code, lineItems]);
-
-  const itemCount = lineItems.reduce((sum, seller) => sum + seller.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
+  const lineItems = preview?.sellers ?? [];
+  const totals = {
+    subtotal: preview?.subtotal ?? 0,
+    shipping: preview?.shipping_total ?? 0,
+    discount: preview?.discount_total ?? 0,
+    grandTotal: preview?.grand_total ?? 0,
+  };
+  const itemCount = preview?.item_count ?? 0;
 
   const saveAddress = async () => {
     setSubmitting(true);
     try {
-      const response = await storeAccountAddress(newAddress);
+      const response = await storeAccountAddress({
+        label: newAddress.label, recipient_name: newAddress.recipient_name, phone: newAddress.phone,
+        line1: newAddress.line1, line2: newAddress.line2 || null,
+        region_code: newAddress.region_code, province_code: newAddress.province_code || null,
+        city_code: newAddress.city_code, barangay_code: newAddress.barangay_code,
+        postal_code: newAddress.postal_code, is_default: newAddress.is_default,
+      });
       setAddresses((current) => [
         ...current.map((address) => response.data.is_default ? { ...address, is_default: false } : address),
         response.data,
@@ -163,7 +161,7 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
       const response = await submitCheckout({
         address_id: selectedAddressId,
         payment_method: selectedPayment,
-        cart_item_ids: selectedItemIds.size > 0 ? [...selectedItemIds] : undefined,
+        cart_item_ids: preview?.cart_item_ids ?? [],
         payment_details: selectedPayment === "card" ? {
           cardholder_name: cardholderName.trim(),
           card_last4: cardDigits.slice(-4),
@@ -174,10 +172,20 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
       setNotice(response.message);
       setStep(4);
       setError(null);
-      showToast({ kind: response.data.payment_status === "failed" ? "error" : undefined, title: response.data.payment_status === "paid" ? "Demo payment successful" : "Order placed", message: response.message });
+      showToast(response.data.payment_status === "failed"
+        ? { kind: "error", title: "Payment not completed", message: "Payment couldn't be completed." }
+        : { title: response.data.payment_status === "paid" ? "Demo payment successful" : "Order placed", message: "Order placed successfully." });
       navigate(`/account/orders/${encodeURIComponent(response.data.order_number)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to submit checkout.");
+      try {
+        if (selectedItemIds.length > 0) {
+          const refreshed = await fetchCheckoutPreview(selectedItemIds);
+          setPreview(refreshed.data);
+        }
+      } catch {
+        // Preserve the checkout error; the buyer can still return to the cart.
+      }
     } finally {
       setSubmitting(false);
     }
@@ -187,25 +195,26 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
     return <div className="max-w-screen-xl mx-auto px-4 md:px-8 lg:px-12 py-8 text-sm text-[var(--color-ink-muted)]">Loading checkout...</div>;
   }
 
-  if (error && !cart) {
+  if (error && !preview) {
     return (
       <div className="max-w-screen-xl mx-auto px-4 md:px-8 lg:px-12 py-8">
         <div className="bg-white border border-[var(--color-border)] rounded-sm p-6">
           <p className="text-sm text-[var(--color-red)] mb-3">{error}</p>
-          <button onClick={() => window.location.reload()} className="px-4 py-2.5 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm">
-            Try again
+          <button onClick={() => navigate("/cart")} className="px-4 py-2.5 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm">
+            Return to cart
           </button>
         </div>
       </div>
     );
   }
 
-  if ((!cart || lineItems.length === 0) && !order) {
+  if ((!preview || lineItems.length === 0) && !order) {
     return (
       <div className="max-w-screen-xl mx-auto px-4 md:px-8 lg:px-12 py-12">
         <div className="bg-white border border-[var(--color-border)] rounded-sm p-10 text-center">
-          <p className="font-[var(--font-display)] text-xl font-[400] text-[var(--color-ink)] mb-2">Your cart is empty</p>
-          <p className="text-sm text-[var(--color-ink-muted)]">Add items in the backend cart first, then return here to check out.</p>
+          <p className="font-[var(--font-display)] text-xl font-[400] text-[var(--color-ink)] mb-2">No products selected</p>
+          <p className="text-sm text-[var(--color-ink-muted)] mb-4">Return to your cart and choose at least one product to check out.</p>
+          <button onClick={() => navigate("/cart")} className="px-4 py-2.5 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm">Return to cart</button>
         </div>
       </div>
     );
@@ -316,18 +325,15 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
                     <p className="text-sm font-[600] text-[var(--color-ink)]">New address</p>
                     <div className="grid grid-cols-2 gap-3">
                       <input className="px-3 py-2 border border-[var(--color-border)] rounded-sm text-sm" placeholder="Recipient name" value={newAddress.recipient_name} onChange={(e) => setNewAddress((current) => ({ ...current, recipient_name: e.target.value }))} />
-                      <input className="px-3 py-2 border border-[var(--color-border)] rounded-sm text-sm" placeholder="Phone" value={newAddress.phone} onChange={(e) => setNewAddress((current) => ({ ...current, phone: e.target.value }))} />
+                      <PhilippinePhoneField value={newAddress.phone} onChange={phone => setNewAddress(current => ({ ...current, phone }))} disabled={submitting} />
                     </div>
                     <input className="w-full px-3 py-2 border border-[var(--color-border)] rounded-sm text-sm" placeholder="Label" value={newAddress.label} onChange={(e) => setNewAddress((current) => ({ ...current, label: e.target.value }))} />
                     <input className="w-full px-3 py-2 border border-[var(--color-border)] rounded-sm text-sm" placeholder="Address line 1" value={newAddress.line1} onChange={(e) => setNewAddress((current) => ({ ...current, line1: e.target.value }))} />
                     <input className="w-full px-3 py-2 border border-[var(--color-border)] rounded-sm text-sm" placeholder="Address line 2" value={newAddress.line2} onChange={(e) => setNewAddress((current) => ({ ...current, line2: e.target.value }))} />
-                    <div className="grid grid-cols-3 gap-3">
-                      <input className="px-3 py-2 border border-[var(--color-border)] rounded-sm text-sm" placeholder="City" value={newAddress.city} onChange={(e) => setNewAddress((current) => ({ ...current, city: e.target.value }))} />
-                      <input className="px-3 py-2 border border-[var(--color-border)] rounded-sm text-sm" placeholder="Province" value={newAddress.province} onChange={(e) => setNewAddress((current) => ({ ...current, province: e.target.value }))} />
-                      <input className="px-3 py-2 border border-[var(--color-border)] rounded-sm text-sm" placeholder="Postal code" value={newAddress.postal_code} onChange={(e) => setNewAddress((current) => ({ ...current, postal_code: e.target.value }))} />
-                    </div>
+                    <PhilippineAddressSelector value={newAddress} onChange={location => setNewAddress(current => ({ ...current, ...location }))} disabled={submitting} />
+                    <input className="w-full px-3 py-2 border border-[var(--color-border)] rounded-sm text-sm" placeholder="Postal code" value={newAddress.postal_code} onChange={(e) => setNewAddress((current) => ({ ...current, postal_code: e.target.value.replace(/\D/g, "").slice(0, 4) }))} />
                     <div className="flex gap-2">
-                      <button onClick={saveAddress} disabled={submitting} className="px-4 py-2 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm disabled:opacity-60">
+                      <button onClick={saveAddress} disabled={submitting || !newAddress.region_code || !newAddress.city_code || !newAddress.barangay_code || !newAddress.postal_code} className="px-4 py-2 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm disabled:opacity-60">
                         Save address
                       </button>
                       <button onClick={() => setAddingAddress(false)} className="px-4 py-2 text-sm text-[var(--color-ink-muted)]">

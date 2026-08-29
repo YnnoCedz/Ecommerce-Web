@@ -19,7 +19,7 @@ export default function ReviewsPage() {
       const [reviewResponse, eligibleResponse] = await Promise.all([fetchReviews(), fetchEligibleReviews()]);
       setReviews(reviewResponse.data);
       setEligible(eligibleResponse.data);
-    } catch (error) { showToast({ kind: "error", title: "Reviews unavailable", message: error instanceof Error ? error.message : "Please try again." }); }
+    } catch (error) { showToast({ kind: "error", title: "Reviews unavailable", error, errorContext: "orders" }); }
     finally { setLoading(false); }
   };
   useEffect(() => { void load(); }, []);
@@ -34,14 +34,14 @@ export default function ReviewsPage() {
       showToast({ title: draft.review_id ? "Review updated" : "Review submitted", message: response.message });
       setDraft(emptyDraft);
       await load();
-    } catch (error) { showToast({ kind: "error", title: "Review not saved", message: error instanceof Error ? error.message : "Please try again." }); }
+    } catch (error) { showToast({ kind: "error", title: "Review not saved", error, errorContext: "orders" }); }
     finally { setSaving(false); }
   };
 
   const remove = async (review: BuyerReview) => {
     if (!window.confirm(`Delete your review for ${review.product_name ?? "this product"}?`)) return;
     try { const response = await deleteReview(review.id); showToast({ title: "Review deleted", message: response.message }); await load(); }
-    catch (error) { showToast({ kind: "error", title: "Review not deleted", message: error instanceof Error ? error.message : "Please try again." }); }
+    catch (error) { showToast({ kind: "error", title: "Review not deleted", error, errorContext: "orders" }); }
   };
 
   return (

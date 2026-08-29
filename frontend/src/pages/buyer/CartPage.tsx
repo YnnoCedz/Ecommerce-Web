@@ -10,6 +10,25 @@ import {
   type CartSellerGroup,
 } from "../../api/cart";
 import { useToast, type ToastInput } from "../../components/ToastProvider";
+import { mapErrorToMessage } from "../../utils/errorMapper";
+
+const PRODUCT_PLACEHOLDER = "/images/product-placeholder.svg";
+
+function ProductThumbnail({ item }: { item: CartItem }) {
+  return (
+    <div className="w-20 h-20 min-w-20 sm:w-24 sm:h-24 sm:min-w-24 bg-[#f5f5f5] rounded-[6px] overflow-hidden shrink-0">
+      <img
+        src={item.image || PRODUCT_PLACEHOLDER}
+        alt={item.product_name ?? "Product"}
+        onError={(event) => {
+          event.currentTarget.onerror = null;
+          event.currentTarget.src = PRODUCT_PLACEHOLDER;
+        }}
+        className="block w-full h-full object-contain"
+      />
+    </div>
+  );
+}
 
 function QuantityStepper({ qty, max, onChange, disabled = false }: { qty: number; max: number; onChange: (v: number) => void; disabled?: boolean }) {
   return (
@@ -70,13 +89,22 @@ export default function CartPage() {
   const [promoCode, setPromoCode] = useState("");
   const [promoBusy, setPromoBusy] = useState(false);
   const [actionBusyId, setActionBusyId] = useState<number | null>(null);
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<number> | null>(null);
+
+  const applyCartResponse = (data: CartData) => {
+    const activeIds = new Set(data.items.map((item) => item.id));
+    setCart(data);
+    setPromoCode(data.promo_code ?? "");
+    setSelectedItemIds((current) => current === null
+      ? activeIds
+      : new Set([...current].filter((id) => activeIds.has(id))));
+  };
 
   const loadCart = async () => {
     setLoading(true);
     try {
       const response = await fetchCart();
-      setCart(response.data);
-      setPromoCode(response.data.promo_code ?? "");
+      applyCartResponse(response.data);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load your cart.");
@@ -90,7 +118,23 @@ export default function CartPage() {
   }, []);
 
   const sellers = cart?.sellers ?? [];
-  const savedItems = cart?.saved_items ?? [];
+  const selectedIds = selectedItemIds ?? new Set<number>();
+  const selectedSellers = useMemo(() => sellers.map((seller) => {
+    const items = seller.items.filter((item) => selectedIds.has(item.id));
+    const subtotal = items.reduce((sum, item) => sum + item.line_total, 0);
+    return {
+      ...seller,
+      items,
+      subtotal,
+      shipping: items.length > 0 && subtotal < seller.freeShippingThreshold ? seller.shippingFee : 0,
+    };
+  }).filter((seller) => seller.items.length > 0), [sellers, selectedItemIds]);
+  const allSelected = cart !== null && cart.items.length > 0 && selectedIds.size === cart.items.length;
+  const selectedCount = selectedIds.size;
+  const selectedSubtotal = selectedSellers.reduce((sum, seller) => sum + seller.subtotal, 0);
+  const selectedShipping = selectedSellers.reduce((sum, seller) => sum + seller.shipping, 0);
+  const selectedDiscount = cart?.promo_code === "WELCOME10" ? Math.round(selectedSubtotal * 10) / 100 : 0;
+  const selectedTotal = Math.max(0, selectedSubtotal + selectedShipping - selectedDiscount);
 
   const totalItems = useMemo(
     () => sellers.reduce((sum, seller) => sum + seller.items.reduce((count, item) => count + item.quantity, 0), 0),
@@ -105,14 +149,13 @@ export default function CartPage() {
     setActionBusyId(itemId);
     try {
       const response = await action();
-      setCart(response.data);
-      setPromoCode(response.data.promo_code ?? "");
+      applyCartResponse(response.data);
       setError(null);
       showToast(successToast);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unable to update your cart.";
+      const message = mapErrorToMessage(err, { context: "cart", fallback: "We couldn't update your cart. Please try again.", log: false });
       setError(message);
-      showToast({ kind: "error", title: "Could not update cart", message });
+      showToast({ kind: "error", title: "Could not update cart", error: err, errorContext: "cart" });
     } finally {
       setActionBusyId(null);
     }
@@ -122,14 +165,13 @@ export default function CartPage() {
     setPromoBusy(true);
     try {
       const response = await updateCartPromo({ promo_code: promoCode });
-      setCart(response.data);
-      setPromoCode(response.data.promo_code ?? "");
+      applyCartResponse(response.data);
       setError(null);
       showToast({ kind: "success", title: "Promo applied", message: `${response.data.promo_code} was applied to your cart.` });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unable to apply promo code.";
+      const message = mapErrorToMessage(err, { context: "cart", fallback: "We couldn't apply that promo code. Please try again.", log: false });
       setError(message);
-      showToast({ kind: "error", title: "Could not apply promo", message });
+      showToast({ kind: "error", title: "Could not apply promo", error: err, errorContext: "cart", fallbackMessage: message });
     } finally {
       setPromoBusy(false);
     }
@@ -139,28 +181,19 @@ export default function CartPage() {
     setPromoBusy(true);
     try {
       const response = await updateCartPromo({ promo_code: null });
-      setCart(response.data);
-      setPromoCode("");
+      applyCartResponse(response.data);
       setError(null);
       showToast({ kind: "success", title: "Promo removed", message: "The promo code was removed from your cart." });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Unable to remove promo code.";
+      const message = mapErrorToMessage(err, { context: "cart", fallback: "We couldn't remove that promo code. Please try again.", log: false });
       setError(message);
-      showToast({ kind: "error", title: "Could not remove promo", message });
+      showToast({ kind: "error", title: "Could not remove promo", error: err, errorContext: "cart", fallbackMessage: message });
     } finally {
       setPromoBusy(false);
     }
   };
 
-  const handleAddSavedToCart = async (item: CartItem) => {
-    await handleItemAction(
-      item.id,
-      () => updateCartItem(item.id, { saved_for_later: false, quantity: item.quantity }),
-      { kind: "cart", title: "Moved to cart", message: `${item.product_name ?? "Item"} is ready in your cart.` },
-    );
-  };
-
-  const isEmpty = sellers.length === 0 && savedItems.length === 0;
+  const isEmpty = sellers.length === 0;
 
   if (loading) {
     return (
@@ -224,9 +257,18 @@ export default function CartPage() {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
             <div className="space-y-5">
+              <label className="flex items-center gap-3 bg-white border border-[var(--color-border)] rounded-sm px-5 py-3.5 text-sm font-[500] text-[var(--color-ink)] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={(event) => setSelectedItemIds(event.target.checked ? new Set(cart?.items.map((item) => item.id) ?? []) : new Set())}
+                  className="h-4 w-4 accent-[var(--color-navy)]"
+                />
+                Select all products ({cart?.items.length ?? 0})
+              </label>
               {sellers.map((seller) => (
                 <div key={seller.slug} className="bg-white border border-[var(--color-border)] rounded-sm overflow-hidden">
-                  <div className="flex items-center gap-3 px-5 py-3.5 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-3 px-5 py-3.5 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
                     <div className="w-7 h-7 bg-[var(--color-navy)] rounded flex items-center justify-center shrink-0">
                       <span className="text-white font-[var(--font-display)] text-xs">{seller.name[0]}</span>
                     </div>
@@ -240,29 +282,38 @@ export default function CartPage() {
                         <span className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-disabled)]">· Visit store →</span>
                       </div>
                     </div>
-                    <span className="font-[var(--font-mono)] text-[11px] text-[var(--color-ink-muted)]">
+                    <span className="w-full sm:w-auto sm:ml-auto font-[var(--font-mono)] text-[11px] text-[var(--color-ink-muted)] whitespace-nowrap">
                       Subtotal: <span className="text-[var(--color-ink)] font-[600]">PHP {seller.subtotal.toLocaleString()}</span>
                     </span>
                   </div>
 
                   {seller.items.map((item, idx) => (
-                    <div key={item.id} className={`flex gap-4 px-5 py-4 ${idx > 0 ? "border-t border-[var(--color-border-subtle)]" : ""}`}>
-                      <div className="w-20 h-20 bg-[var(--color-surface)] rounded-sm overflow-hidden shrink-0">
-                        <img src={item.image ?? ""} alt={item.product_name} className="w-full h-full object-cover" />
-                      </div>
+                    <div key={item.id} className={`flex gap-3 sm:gap-4 px-3 sm:px-5 py-4 ${idx > 0 ? "border-t border-[var(--color-border-subtle)]" : ""}`}>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${item.product_name ?? "product"}`}
+                        checked={selectedIds.has(item.id)}
+                        onChange={(event) => setSelectedItemIds((current) => {
+                          const next = new Set(current ?? []);
+                          if (event.target.checked) next.add(item.id); else next.delete(item.id);
+                          return next;
+                        })}
+                        className="mt-1 h-4 w-4 shrink-0 accent-[var(--color-navy)]"
+                      />
+                      <ProductThumbnail item={item} />
 
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_max-content] items-start gap-2 md:gap-3">
                           <div className="min-w-0">
                             <button onClick={() => navigate(`/p/${item.product_slug}`)} className="text-sm font-[500] text-[var(--color-ink)] hover:text-[var(--color-navy)] cursor-pointer transition-colors text-left leading-snug line-clamp-2">
                               {item.product_name}
                             </button>
-                            <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] mt-0.5">{item.variant_name ?? "Default"}</p>
+                            {item.variant_name && <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] mt-0.5">{item.variant_name}</p>}
                             {item.stock <= 3 && (
                               <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-red)] mt-1">Only {item.stock} left in stock</p>
                             )}
                           </div>
-                          <p className="text-sm font-[600] text-[var(--color-ink)] shrink-0">
+                          <p className="text-sm font-[600] text-[var(--color-ink)] whitespace-nowrap md:text-right">
                             PHP {(item.unit_price * item.quantity).toLocaleString()}
                           </p>
                         </div>
@@ -278,19 +329,8 @@ export default function CartPage() {
                               { kind: "cart", title: "Cart updated", message: `${item.product_name ?? "Item"} quantity is now ${qty}.` },
                             )}
                           />
-                          <span className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-disabled)]">PHP {item.unit_price.toLocaleString()} ea.</span>
-                          <div className="flex items-center gap-2 ml-auto">
-                            <button
-                              onClick={() => void handleItemAction(
-                                item.id,
-                                () => updateCartItem(item.id, { saved_for_later: true }),
-                                { kind: "cart", title: "Saved for later", message: `${item.product_name ?? "Item"} was moved out of your active cart.` },
-                              )}
-                              disabled={actionBusyId === item.id}
-                              className="text-xs text-[var(--color-navy)] hover:underline disabled:opacity-50 cursor-pointer transition-colors whitespace-nowrap">
-                              Save for later
-                            </button>
-                            <span className="text-[var(--color-border-strong)]">·</span>
+                          <span className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-disabled)]">PHP {item.unit_price.toLocaleString()} ea.{item.original_unit_price !== null && <><span className="ml-1 line-through">PHP {item.original_unit_price.toLocaleString()}</span>{item.pricing_source === "promotion" && <span className="ml-1 text-[var(--color-red)]">DEAL</span>}</>}</span>
+                          <div className="w-full sm:w-auto flex items-center gap-2 sm:ml-auto">
                             <button
                               onClick={() => void handleItemAction(
                                 item.id,
@@ -308,53 +348,13 @@ export default function CartPage() {
                   ))}
 
                   <div className="px-5 pb-4">
-                    <DeliveryInfo seller={seller} subtotal={seller.subtotal} />
+                    {seller.items.some((item) => selectedIds.has(item.id)) && (
+                      <DeliveryInfo seller={seller} subtotal={seller.items.filter((item) => selectedIds.has(item.id)).reduce((sum, item) => sum + item.line_total, 0)} />
+                    )}
                   </div>
                 </div>
               ))}
 
-              {savedItems.length > 0 && (
-                <div className="bg-white border border-[var(--color-border)] rounded-sm overflow-hidden">
-                  <div className="px-5 py-3.5 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
-                    <h3 className="text-sm font-[600] text-[var(--color-ink)]">Saved for Later ({savedItems.length})</h3>
-                  </div>
-                  {savedItems.map((item, idx) => (
-                    <div key={item.id} className={`flex gap-4 px-5 py-4 ${idx > 0 ? "border-t border-[var(--color-border-subtle)]" : ""}`}>
-                      <div className="w-16 h-16 bg-[var(--color-surface)] rounded-sm overflow-hidden shrink-0">
-                        <img src={item.image ?? ""} alt={item.product_name} className="w-full h-full object-cover" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-sm font-[500] text-[var(--color-ink)] truncate">{item.product_name}</p>
-                            <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] mt-0.5">{item.seller_name} · {item.variant_name ?? "Default"}</p>
-                          </div>
-                          <p className="text-sm font-[600] text-[var(--color-ink)] shrink-0">PHP {item.unit_price.toLocaleString()}</p>
-                        </div>
-                        <div className="flex items-center gap-3 mt-2">
-                          <button
-                            onClick={() => void handleAddSavedToCart(item)}
-                            disabled={actionBusyId === item.id}
-                            className="text-xs font-[500] text-[var(--color-navy)] hover:underline disabled:opacity-50 cursor-pointer">
-                            Move to cart
-                          </button>
-                          <span className="text-[var(--color-border-strong)]">·</span>
-                          <button
-                            onClick={() => void handleItemAction(
-                              item.id,
-                              () => removeCartItem(item.id),
-                              { kind: "cart", title: "Removed saved item", message: `${item.product_name ?? "Item"} was removed.` },
-                            )}
-                            disabled={actionBusyId === item.id}
-                            className="text-xs text-[var(--color-ink-muted)] hover:text-[var(--color-red)] disabled:opacity-50 cursor-pointer">
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
             <div className="space-y-4">
@@ -364,7 +364,7 @@ export default function CartPage() {
                 </div>
 
                 <div className="px-5 py-4 space-y-3">
-                  {sellers.map((seller) => (
+                  {selectedSellers.map((seller) => (
                     <div key={seller.slug}>
                       <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] uppercase tracking-wide mb-1">{seller.name}</p>
                       <div className="flex justify-between text-xs text-[var(--color-ink)]">
@@ -383,16 +383,16 @@ export default function CartPage() {
                   <div className="border-t border-[var(--color-border-subtle)] pt-3 space-y-2">
                     <div className="flex justify-between text-xs text-[var(--color-ink)]">
                       <span>Merchandise total</span>
-                      <span>PHP {(cart?.subtotal ?? 0).toLocaleString()}</span>
+                      <span>PHP {selectedSubtotal.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between text-xs text-[var(--color-ink)]">
                       <span>Shipping total</span>
-                      <span>{(cart?.shipping_total ?? 0) === 0 ? <span className="text-[var(--color-green)] font-[500]">Free</span> : `PHP ${(cart?.shipping_total ?? 0).toLocaleString()}`}</span>
+                      <span>{selectedShipping === 0 ? <span className="text-[var(--color-green)] font-[500]">Free</span> : `PHP ${selectedShipping.toLocaleString()}`}</span>
                     </div>
-                    {(cart?.discount_total ?? 0) > 0 && (
+                    {selectedDiscount > 0 && (
                       <div className="flex justify-between text-xs text-[var(--color-green)]">
                         <span>Promo {cart?.promo_code}</span>
-                        <span>-PHP {(cart?.discount_total ?? 0).toLocaleString()}</span>
+                        <span>-PHP {selectedDiscount.toLocaleString()}</span>
                       </div>
                     )}
                   </div>
@@ -401,7 +401,7 @@ export default function CartPage() {
                     <div className="flex justify-between items-baseline">
                       <span className="text-sm font-[600] text-[var(--color-ink)]">Total</span>
                       <div className="text-right">
-                        <p className="font-[var(--font-display)] text-xl font-[400] text-[var(--color-ink)]">PHP {(cart?.grand_total ?? 0).toLocaleString()}</p>
+                        <p className="font-[var(--font-display)] text-xl font-[400] text-[var(--color-ink)]">PHP {selectedTotal.toLocaleString()}</p>
                         <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)]">VAT included</p>
                       </div>
                     </div>
@@ -435,10 +435,12 @@ export default function CartPage() {
 
                 <div className="px-5 pb-5 space-y-2">
                   <button
-                    onClick={() => navigate("/checkout")}
-                    className="w-full py-3 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] transition-colors cursor-pointer">
-                    Proceed to Checkout
+                    onClick={() => navigate(`/checkout?items=${[...selectedIds].join(",")}`)}
+                    disabled={selectedCount === 0}
+                    className="w-full py-3 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                    Checkout ({selectedCount})
                   </button>
+                  {selectedCount === 0 && <p className="text-xs text-[var(--color-ink-muted)] text-center">Select at least one product to continue.</p>}
                   <button
                     onClick={() => navigate("/c/all")}
                     className="w-full py-2.5 bg-[var(--color-amber-light)] border border-[var(--color-amber-border)] text-[var(--color-amber)] text-sm font-[500] rounded-sm hover:bg-[var(--color-amber)] hover:text-white transition-colors cursor-pointer">

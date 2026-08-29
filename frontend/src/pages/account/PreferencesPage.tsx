@@ -14,7 +14,7 @@ export default function PreferencesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { void fetchAccountPreferences().then((response) => setPrefs(response.data)).catch((error) => showToast({ kind: "error", title: "Preferences unavailable", message: error instanceof Error ? error.message : "Please try again." })).finally(() => setLoading(false)); }, [showToast]);
+  useEffect(() => { void fetchAccountPreferences().then((response) => setPrefs(response.data)).catch((error) => showToast({ kind: "error", title: "Preferences unavailable", error, errorContext: "profile" })).finally(() => setLoading(false)); }, [showToast]);
 
   const save = async () => {
     setSaving(true);
@@ -23,7 +23,7 @@ export default function PreferencesPage() {
       setPrefs(response.data);
       showToast({ title: "Preferences saved", message: response.message });
     } catch (error) {
-      showToast({ kind: "error", title: "Preferences not saved", message: error instanceof Error ? error.message : "Please try again." });
+      showToast({ kind: "error", title: "Preferences not saved", error, errorContext: "profile" });
     } finally { setSaving(false); }
   };
 
