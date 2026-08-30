@@ -12,7 +12,9 @@ export type SellerProfile = {
   public_email: string | null
   contact_phone: string | null
   messaging_phone: string | null
+  logo_path: string | null
   logo_url: string | null
+  banner_path: string | null
   banner_url: string | null
   status: string
   verified: boolean

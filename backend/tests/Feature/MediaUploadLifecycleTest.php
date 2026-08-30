@@ -60,10 +60,13 @@ class MediaUploadLifecycleTest extends TestCase
         $this->assertSame('r2', $image->storage_disk);
         $this->assertStringStartsWith("products/{$product->id}/", $image->file_path);
         Storage::disk('r2')->assertExists($image->file_path);
+        $response->assertJsonPath('data.image_path', $image->file_path);
         $this->assertMatchesRegularExpression('#^https?://#', (string) $response->json('data.image'));
 
         $this->getJson("/api/products/{$product->slug}")
             ->assertOk()
+            ->assertJsonPath('data.image_path', $image->file_path)
+            ->assertJsonPath('data.images.0.path', $image->file_path)
             ->assertJsonPath('data.image', fn ($value) => is_string($value) && preg_match('#^https?://#', $value) === 1)
             ->assertJsonPath('data.images.0.url', fn ($value) => is_string($value) && preg_match('#^https?://#', $value) === 1);
     }

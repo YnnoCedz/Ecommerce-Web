@@ -66,7 +66,9 @@ class SellerBrandingTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('message', 'Seller profile updated.')
             ->assertJsonPath('data.business_name', $seller->business_name)
+            ->assertJsonPath('data.logo_path', fn ($value) => is_string($value) && str_starts_with($value, 'seller-stores/'))
             ->assertJsonPath('data.logo_url', fn ($value) => is_string($value) && $value !== '')
+            ->assertJsonPath('data.banner_path', fn ($value) => is_string($value) && str_starts_with($value, 'seller-stores/'))
             ->assertJsonPath('data.banner_url', fn ($value) => is_string($value) && $value !== '')
             ->assertJsonMissingPath('data.brand_colors');
 

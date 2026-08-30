@@ -420,6 +420,7 @@ class CatalogController extends Controller
             'rating' => round((float) ($product->rating ?? 0), 1),
             'rating_count' => (int) ($product->rating_count ?? 0),
             'sold_count' => (int) ($product->sold_count ?? 0),
+            'image_path' => $primaryImage?->file_path,
             'image' => $primaryImage
                 ? $this->publicMediaUrl($primaryImage->file_path, $primaryImage->storage_disk ?? 'r2')
                 : '/images/product-placeholder.svg',
@@ -468,6 +469,7 @@ class CatalogController extends Controller
             'category' => $this->categoryPayload($product->category),
             'images' => $product->images->map(fn ($image) => [
                 'id' => $image->id,
+                'path' => $image->file_path,
                 'url' => $this->publicMediaUrl($image->file_path, $image->storage_disk ?? 'r2'),
                 'alt' => $image->alt_text ?? $product->name,
                 'sort_order' => $image->sort_order,
@@ -534,8 +536,11 @@ class CatalogController extends Controller
             'units_sold' => isset($seller->units_sold) ? (int) $seller->units_sold : null,
             'joined_year' => (int) ($seller->joined_year ?: $seller->created_at?->year),
             'verified' => (bool) $seller->verified,
+            'avatar_path' => $seller->user?->avatar_path,
             'avatar' => $seller->user?->avatar_path ? $this->publicMediaUrl($seller->user->avatar_path) : null,
+            'logo_path' => $seller->logo_path,
             'logo' => $seller->logo_path ? $this->publicMediaUrl($seller->logo_path) : null,
+            'banner_path' => $seller->banner_path,
             'banner' => $seller->banner_path ? $this->publicMediaUrl($seller->banner_path) : null,
             'location' => trim(implode(', ', array_filter([$seller->city, $seller->province]))),
             'description' => $seller->description,

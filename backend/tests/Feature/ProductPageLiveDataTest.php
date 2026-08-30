@@ -74,6 +74,8 @@ class ProductPageLiveDataTest extends TestCase
             ->assertJsonPath('data.seller.fulfilled_order_count', 3)
             ->assertJsonPath('data.shipping_policy', 'Seller ships every weekday.')
             ->assertJsonPath('data.return_policy', 'Returns accepted within seven days.')
+            ->assertJsonPath('data.image_path', 'https://cdn.example.test/products/live-product.jpg')
+            ->assertJsonPath('data.images.0.path', 'https://cdn.example.test/products/live-product.jpg')
             ->assertJsonPath('data.images.0.url', 'https://cdn.example.test/products/live-product.jpg');
 
         $this->assertContains('related-live-product', collect($response->json('data.related'))->pluck('slug')->all());
@@ -217,7 +219,9 @@ class ProductPageLiveDataTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.0.id', $seller->id)
             ->assertJsonPath('data.0.avatar', 'https://cdn.example.test/users/avatar.jpg')
+            ->assertJsonPath('data.0.logo_path', 'https://cdn.example.test/stores/logo.png')
             ->assertJsonPath('data.0.logo', 'https://cdn.example.test/stores/logo.png')
+            ->assertJsonPath('data.0.banner_path', 'https://cdn.example.test/stores/banner.jpg')
             ->assertJsonPath('data.0.banner', 'https://cdn.example.test/stores/banner.jpg');
     }
 

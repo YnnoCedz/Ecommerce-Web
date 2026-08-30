@@ -10,6 +10,17 @@ use Tests\TestCase;
 
 class MediaStorageServiceTest extends TestCase
 {
+    public function test_it_returns_null_for_null_or_empty_values(): void
+    {
+        Storage::shouldReceive('disk')->never();
+
+        $service = app(MediaStorageService::class);
+
+        $this->assertNull($service->publicUrl(null));
+        $this->assertNull($service->publicUrl(''));
+        $this->assertNull($service->publicUrl('   '));
+    }
+
     public function test_it_preserves_already_renderable_urls(): void
     {
         Storage::shouldReceive('disk')->never();

@@ -33,9 +33,9 @@ class MediaStorageService
         }
     }
 
-    public function publicUrl(string $path, ?string $disk = 'r2'): ?string
+    public function publicUrl(?string $path, ?string $disk = 'r2'): ?string
     {
-        $path = trim($path);
+        $path = trim((string) $path);
 
         if ($path === '') {
             return null;

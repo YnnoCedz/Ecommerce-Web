@@ -23,8 +23,11 @@ export type CatalogSeller = {
   units_sold: number | null;
   joined_year: number;
   verified: boolean;
+  avatar_path: string | null;
   avatar: string | null;
+  logo_path: string | null;
   logo: string | null;
+  banner_path: string | null;
   banner: string | null;
   location: string;
   description: string | null;
@@ -50,7 +53,8 @@ export type CatalogProduct = {
   rating: number;
   rating_count: number;
   sold_count: number;
-  image: string;
+  image_path: string | null;
+  image: string | null;
   badge: string | null;
   in_stock: boolean;
   free_shipping: boolean;
@@ -83,7 +87,8 @@ export type CatalogProduct = {
   category_details?: CatalogCategory;
   images?: Array<{
     id: number;
-    url: string;
+    path: string;
+    url: string | null;
     alt: string;
     sort_order: number;
     is_primary: boolean;
