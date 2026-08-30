@@ -78,7 +78,7 @@ class AuthPerformanceTest extends TestCase
         ])->assertOk()
             ->assertJsonPath('user.seller_status', 'approved')
             ->assertJsonPath('user.seller_approved', true)
-            ->assertJsonPath('redirect_to', '/seller-center');
+            ->assertJsonPath('redirect_to', '/');
 
         $sellerQueries = array_values(array_filter(
             $queries,

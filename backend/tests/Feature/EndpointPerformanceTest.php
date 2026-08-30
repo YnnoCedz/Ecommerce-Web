@@ -18,10 +18,13 @@ class EndpointPerformanceTest extends TestCase
         $this->seed(DevelopmentSeeder::class);
 
         $products = $this->captureQueries(fn () => $this->getJson('/api/products')->assertOk());
+        $deals = $this->captureQueries(fn () => $this->getJson('/api/deals')->assertOk());
         $sellers = $this->captureQueries(fn () => $this->getJson('/api/sellers')->assertOk());
         $categories = $this->captureQueries(fn () => $this->getJson('/api/categories')->assertOk());
 
-        $this->assertLessThanOrEqual(4, count($products));
+        // Active timed promotions add one bounded eager-load query; this must not become N+1.
+        $this->assertLessThanOrEqual(5, count($products));
+        $this->assertLessThanOrEqual(5, count($deals));
         $this->assertLessThanOrEqual(3, count($sellers));
         $this->assertLessThanOrEqual(2, count($categories));
         $this->assertCount(0, array_filter(

@@ -1,11 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { Rating, Price } from "../../Part03";
 import { IconChevronRight, IconTrendUp, IconBox, IconOrders } from "../../shells/icons";
-import { fetchCatalogCategories, fetchCatalogProducts, fetchCatalogSellers, type CatalogCategory, type CatalogProduct, type CatalogSeller } from "../../api/catalog";
+import { fetchActiveDeals, fetchCatalogCategories, fetchCatalogProducts, fetchCatalogSellers, type CatalogCategory, type CatalogProduct, type CatalogSeller } from "../../api/catalog";
 import { CATEGORY_VISUALS, DEFAULT_SELLER_BANNER } from "./visuals";
 import { usePersistedWishlist } from "../../hooks/usePersistedWishlist";
 
 type NavFn = (page: string, params?: Record<string, string>) => void;
+
+function remainingLabel(milliseconds: number) {
+  const total = Math.max(0, Math.floor(milliseconds / 1000));
+  const days = Math.floor(total / 86400);
+  const hours = Math.floor((total % 86400) / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  const clock = [hours, minutes, seconds].map(value => String(value).padStart(2, "0")).join(":");
+  return days ? `${days}d ${clock}` : clock;
+}
 
 function TrustBadge({ icon, title, sub }: { icon: React.ReactNode; title: string; sub: string }) {
   return (
@@ -39,7 +49,7 @@ function SectionHeader({ label, title, cta, onCta }: { label?: string; title: st
 
 function HomeProductCard({ product, onNavigate }: { product: CatalogProduct; onNavigate: NavFn }) {
   const { wished, busy, toggle } = usePersistedWishlist(product.id, product.name, () => onNavigate("login"));
-  const discount = product.original_price ? Math.round(((product.original_price - product.price) / product.original_price) * 100) : null;
+  const discount = product.discount_percentage || null;
   return (
     <div
       className="group bg-white border border-[var(--color-border)] rounded-sm overflow-hidden hover:shadow-[0_4px_20px_rgba(28,27,24,0.10)] hover:border-[var(--color-border-strong)] transition-all cursor-pointer"
@@ -76,8 +86,8 @@ function HomeProductCard({ product, onNavigate }: { product: CatalogProduct; onN
   );
 }
 
-function DealCard({ product, onNavigate }: { product: CatalogProduct; onNavigate: NavFn }) {
-  const discount = product.original_price ? Math.round(((product.original_price - product.price) / product.original_price) * 100) : null;
+function DealCard({ product, onNavigate, now }: { product: CatalogProduct; onNavigate: NavFn; now: number }) {
+  const discount = product.promotion?.discount_percentage ?? null;
   if (!discount) return null;
   return (
     <div
@@ -92,6 +102,7 @@ function DealCard({ product, onNavigate }: { product: CatalogProduct; onNavigate
       <div className="p-2.5">
         <p className="text-xs font-[500] text-[var(--color-ink)] line-clamp-2 mb-1.5 leading-snug">{product.name}</p>
         <Price amount={product.price} original={product.original_price ?? undefined} size="sm" />
+        {product.promotion && <p className="mt-1 text-[10px] font-[var(--font-mono)] text-[var(--color-red)]" aria-label={`Deal ends at ${new Date(product.promotion.ends_at).toLocaleString()}`}>Ends in {remainingLabel(new Date(product.promotion.ends_at).getTime() - now)}</p>}
       </div>
     </div>
   );
@@ -101,24 +112,41 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
   const [categories, setCategories] = useState<CatalogCategory[]>([]);
   const [products, setProducts] = useState<CatalogProduct[]>([]);
   const [sellers, setSellers] = useState<CatalogSeller[]>([]);
+  const [deals, setDeals] = useState<CatalogProduct[]>([]);
+  const [clockOffset, setClockOffset] = useState(0);
+  const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
     void Promise.all([
       fetchCatalogCategories(),
       fetchCatalogProducts({ limit: 24 }),
       fetchCatalogSellers(),
-    ]).then(([cats, prods, sellersResponse]) => {
+      fetchActiveDeals(),
+    ]).then(([cats, prods, sellersResponse, dealsResponse]) => {
       setCategories(cats.data);
       setProducts(prods.data);
       setSellers(sellersResponse.data);
+      setDeals(dealsResponse.data);
+      setClockOffset(new Date(dealsResponse.server_time).getTime() - Date.now());
     }).catch(() => {
       setCategories([]);
       setProducts([]);
       setSellers([]);
+      setDeals([]);
     });
   }, []);
 
-  const deals = useMemo(() => products.filter(p => p.original_price), [products]);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now() + clockOffset), 1000);
+    setNow(Date.now() + clockOffset);
+    return () => window.clearInterval(timer);
+  }, [clockOffset]);
+
+  const activeDeals = useMemo(() => deals.filter(deal => deal.promotion && new Date(deal.promotion.ends_at).getTime() > now), [deals, now]);
+  const nearestEnd = activeDeals.reduce<number | null>((nearest, deal) => {
+    const end = new Date(deal.promotion!.ends_at).getTime();
+    return nearest === null || end < nearest ? end : nearest;
+  }, null);
 
   return (
     <div>
@@ -178,18 +206,19 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
             </div>
             <div className="flex items-center gap-1.5 bg-[var(--color-red-light)] border border-[var(--color-red-border)] rounded-sm px-3 py-1.5">
               <span className="w-1.5 h-1.5 bg-[var(--color-red)] rounded-full animate-pulse" />
-              <span className="font-[var(--font-mono)] text-[11px] text-[var(--color-red)] font-[500]">Ends in 08:42:19</span>
+              <span className="font-[var(--font-mono)] text-[11px] text-[var(--color-red)] font-[500]">{nearestEnd ? `Next ends in ${remainingLabel(nearestEnd - now)}` : "No active deals"}</span>
             </div>
           </div>
           <div className="flex gap-3 overflow-x-auto pb-3">
-            {deals.map(p => <DealCard key={p.id} product={p} onNavigate={onNavigate} />)}
-            <button
-              onClick={() => onNavigate("search", { q: "sale" })}
+            {activeDeals.map(p => <DealCard key={p.id} product={p} onNavigate={onNavigate} now={now} />)}
+            {activeDeals.length === 0 && <p className="py-8 text-sm text-[var(--color-ink-muted)]">No deals available right now.</p>}
+            {activeDeals.length > 0 && <button
+              onClick={() => onNavigate("deals")}
               className="shrink-0 w-44 bg-[var(--color-navy)] rounded-sm flex flex-col items-center justify-center gap-2 text-white hover:bg-[var(--color-navy-hover)] transition-colors cursor-pointer">
-              <span className="font-[var(--font-display)] text-4xl font-[300]">+{products.length - deals.length}</span>
-              <span className="text-xs text-white/70">more deals</span>
+              <span className="font-[var(--font-display)] text-4xl font-[300]">{activeDeals.length}</span>
+              <span className="text-xs text-white/70">active deals</span>
               <span className="flex items-center gap-1 text-xs font-[500]">View All <IconChevronRight size={11} /></span>
-            </button>
+            </button>}
           </div>
         </div>
       </section>

@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\ProductImage;
+use App\Models\ProductVariant;
 use App\Models\Review;
 use App\Models\ReviewReply;
 use App\Models\Seller;
@@ -119,6 +120,83 @@ class ProductPageLiveDataTest extends TestCase
 
         $this->getJson('/api/products/hidden-seller-product')->assertNotFound();
         $this->getJson('/api/products/hidden-seller-product/reviews')->assertNotFound();
+    }
+
+    public function test_variant_detail_and_cart_use_the_selected_variants_valid_price(): void
+    {
+        $seller = Seller::factory()->create([
+            'user_id' => User::factory()->create(['role' => 'seller', 'status' => 'active'])->id,
+            'status' => 'approved',
+        ]);
+        $product = Product::factory()->create([
+            'seller_id' => $seller->id,
+            'category_id' => Category::factory()->create(['active' => true])->id,
+            'slug' => 'variant-priced-product',
+            'price' => 35000,
+            'sale_price' => 31990,
+            'track_inventory' => true,
+            'stock_quantity' => 8,
+        ]);
+        $baseVariant = ProductVariant::create([
+            'product_id' => $product->id,
+            'name' => 'Space Gray / 64GB',
+            'sku' => 'IPA5-SG-64',
+            'price_override' => 35990,
+            'sale_price_override' => 0,
+            'stock_quantity' => 5,
+            'active' => true,
+        ]);
+        $saleVariant = ProductVariant::create([
+            'product_id' => $product->id,
+            'name' => 'Space Gray / 256GB',
+            'sku' => 'IPA5-SG-256',
+            'price_override' => 45990,
+            'sale_price_override' => 42990,
+            'stock_quantity' => 3,
+            'active' => true,
+        ]);
+
+        $this->getJson('/api/products/variant-priced-product')
+            ->assertOk()
+            ->assertJsonPath('data.variants.0.id', $baseVariant->id)
+            ->assertJsonPath('data.variants.0.price', 35990)
+            ->assertJsonPath('data.variants.0.original_price', null)
+            ->assertJsonPath('data.variants.0.stock_quantity', 5)
+            ->assertJsonPath('data.variants.1.id', $saleVariant->id)
+            ->assertJsonPath('data.variants.1.price', 42990)
+            ->assertJsonPath('data.variants.1.original_price', 45990)
+            ->assertJsonPath('data.variants.1.stock_quantity', 3);
+
+        $buyer = User::factory()->create(['role' => 'buyer', 'status' => 'active']);
+        $this->actingAs($buyer)->postJson('/api/cart/items', [
+            'product_id' => $product->id,
+            'product_variant_id' => $baseVariant->id,
+            'quantity' => 1,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.items.0.product_variant_id', $baseVariant->id)
+            ->assertJsonPath('data.items.0.unit_price', 35990);
+    }
+
+    public function test_non_variant_product_detail_keeps_its_product_price(): void
+    {
+        $seller = Seller::factory()->create([
+            'user_id' => User::factory()->create(['role' => 'seller', 'status' => 'active'])->id,
+            'status' => 'approved',
+        ]);
+        Product::factory()->create([
+            'seller_id' => $seller->id,
+            'category_id' => Category::factory()->create(['active' => true])->id,
+            'slug' => 'standard-priced-product',
+            'price' => 2500,
+            'sale_price' => null,
+        ]);
+
+        $this->getJson('/api/products/standard-priced-product')
+            ->assertOk()
+            ->assertJsonPath('data.price', 2500)
+            ->assertJsonPath('data.original_price', null)
+            ->assertJsonCount(0, 'data.variants');
     }
 
     public function test_public_seller_cards_expose_uploaded_avatar_logo_and_banner(): void

@@ -6,7 +6,7 @@ use Tests\TestCase;
 
 class ProductionCorsTest extends TestCase
 {
-    private const FRONTEND_ORIGIN = 'https://ecommerce-web.mondezynnofranz.workers.dev';
+    private const FRONTEND_ORIGIN = 'https://marketohub.online';
 
     protected function setUp(): void
     {

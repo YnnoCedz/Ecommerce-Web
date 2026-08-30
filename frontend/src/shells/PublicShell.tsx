@@ -321,7 +321,7 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
               className="relative flex-col items-center p-2 text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] transition-colors cursor-pointer hidden md:flex">
               <IconHeart size={18} aria-hidden="true" />
               {wishlistCount > 0 && (
-                <span className="absolute top-1 right-1 w-4 h-4 bg-[var(--color-red)] text-white text-[9px] font-[var(--font-mono)] rounded-full flex items-center justify-center" aria-hidden="true">{wishlistCount}</span>
+                <span className="absolute top-1 right-1 min-w-4 h-4 px-1 bg-[var(--color-red)] text-white text-[9px] font-[var(--font-mono)] rounded-full flex items-center justify-center" aria-hidden="true">{wishlistCount > 99 ? "99+" : wishlistCount}</span>
               )}
               <span className="text-[9px] font-[var(--font-mono)] mt-0.5 hidden lg:block" aria-hidden="true">Wishlist</span>
             </Link>
@@ -571,7 +571,7 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
               <p className="text-xs text-white/50 leading-relaxed mb-4">The original multi-vendor marketplace connecting buyers and independent sellers across the Philippines.</p>
               <div className="flex gap-2">
                 {[["FB","Facebook"],["IG","Instagram"],["TW","Twitter / X"],["YT","YouTube"]].map(([s, label]) => (
-                  <a key={s} href="#" aria-label={label} className="w-7 h-7 bg-white/10 rounded flex items-center justify-center text-[10px] font-[var(--font-mono)] text-white/50 hover:bg-white/20 hover:text-white cursor-pointer transition-colors" aria-hidden="false"><span aria-hidden="true">{s}</span></a>
+                  <span key={s} aria-label={label} className="w-7 h-7 bg-white/10 rounded flex items-center justify-center text-[10px] font-[var(--font-mono)] text-white/50"><span aria-hidden="true">{s}</span></span>
                 ))}
               </div>
             </div>
@@ -595,7 +595,7 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
             <p className="text-xs text-white/30 font-[var(--font-mono)]">© 2026 Marketo Inc. All rights reserved.</p>
             <div className="flex gap-4">
               {["Privacy", "Terms", "Cookies"].map(l => (
-                <a key={l} href="#" className="text-xs text-white/30 hover:text-white/60 cursor-pointer transition-colors">{l}</a>
+                <span key={l} className="text-xs text-white/30">{l}</span>
               ))}
             </div>
           </div>

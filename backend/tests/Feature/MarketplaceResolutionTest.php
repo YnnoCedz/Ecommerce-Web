@@ -24,13 +24,14 @@ class MarketplaceResolutionTest extends TestCase
     public function test_simulated_payment_uses_backend_total_and_order_image_is_snapshotted(): void
     {
         Storage::fake('r2');
-        [$buyer, $seller, $product, $address] = $this->checkoutFixture(1200, 2);
+        [$buyer, $seller, $product, $address, $cartItem] = $this->checkoutFixture(1200, 2);
         Storage::disk('r2')->put('products/original.jpg', 'original-image');
         ProductImage::create(['product_id' => $product->id, 'storage_disk' => 'r2', 'file_path' => 'products/original.jpg', 'sort_order' => 0, 'is_primary' => true]);
 
         $response = $this->actingAs($buyer)->postJson('/api/checkout', [
             'address_id' => $address->id,
             'payment_method' => 'gcash',
+            'cart_item_ids' => [$cartItem->id],
             'payment_details' => ['mobile_number' => '+639171234567'],
         ])->assertCreated()->assertJsonPath('data.payment_status', 'paid')->assertJsonPath('data.payment.provider', 'simulated');
 
@@ -45,10 +46,11 @@ class MarketplaceResolutionTest extends TestCase
     public function test_failed_simulated_payment_is_persisted_and_retry_preserves_attempts(): void
     {
         config()->set('payments.simulated.outcome', 'failure');
-        [$buyer, , , $address] = $this->checkoutFixture();
+        [$buyer, , , $address, $cartItem] = $this->checkoutFixture();
         $response = $this->actingAs($buyer)->postJson('/api/checkout', [
             'address_id' => $address->id,
             'payment_method' => 'maya',
+            'cart_item_ids' => [$cartItem->id],
             'payment_details' => ['mobile_number' => '+639171234567'],
         ])->assertCreated()->assertJsonPath('data.payment_status', 'failed');
 
@@ -61,10 +63,11 @@ class MarketplaceResolutionTest extends TestCase
 
     public function test_cancellation_restores_inventory_once_and_creates_partial_refund(): void
     {
-        [$buyer, , $product, $address] = $this->checkoutFixture(1000, 2);
+        [$buyer, , $product, $address, $cartItem] = $this->checkoutFixture(1000, 2);
         $checkout = $this->actingAs($buyer)->postJson('/api/checkout', [
             'address_id' => $address->id,
             'payment_method' => 'gcash',
+            'cart_item_ids' => [$cartItem->id],
             'payment_details' => ['mobile_number' => '+639171234567'],
         ])->assertCreated();
         $order = Order::with('sellerOrders')->findOrFail($checkout->json('data.id'));
@@ -82,10 +85,11 @@ class MarketplaceResolutionTest extends TestCase
 
     public function test_return_partial_refund_and_dispute_are_seller_scoped(): void
     {
-        [$buyer, $seller, , $address] = $this->checkoutFixture(800, 2);
+        [$buyer, $seller, , $address, $cartItem] = $this->checkoutFixture(800, 2);
         $checkout = $this->actingAs($buyer)->postJson('/api/checkout', [
             'address_id' => $address->id,
             'payment_method' => 'card',
+            'cart_item_ids' => [$cartItem->id],
             'payment_details' => ['cardholder_name' => 'Buyer Test', 'card_last4' => '4242', 'card_brand' => 'Visa'],
         ])->assertCreated();
         $order = Order::with(['sellerOrders', 'items'])->findOrFail($checkout->json('data.id'));
@@ -141,8 +145,8 @@ class MarketplaceResolutionTest extends TestCase
         $product = Product::create(['seller_id' => $seller->id, 'category_id' => $category->id, 'name' => 'Resolution product', 'slug' => 'resolution-'.str()->random(8), 'sku' => 'RES-'.str()->random(8), 'price' => $price, 'status' => 'active', 'track_inventory' => true, 'stock_quantity' => 10, 'published_at' => now()]);
         $address = Address::create(['user_id' => $buyer->id, 'label' => 'Home', 'recipient_name' => 'Buyer Test', 'phone' => '+639171234567', 'line1' => '10 Test Street', 'city' => 'Makati', 'province' => 'Metro Manila', 'postal_code' => '1200', 'is_default' => true]);
         $cart = Cart::create(['user_id' => $buyer->id, 'status' => 'active']);
-        CartItem::create(['cart_id' => $cart->id, 'seller_id' => $seller->id, 'product_id' => $product->id, 'quantity' => $quantity, 'unit_price' => $price, 'line_total' => $price * $quantity, 'saved_for_later' => false]);
+        $cartItem = CartItem::create(['cart_id' => $cart->id, 'seller_id' => $seller->id, 'product_id' => $product->id, 'quantity' => $quantity, 'unit_price' => $price, 'line_total' => $price * $quantity, 'saved_for_later' => false]);
 
-        return [$buyer, $seller, $product, $address];
+        return [$buyer, $seller, $product, $address, $cartItem];
     }
 }

@@ -40,7 +40,13 @@ export type CatalogProduct = {
   category_slug: string | null;
   category: string | CatalogCategory;
   price: number;
+  regular_price: number;
+  sale_price: number | null;
+  promotion_price: number | null;
   original_price: number | null;
+  discount_amount: number;
+  discount_percentage: number;
+  pricing_source: "regular" | "sale" | "promotion";
   rating: number;
   rating_count: number;
   sold_count: number;
@@ -48,6 +54,20 @@ export type CatalogProduct = {
   badge: string | null;
   in_stock: boolean;
   free_shipping: boolean;
+  is_deal?: boolean;
+  promotion?: {
+    id: number;
+    name: string | null;
+    type: "fixed-price" | "percentage";
+    value: number;
+    deal_price: number | null;
+    promotion_price: number;
+    original_price: number | null;
+    discount_amount: number;
+    discount_percentage: number;
+    starts_at: string;
+    ends_at: string;
+  } | null;
   description?: string | null;
   sku?: string;
   barcode?: string | null;
@@ -73,9 +93,18 @@ export type CatalogProduct = {
     name: string;
     sku: string | null;
     price: number;
+    regular_price: number;
+    sale_price: number | null;
+    promotion_price: number | null;
+    original_price: number | null;
+    discount_amount: number;
+    discount_percentage: number;
+    pricing_source: "regular" | "sale" | "promotion";
+    is_deal: boolean;
     stock_quantity: number;
     active: boolean;
     options: string[];
+    option_values: Array<{ name: string; value: string }>;
   }>;
   related?: CatalogProduct[];
   review_summary?: ProductReviewSummary;
@@ -172,6 +201,10 @@ export async function fetchCatalogProducts(params?: { search?: string; category?
   return singleFlight(`catalog:products:${suffix}`, (signal) => apiFetch<{ data: CatalogProduct[] }>(`/products${suffix}`, { signal }));
 }
 
+export async function fetchActiveDeals() {
+  return apiFetch<{ data: CatalogProduct[]; server_time: string }>("/deals");
+}
+
 export async function searchMarketplace(params: MarketplaceSearchParams) {
   const searchParams = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
@@ -189,7 +222,7 @@ export async function fetchSearchSuggestions(query: string, limit = 6) {
 }
 
 export async function fetchCatalogProduct(slug: string) {
-  return apiFetch<{ data: CatalogProduct }>(`/products/${encodeURIComponent(slug)}`);
+  return apiFetch<{ data: CatalogProduct; server_time: string }>(`/products/${encodeURIComponent(slug)}`);
 }
 
 export async function fetchProductReviews(slug: string, page = 1, perPage = 10) {

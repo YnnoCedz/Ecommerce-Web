@@ -18,11 +18,14 @@ use App\Services\MediaStorageService;
 use App\Services\NotificationService;
 use App\Services\OrderLifecycleService;
 use App\Services\PaymentService;
+use App\Services\ProductPricingService;
+use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class CommerceController extends Controller
 {
@@ -32,6 +35,7 @@ class CommerceController extends Controller
         private readonly NotificationService $notifications,
         private readonly PaymentService $payments,
         private readonly MediaStorageService $media,
+        private readonly ProductPricingService $pricing,
     ) {}
 
     public function cart(Request $request): JsonResponse
@@ -142,13 +146,16 @@ class CommerceController extends Controller
 
     public function updateCartPromo(Request $request): JsonResponse
     {
+        $request->merge([
+            'promo_code' => $request->filled('promo_code') ? strtoupper(trim((string) $request->input('promo_code'))) : null,
+        ]);
         $data = $request->validate([
-            'promo_code' => ['nullable', 'string', 'max:50'],
+            'promo_code' => ['nullable', 'string', 'max:50', Rule::in(['WELCOME10'])],
         ]);
 
         $cart = DB::transaction(function () use ($request, $data) {
             $cart = $this->loadCurrentCart($request);
-            $cart->promo_code = $data['promo_code'] ? strtoupper(trim($data['promo_code'])) : null;
+            $cart->promo_code = $data['promo_code'];
             $cart->save();
             $this->recalculateCartTotals($cart);
 
@@ -182,6 +189,18 @@ class CommerceController extends Controller
         ]);
     }
 
+    public function checkoutPreview(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'cart_item_ids' => ['required', 'array', 'min:1', 'max:100'],
+            'cart_item_ids.*' => ['integer', 'distinct'],
+        ]);
+
+        return response()->json([
+            'data' => $this->checkoutService->preview($request->user(), $data['cart_item_ids']),
+        ]);
+    }
+
     public function checkout(Request $request): JsonResponse
     {
         $data = $request->validate([
@@ -192,7 +211,7 @@ class CommerceController extends Controller
             'payment_details.cardholder_name' => ['nullable', 'string', 'max:120'],
             'payment_details.card_last4' => ['nullable', 'digits:4'],
             'payment_details.card_brand' => ['nullable', 'string', 'max:30'],
-            'cart_item_ids' => ['sometimes', 'array', 'min:1'],
+            'cart_item_ids' => ['required', 'array', 'min:1', 'max:100'],
             'cart_item_ids.*' => ['integer', 'distinct'],
             'buyer_notes' => ['nullable', 'string', 'max:1000'],
         ]);
@@ -354,7 +373,9 @@ class CommerceController extends Controller
                     'grand_total' => (float) $sellerOrder->grand_total,
                     'tracking_number' => $sellerOrder->tracking_number,
                     'driver_name' => $sellerOrder->shipment?->driver_name,
-                    'courier_name' => $sellerOrder->shipment?->courier?->name,
+                    'courier_name' => $sellerOrder->shipment
+                        ? ($sellerOrder->shipment->courier?->name ?? 'Maketo Logistics')
+                        : null,
                     'delivered_at' => optional($sellerOrder->delivered_at)->toISOString(),
                     'completed_at' => optional($sellerOrder->completed_at)->toISOString(),
                     'can_mark_received' => $sellerOrder->status === 'delivered',
@@ -374,7 +395,7 @@ class CommerceController extends Controller
                         'requested_at' => optional($return->requested_at)->toISOString(),
                     ])->values(),
                     'tracking_events' => $sellerOrder->shipment?->trackingEvents
-                        ?->sortByDesc('occurred_at')
+                        ?->sortByDesc('id')
                         ->map(fn ($event) => [
                             'id' => $event->id,
                             'status' => $event->status,
@@ -435,15 +456,21 @@ class CommerceController extends Controller
             ->with(['product.images', 'sellerOrder.seller', 'order'])
             ->latest('id')
             ->get()
-            ->map(fn (OrderItem $item) => [
-                'order_item_id' => $item->id,
-                'order_number' => $item->order?->order_number,
-                'product_id' => $item->product_id,
-                'product_name' => $item->product_name,
-                'product_slug' => $item->product_slug,
-                'product_image' => $item->product?->images?->sortBy('sort_order')->first()?->file_path,
-                'seller_name' => $item->sellerOrder?->seller?->trade_name ?? $item->sellerOrder?->seller?->business_name ?? 'Seller',
-            ])
+            ->map(function (OrderItem $item): array {
+                $image = $item->product?->images?->sortBy('sort_order')->first();
+
+                return [
+                    'order_item_id' => $item->id,
+                    'order_number' => $item->order?->order_number,
+                    'product_id' => $item->product_id,
+                    'product_name' => $item->product_name,
+                    'product_slug' => $item->product_slug,
+                    'product_image' => $image
+                        ? $this->media->publicUrl($image->file_path, $image->storage_disk ?: 'r2')
+                        : null,
+                    'seller_name' => $item->sellerOrder?->seller?->trade_name ?? $item->sellerOrder?->seller?->business_name ?? 'Seller',
+                ];
+            })
             ->values();
 
         return response()->json(['data' => $items]);
@@ -556,13 +583,57 @@ class CommerceController extends Controller
 
     public function wishlists(Request $request): JsonResponse
     {
+        $items = WishlistItem::query()
+            ->where('user_id', $request->user()->id)
+            ->with(['product' => fn ($product) => $product
+                ->with(['seller', 'images', 'activePromotion'])
+                ->withExists(['variants as has_active_variants' => fn ($variants) => $variants->where('active', true)])])
+            ->latest('id')
+            ->limit(25)
+            ->get()
+            ->map(function (WishlistItem $item): array {
+                $product = $item->product;
+                if (! $product) {
+                    return ['id' => $item->id, 'product_id' => $item->product_id, 'added_at' => $item->added_at ? Carbon::parse($item->added_at)->toISOString() : null, 'product' => null];
+                }
+
+                $pricing = $this->pricing->for($product);
+                $image = $product->images->sortBy([
+                    ['is_primary', 'desc'],
+                    ['sort_order', 'asc'],
+                    ['id', 'asc'],
+                ])->first();
+
+                return [
+                    'id' => $item->id,
+                    'product_id' => $item->product_id,
+                    'added_at' => $item->added_at ? Carbon::parse($item->added_at)->toISOString() : null,
+                    'product' => [
+                        'id' => $product->id,
+                        'name' => $product->name,
+                        'slug' => $product->slug,
+                        'status' => $product->status,
+                        'price' => $pricing['effective_price'],
+                        'original_price' => $pricing['original_price'],
+                        'discount_percentage' => $pricing['discount_percentage'],
+                        'pricing_source' => $pricing['pricing_source'],
+                        'stock_quantity' => (int) $product->stock_quantity,
+                        'in_stock' => ! $product->track_inventory || $product->stock_quantity > 0,
+                        'seller' => $product->seller,
+                        'images' => $image ? [[
+                            'id' => $image->id,
+                            'url' => Str::startsWith($image->file_path, ['http://', 'https://', 'data:', '/'])
+                                ? $image->file_path
+                                : $this->media->publicUrl($image->file_path, $image->storage_disk ?: 'r2'),
+                            'is_primary' => (bool) $image->is_primary,
+                            'sort_order' => (int) $image->sort_order,
+                        ]] : [],
+                    ],
+                ];
+            });
+
         return response()->json([
-            'data' => WishlistItem::query()
-                ->where('user_id', $request->user()->id)
-                ->with(['product.seller', 'product.images'])
-                ->latest('id')
-                ->limit(25)
-                ->get(),
+            'data' => $items,
         ]);
     }
 
@@ -629,6 +700,8 @@ class CommerceController extends Controller
 
     private function reviewPayload(Review $review): array
     {
+        $image = $review->product?->images?->sortBy('sort_order')->first();
+
         return [
             'id' => $review->id,
             'order_item_id' => $review->order_item_id,
@@ -636,7 +709,9 @@ class CommerceController extends Controller
             'product_id' => $review->product_id,
             'product_name' => $review->orderItem?->product_name ?? $review->product?->name,
             'product_slug' => $review->orderItem?->product_slug ?? $review->product?->slug,
-            'product_image' => $review->product?->images?->sortBy('sort_order')->first()?->file_path,
+            'product_image' => $image
+                ? $this->media->publicUrl($image->file_path, $image->storage_disk ?: 'r2')
+                : null,
             'seller_name' => $review->seller?->trade_name ?? $review->seller?->business_name ?? 'Seller',
             'rating' => (int) $review->rating,
             'title' => $review->title,
@@ -669,7 +744,7 @@ class CommerceController extends Controller
 
     private function upsertCartItem(Cart $cart, Product $product, ?ProductVariant $variant, int $quantity, bool $savedForLater): CartItem
     {
-        $unitPrice = $this->unitPriceForProduct($product, $variant);
+        $unitPrice = $this->pricing->for($product, $variant)['effective_price'];
 
         $item = CartItem::query()->firstOrNew([
             'cart_id' => $cart->id,
@@ -701,10 +776,17 @@ class CommerceController extends Controller
         $cart->load([
             'items.seller',
             'items.product.images',
+            'items.product.activePromotion',
             'items.variant',
         ]);
 
         $activeItems = $cart->items->where('saved_for_later', false);
+        foreach ($activeItems as $item) {
+            $currentPrice = $this->pricing->for($item->product, $item->variant)['effective_price'];
+            if ((float) $item->unit_price !== $currentPrice) {
+                $item->forceFill(['unit_price' => $currentPrice, 'line_total' => $currentPrice * $item->quantity])->save();
+            }
+        }
         $grouped = $activeItems->groupBy('seller_id');
 
         $subtotal = 0.0;
@@ -740,6 +822,7 @@ class CommerceController extends Controller
         $cart->loadMissing([
             'items.seller',
             'items.product.images',
+            'items.product.activePromotion',
             'items.variant',
         ]);
 
@@ -790,8 +873,19 @@ class CommerceController extends Controller
         $product = $item->product;
         $seller = $item->seller ?? $product?->seller;
         $variant = $item->variant;
-        $primaryImage = $product?->images?->sortBy('sort_order')->first();
+        $primaryImage = $product?->images?->sortBy([
+            ['is_primary', 'desc'],
+            ['sort_order', 'asc'],
+            ['id', 'asc'],
+        ])->first();
+        $imageUrl = $primaryImage
+            ? (Str::startsWith($primaryImage->file_path, ['http://', 'https://', 'data:', '/'])
+                ? $primaryImage->file_path
+                : $this->media->publicUrl($primaryImage->file_path, $primaryImage->storage_disk ?: 'r2'))
+            : null;
         $stock = $variant?->stock_quantity ?? $product?->stock_quantity ?? 0;
+        $pricing = $product ? $this->pricing->for($product, $variant) : null;
+        $promotion = $pricing['promotion'] ?? null;
 
         return [
             'id' => $item->id,
@@ -803,22 +897,21 @@ class CommerceController extends Controller
             'product_slug' => $product?->slug,
             'product_name' => $product?->name,
             'variant_name' => $variant?->name,
-            'image' => $primaryImage?->file_path,
+            'image' => $imageUrl,
             'quantity' => $item->quantity,
             'unit_price' => (float) $item->unit_price,
+            'original_unit_price' => $pricing['original_price'] ?? null,
+            'discount_percentage' => $pricing['discount_percentage'] ?? 0,
+            'pricing_source' => $pricing['pricing_source'] ?? 'regular',
+            'promotion' => $promotion ? [
+                'id' => $promotion->id,
+                'name' => $promotion->name,
+                'ends_at' => $promotion->ends_at?->toISOString(),
+            ] : null,
             'line_total' => (float) $item->line_total,
             'stock' => (int) $stock,
             'saved_for_later' => $saved || (bool) $item->saved_for_later,
         ];
-    }
-
-    private function unitPriceForProduct(Product $product, ?ProductVariant $variant): float
-    {
-        if ($variant) {
-            return (float) ($variant->sale_price_override ?? $variant->price_override ?? $product->sale_price ?? $product->price);
-        }
-
-        return (float) ($product->sale_price ?? $product->price);
     }
 
     private function shippingConfigForSeller(Seller $seller): array
@@ -873,6 +966,10 @@ class CommerceController extends Controller
                 : $this->media->publicUrl($path, $item->product_image_storage_disk ?: 'r2');
         }
 
-        return $item->product?->images?->sortBy('sort_order')->first()?->file_path;
+        $image = $item->product?->images?->sortBy('sort_order')->first();
+
+        return $image
+            ? $this->media->publicUrl($image->file_path, $image->storage_disk ?: 'r2')
+            : null;
     }
 }

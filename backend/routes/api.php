@@ -7,14 +7,25 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CatalogController;
 use App\Http\Controllers\Api\CommerceController;
 use App\Http\Controllers\Api\HealthController;
+use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\MessagingController;
 use App\Http\Controllers\Api\ModerationController;
 use App\Http\Controllers\Api\OrderResolutionController;
 use App\Http\Controllers\Api\SellerApplicationController;
 use App\Http\Controllers\Api\SellerController;
+use App\Http\Controllers\Api\SellerSalesReportController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class);
+
+Route::prefix('locations')->group(function () {
+    Route::get('/regions', [LocationController::class, 'regions']);
+    Route::get('/regions/{regionCode}/provinces', [LocationController::class, 'provinces']);
+    Route::get('/regions/{regionCode}/cities-municipalities', [LocationController::class, 'regionCities']);
+    Route::get('/provinces/{provinceCode}/cities-municipalities', [LocationController::class, 'provinceCities']);
+    Route::get('/cities-municipalities/{cityCode}/barangays', [LocationController::class, 'barangays']);
+    Route::get('/cities-municipalities/{cityCode}', [LocationController::class, 'city']);
+});
 
 Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:registration');
@@ -33,6 +44,7 @@ Route::get('/categories', [CatalogController::class, 'categories']);
 Route::get('/search', [CatalogController::class, 'search']);
 Route::get('/search/suggestions', [CatalogController::class, 'searchSuggestions'])->middleware('throttle:60,1');
 Route::get('/products', [CatalogController::class, 'products']);
+Route::get('/deals', [CatalogController::class, 'deals']);
 Route::get('/products/{slug}/reviews', [CatalogController::class, 'productReviews']);
 Route::get('/products/{slug}', [CatalogController::class, 'product']);
 Route::get('/sellers', [CatalogController::class, 'sellers']);
@@ -54,6 +66,7 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
     Route::patch('/cart/items/{itemId}', [CommerceController::class, 'updateCartItem']);
     Route::delete('/cart/items/{itemId}', [CommerceController::class, 'destroyCartItem']);
     Route::patch('/cart/promo', [CommerceController::class, 'updateCartPromo']);
+    Route::post('/checkout/preview', [CommerceController::class, 'checkoutPreview']);
     Route::post('/checkout', [CommerceController::class, 'checkout']);
     Route::get('/orders', [CommerceController::class, 'orders']);
     Route::get('/orders/{orderNumber}', [CommerceController::class, 'order']);
@@ -93,6 +106,7 @@ Route::prefix('seller')
     ->middleware(['auth:sanctum', 'account.active', 'role:seller', 'seller.approved'])
     ->group(function () {
         Route::get('/dashboard', [SellerController::class, 'dashboard']);
+        Route::get('/reports/sales/export', SellerSalesReportController::class);
         Route::get('/me', [SellerController::class, 'me']);
         Route::patch('/me', [SellerController::class, 'updateMe']);
         Route::get('/orders', [SellerController::class, 'orders']);
@@ -111,6 +125,9 @@ Route::prefix('seller')
         Route::delete('/products/{product}', [SellerController::class, 'destroy']);
         Route::get('/customers', [SellerController::class, 'customers']);
         Route::get('/promotions', [SellerController::class, 'promotions']);
+        Route::post('/promotions', [SellerController::class, 'storePromotion']);
+        Route::put('/promotions/{promotion}', [SellerController::class, 'updatePromotion']);
+        Route::patch('/promotions/{promotion}/cancel', [SellerController::class, 'cancelPromotion']);
     });
 
 Route::prefix('admin')
@@ -118,6 +135,7 @@ Route::prefix('admin')
     ->group(function () {
         Route::get('/dashboard', [AdminController::class, 'dashboard']);
         Route::get('/me', [AuthController::class, 'me']);
+        Route::patch('/profile', [AccountController::class, 'updateProfile']);
         Route::get('/users', [AdminController::class, 'users']);
         Route::patch('/users/{user}/status', [AdminController::class, 'updateUserStatus']);
         Route::get('/sellers', [AdminController::class, 'sellers']);
@@ -125,6 +143,8 @@ Route::prefix('admin')
         Route::get('/products', [AdminController::class, 'products']);
         Route::patch('/products/{product}/status', [AdminController::class, 'updateProductStatus']);
         Route::get('/orders', [AdminController::class, 'orders']);
+        Route::get('/orders/{order}', [AdminController::class, 'order']);
+        Route::patch('/seller-orders/{sellerOrder}/delivery-status', [AdminController::class, 'updateDeliveryStatus']);
         Route::get('/categories', [AdminController::class, 'categories']);
         Route::post('/categories', [AdminController::class, 'storeCategory']);
         Route::patch('/categories/{category}', [AdminController::class, 'updateCategory']);

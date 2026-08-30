@@ -11,6 +11,7 @@ use App\Models\SellerDocument;
 use App\Models\User;
 use App\Notifications\SellerApplicationReviewedNotification;
 use App\Services\MediaStorageService;
+use App\Services\PsgcService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -34,7 +35,7 @@ class SellerApplicationController extends Controller
         ]);
     }
 
-    public function store(Request $request, MediaStorageService $storage): JsonResponse
+    public function store(Request $request, MediaStorageService $storage, PsgcService $psgc): JsonResponse
     {
         $user = $request->user();
 
@@ -79,8 +80,10 @@ class SellerApplicationController extends Controller
             'established_on' => ['required', 'date'],
             'address_line1' => ['required', 'string', 'max:255'],
             'address_line2' => ['nullable', 'string', 'max:255'],
-            'province' => ['required', 'string', 'max:255'],
-            'city' => ['required', 'string', 'max:255'],
+            'region_code' => ['required', 'string', 'size:10'],
+            'province_code' => ['nullable', 'string', 'size:10'],
+            'city_code' => ['required', 'string', 'size:10'],
+            'barangay_code' => ['required', 'string', 'size:10'],
             'postal_code' => ['required', 'string', 'max:20'],
             'contact_email' => ['required', 'email:rfc,dns', 'max:255'],
             'public_email' => ['nullable', 'email:rfc,dns', 'max:255'],
@@ -92,6 +95,8 @@ class SellerApplicationController extends Controller
             'seller_certificate_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:10240'],
             'business_document_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:10240'],
         ]);
+
+        $data = array_merge($data, $psgc->validateHierarchy($data));
 
         $businessName = trim($data['business_name']);
         $slug = $this->generateUniqueSlug($businessName);
@@ -124,8 +129,14 @@ class SellerApplicationController extends Controller
                     'established_on' => $data['established_on'],
                     'address_line1' => trim($data['address_line1']),
                     'address_line2' => $this->nullableTrim($data['address_line2'] ?? null),
-                    'province' => trim($data['province']),
-                    'city' => trim($data['city']),
+                    'region' => $data['region'],
+                    'region_code' => $data['region_code'],
+                    'province' => $data['province'],
+                    'province_code' => $data['province_code'],
+                    'city' => $data['city'],
+                    'city_code' => $data['city_code'],
+                    'barangay' => $data['barangay'],
+                    'barangay_code' => $data['barangay_code'],
                     'postal_code' => trim($data['postal_code']),
                     'contact_name' => trim($data['first_name'].' '.$data['last_name']),
                     'contact_email' => trim($data['contact_email']),
@@ -291,8 +302,14 @@ class SellerApplicationController extends Controller
                 'established_on' => $sellerApplication->established_on,
                 'address_line1' => $sellerApplication->address_line1,
                 'address_line2' => $sellerApplication->address_line2,
+                'region' => $sellerApplication->region,
+                'region_code' => $sellerApplication->region_code,
                 'province' => $sellerApplication->province,
+                'province_code' => $sellerApplication->province_code,
                 'city' => $sellerApplication->city,
+                'city_code' => $sellerApplication->city_code,
+                'barangay' => $sellerApplication->barangay,
+                'barangay_code' => $sellerApplication->barangay_code,
                 'postal_code' => $sellerApplication->postal_code,
                 'contact_name' => $sellerApplication->contact_name,
                 'contact_email' => $sellerApplication->contact_email,

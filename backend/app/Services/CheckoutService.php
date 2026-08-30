@@ -22,11 +22,18 @@ class CheckoutService
         private readonly NotificationService $notifications,
         private readonly PaymentService $payments,
         private readonly MediaStorageService $media,
-    ) {
-    }
+        private readonly ProductPricingService $pricing,
+    ) {}
 
     public function checkout(User $buyer, array $data): Order
     {
+        $priceChanges = $this->synchronizeCartPrices($buyer, $data);
+        if ($priceChanges !== []) {
+            throw ValidationException::withMessages([
+                'cart' => ['Prices changed for: '.implode(', ', $priceChanges).'. Your cart was updated; please review it before placing the order.'],
+            ]);
+        }
+
         return DB::transaction(function () use ($buyer, $data) {
             $address = Address::query()
                 ->where('user_id', $buyer->id)
@@ -40,6 +47,13 @@ class CheckoutService
                 ]);
             }
 
+            if (collect([$address->recipient_name, $address->phone, $address->line1, $address->city, $address->postal_code])
+                ->contains(fn ($value) => blank($value))) {
+                throw ValidationException::withMessages([
+                    'address_id' => ['Complete the required shipping details for the selected address before placing the order.'],
+                ]);
+            }
+
             $cart = Cart::query()
                 ->where('user_id', $buyer->id)
                 ->where('status', 'active')
@@ -50,22 +64,17 @@ class CheckoutService
                 throw ValidationException::withMessages(['cart' => ['Your cart is empty.']]);
             }
 
+            $requestedIds = collect($data['cart_item_ids'])->map(fn ($id) => (int) $id)->unique()->values();
             $itemsQuery = CartItem::query()
                 ->where('cart_id', $cart->id)
                 ->where('saved_for_later', false)
+                ->whereIn('id', $requestedIds)
                 ->orderBy('id')
                 ->lockForUpdate();
 
-            if (! empty($data['cart_item_ids'])) {
-                $requestedIds = collect($data['cart_item_ids'])->map(fn ($id) => (int) $id)->unique()->values();
-                $itemsQuery->whereIn('id', $requestedIds);
-            } else {
-                $requestedIds = collect();
-            }
-
             $cartItems = $itemsQuery->get();
 
-            if ($cartItems->isEmpty() || ($requestedIds->isNotEmpty() && $cartItems->count() !== $requestedIds->count())) {
+            if ($cartItems->isEmpty() || $cartItems->count() !== $requestedIds->count()) {
                 throw ValidationException::withMessages([
                     'cart_item_ids' => ['One or more selected cart items are not available.'],
                 ]);
@@ -92,7 +101,7 @@ class CheckoutService
                 'shipping_line1' => $address->line1,
                 'shipping_line2' => $address->line2,
                 'shipping_city' => $address->city,
-                'shipping_province' => $address->province,
+                'shipping_province' => $address->province ?: $address->region,
                 'shipping_postal_code' => $address->postal_code,
                 'subtotal' => $subtotal,
                 'shipping_total' => $shippingTotal,
@@ -158,6 +167,7 @@ class CheckoutService
                     if ($product->track_inventory) {
                         if ($variant) {
                             $variant->decrement('stock_quantity', $line['quantity']);
+                            $product->decrement('stock_quantity', $line['quantity']);
                         } else {
                             $product->decrement('stock_quantity', $line['quantity']);
                         }
@@ -172,6 +182,7 @@ class CheckoutService
                         'action_type' => 'seller_order',
                         'action_label' => 'View order',
                         'order_id' => $order->id,
+                        'seller_order_id' => $sellerOrder->id,
                     ]);
                 }
             }
@@ -209,6 +220,147 @@ class CheckoutService
         }, 3);
     }
 
+    /**
+     * Return a server-authoritative quote for exactly the cart rows selected by
+     * the buyer. No order, payment, inventory, or cart mutation occurs here.
+     */
+    public function preview(User $buyer, array $cartItemIds): array
+    {
+        $data = ['cart_item_ids' => $cartItemIds];
+        $this->synchronizeCartPrices($buyer, $data);
+
+        return DB::transaction(function () use ($buyer, $cartItemIds): array {
+            $requestedIds = collect($cartItemIds)->map(fn ($id) => (int) $id)->unique()->values();
+            $cart = Cart::query()
+                ->where('user_id', $buyer->id)
+                ->where('status', 'active')
+                ->first();
+
+            if (! $cart) {
+                throw ValidationException::withMessages(['cart_item_ids' => ['One or more selected cart items are not available.']]);
+            }
+
+            $cartItems = CartItem::query()
+                ->where('cart_id', $cart->id)
+                ->where('saved_for_later', false)
+                ->whereIn('id', $requestedIds)
+                ->orderBy('id')
+                ->get();
+
+            if ($cartItems->isEmpty() || $cartItems->count() !== $requestedIds->count()) {
+                throw ValidationException::withMessages(['cart_item_ids' => ['One or more selected cart items are not available.']]);
+            }
+
+            $lines = $this->buildCheckoutLines($cartItems);
+            $groups = $lines->groupBy(fn (array $line) => $line['seller']->id);
+            $subtotal = round((float) $lines->sum('subtotal'), 2);
+            $shipping = round((float) $groups->sum(fn (Collection $sellerLines) => $this->shippingForGroup($sellerLines)), 2);
+            $discount = strtoupper((string) $cart->promo_code) === 'WELCOME10' ? round($subtotal * 0.10, 2) : 0.0;
+
+            return [
+                'cart_item_ids' => $requestedIds->all(),
+                'promo_code' => $cart->promo_code,
+                'sellers' => $groups->map(function (Collection $sellerLines): array {
+                    $seller = $sellerLines->first()['seller'];
+                    $sellerSubtotal = round((float) $sellerLines->sum('subtotal'), 2);
+
+                    return [
+                        'slug' => $seller->slug,
+                        'name' => $seller->trade_name ?? $seller->business_name ?? 'Seller',
+                        'subtotal' => $sellerSubtotal,
+                        'shipping' => $this->shippingForGroup($sellerLines),
+                        'items' => $sellerLines->map(function (array $line): array {
+                            $product = $line['product'];
+                            $image = $product->images->sortBy([
+                                ['is_primary', 'desc'],
+                                ['sort_order', 'asc'],
+                                ['id', 'asc'],
+                            ])->first();
+
+                            return [
+                                'id' => $line['cart_item']->id,
+                                'product_id' => $product->id,
+                                'product_slug' => $product->slug,
+                                'product_name' => $product->name,
+                                'product_variant_id' => $line['variant']?->id,
+                                'variant_name' => $line['variant']?->name,
+                                'image' => $image
+                                    ? (Str::startsWith($image->file_path, ['http://', 'https://', 'data:', '/'])
+                                        ? $image->file_path
+                                        : $this->media->publicUrl($image->file_path, $image->storage_disk ?: 'r2'))
+                                    : null,
+                                'quantity' => $line['quantity'],
+                                'unit_price' => $line['unit_price'],
+                                'line_total' => $line['subtotal'],
+                            ];
+                        })->values()->all(),
+                    ];
+                })->values()->all(),
+                'subtotal' => $subtotal,
+                'shipping_total' => $shipping,
+                'discount_total' => $discount,
+                'grand_total' => round(max(0, $subtotal + $shipping - $discount), 2),
+                'item_count' => (int) $lines->sum('quantity'),
+            ];
+        }, 3);
+    }
+
+    /**
+     * Persist a fresh server-authoritative quote before checkout. If a timed deal
+     * ended while the cart was open, the buyer gets a review step instead of a
+     * silently changed order total. The subsequent checkout still rechecks prices.
+     *
+     * @return list<string>
+     */
+    private function synchronizeCartPrices(User $buyer, array $data): array
+    {
+        return DB::transaction(function () use ($buyer, $data): array {
+            $cart = Cart::query()
+                ->where('user_id', $buyer->id)
+                ->where('status', 'active')
+                ->lockForUpdate()
+                ->first();
+
+            if (! $cart) {
+                return [];
+            }
+
+            $items = CartItem::query()
+                ->where('cart_id', $cart->id)
+                ->where('saved_for_later', false)
+                ->whereIn('id', $data['cart_item_ids'])
+                ->lockForUpdate()
+                ->get();
+            $changes = [];
+
+            foreach ($items as $item) {
+                $product = Product::query()->with('activePromotion')->find($item->product_id);
+                $variant = $item->product_variant_id ? ProductVariant::query()->find($item->product_variant_id) : null;
+                if (! $product) {
+                    continue;
+                }
+
+                $currentPrice = round((float) $this->pricing->for($product, $variant)['effective_price'], 2);
+                $storedPrice = round((float) $item->unit_price, 2);
+                if ($storedPrice === $currentPrice) {
+                    continue;
+                }
+
+                $item->forceFill([
+                    'unit_price' => $currentPrice,
+                    'line_total' => round($currentPrice * $item->quantity, 2),
+                ])->save();
+                $changes[] = sprintf('%s (PHP %s to PHP %s)', $product->name, number_format($storedPrice, 2), number_format($currentPrice, 2));
+            }
+
+            if ($changes !== []) {
+                $this->refreshRemainingCartTotals($cart);
+            }
+
+            return $changes;
+        }, 3);
+    }
+
     private function buildCheckoutLines(Collection $cartItems): Collection
     {
         return $cartItems->map(function (CartItem $cartItem) {
@@ -234,9 +386,7 @@ class CheckoutService
                 ]);
             }
 
-            $unitPrice = $variant
-                ? (float) ($variant->sale_price_override ?? $variant->price_override ?? $product->sale_price ?? $product->price)
-                : (float) ($product->sale_price ?? $product->price);
+            $unitPrice = $this->pricing->for($product, $variant)['effective_price'];
 
             return [
                 'cart_item' => $cartItem,

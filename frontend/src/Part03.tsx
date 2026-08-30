@@ -158,16 +158,16 @@ export function Price({ amount, original, currency = "₱", size = "md" }: {
   const sizes = { sm: "text-sm", md: "text-base", lg: "text-xl" };
   const discount = original ? Math.round(((original - amount) / original) * 100) : null;
   return (
-    <div className="flex items-baseline gap-2">
-      <span className={`font-[var(--font-body)] font-[600] text-[var(--color-ink)] ${sizes[size]}`}>
+    <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+      <span className={`min-w-0 whitespace-nowrap font-[var(--font-body)] font-[600] text-[var(--color-ink)] ${sizes[size]}`}>
         {currency}{amount.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
       </span>
       {original && (
         <>
-          <span className="text-xs text-[var(--color-ink-muted)] line-through">
+          <span className="whitespace-nowrap text-xs text-[var(--color-ink-muted)] line-through">
             {currency}{original.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
           </span>
-          <span className="text-[10px] font-[var(--font-mono)] bg-[var(--color-red-light)] text-[var(--color-red)] px-1.5 py-0.5 rounded">
+          <span className="whitespace-nowrap rounded bg-[var(--color-red-light)] px-1.5 py-0.5 text-[10px] font-[var(--font-mono)] text-[var(--color-red)]">
             -{discount}%
           </span>
         </>

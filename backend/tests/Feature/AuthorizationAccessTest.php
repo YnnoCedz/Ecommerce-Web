@@ -52,6 +52,21 @@ class AuthorizationAccessTest extends TestCase
             ->assertJsonStructure(['data' => ['users', 'buyers', 'sellers', 'approved_sellers', 'products', 'orders', 'reports']]);
     }
 
+    public function test_admin_self_profile_is_admin_only_and_cannot_change_role(): void
+    {
+        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active', 'email_verified_at' => now(), 'phone' => '+639171111111', 'mobile' => '+639171111111']);
+        $buyer = User::factory()->create(['role' => 'buyer', 'status' => 'active', 'email_verified_at' => now()]);
+
+        $this->getJson('/api/admin/me')->assertUnauthorized();
+        $this->actingAs($buyer)->getJson('/api/admin/me')->assertForbidden();
+        $this->actingAs($admin)->getJson('/api/admin/me')->assertOk()->assertJsonPath('user.role', 'admin');
+        $this->actingAs($admin)->patchJson('/api/admin/profile', [
+            'first_name' => 'System', 'last_name' => 'Administrator', 'phone' => '+639172222222', 'role' => 'buyer', 'status' => 'suspended',
+        ])->assertOk()->assertJsonPath('data.first_name', 'System');
+
+        $this->assertDatabaseHas('users', ['id' => $admin->id, 'role' => 'admin', 'status' => 'active', 'phone' => '+639172222222']);
+    }
+
     public function test_seller_routes_reject_unapproved_sellers(): void
     {
         $sellerUser = User::factory()->create([

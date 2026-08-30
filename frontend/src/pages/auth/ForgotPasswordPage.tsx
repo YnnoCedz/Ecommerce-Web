@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { requestPasswordResetLink } from "../../api/auth";
 import { ApiError } from "../../api/client";
 import AuthLayout, { AuthAlert, Field } from "./AuthLayout";
@@ -11,8 +11,10 @@ export default function ForgotPasswordPage({ onNavigate }: { onNavigate: NavFn }
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const submissionInFlight = useRef(false);
 
   const submit = async () => {
+    if (submissionInFlight.current) return;
     if (!email) {
       setError("Please enter your email address.");
       return;
@@ -23,6 +25,7 @@ export default function ForgotPasswordPage({ onNavigate }: { onNavigate: NavFn }
       return;
     }
 
+    submissionInFlight.current = true;
     setError(null);
     setStatusMessage(null);
     setLoading(true);
@@ -42,6 +45,7 @@ export default function ForgotPasswordPage({ onNavigate }: { onNavigate: NavFn }
         setError("Unable to send a password reset link right now. Please try again.");
       }
     } finally {
+      submissionInFlight.current = false;
       setLoading(false);
     }
   };
@@ -107,10 +111,12 @@ export default function ForgotPasswordPage({ onNavigate }: { onNavigate: NavFn }
     >
       {error && <AuthAlert type="error" message={error} />}
 
+      <form onSubmit={event => { event.preventDefault(); void submit(); }} className="space-y-5">
+
       <Field label="Email address" type="email" value={email} onChange={setEmail} placeholder="you@example.com" required />
 
       <button
-        onClick={submit}
+        type="submit"
         disabled={loading}
         className="w-full py-3 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center justify-center gap-2"
       >
@@ -126,6 +132,7 @@ export default function ForgotPasswordPage({ onNavigate }: { onNavigate: NavFn }
           "Send reset link"
         )}
       </button>
+      </form>
     </AuthLayout>
   );
 }

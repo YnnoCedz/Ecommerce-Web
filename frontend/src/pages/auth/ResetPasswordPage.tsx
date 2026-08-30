@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { resetPasswordRequest } from "../../api/auth";
 import { ApiError } from "../../api/client";
@@ -16,8 +16,10 @@ export default function ResetPasswordPage({ onNavigate }: { onNavigate: NavFn })
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const submissionInFlight = useRef(false);
 
   const submit = async () => {
+    if (submissionInFlight.current) return;
     const nextErrors: Record<string, string> = {};
 
     if (!token) nextErrors.token = "The reset link is missing its token.";
@@ -34,6 +36,7 @@ export default function ResetPasswordPage({ onNavigate }: { onNavigate: NavFn })
     }
 
     setError(null);
+    submissionInFlight.current = true;
     setLoading(true);
 
     try {
@@ -51,6 +54,7 @@ export default function ResetPasswordPage({ onNavigate }: { onNavigate: NavFn })
         setError("Unable to reset your password right now. Please try again.");
       }
     } finally {
+      submissionInFlight.current = false;
       setLoading(false);
     }
   };
@@ -121,6 +125,8 @@ export default function ResetPasswordPage({ onNavigate }: { onNavigate: NavFn })
       {errors.token && <AuthAlert type="error" message={errors.token} />}
       {errors.email && <AuthAlert type="error" message={errors.email} />}
 
+      <form onSubmit={event => { event.preventDefault(); void submit(); }} className="space-y-5">
+
       <div className="space-y-2">
         <Field
           label="New password"
@@ -145,7 +151,7 @@ export default function ResetPasswordPage({ onNavigate }: { onNavigate: NavFn })
       />
 
       <button
-        onClick={submit}
+        type="submit"
         disabled={loading}
         className="w-full py-3 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center justify-center gap-2"
       >
@@ -161,6 +167,7 @@ export default function ResetPasswordPage({ onNavigate }: { onNavigate: NavFn })
           "Set new password"
         )}
       </button>
+      </form>
     </AuthLayout>
   );
 }

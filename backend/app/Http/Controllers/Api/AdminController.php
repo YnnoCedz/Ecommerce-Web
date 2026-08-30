@@ -9,8 +9,11 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\Report;
 use App\Models\Seller;
+use App\Models\SellerOrder;
 use App\Models\User;
+use App\Services\MediaStorageService;
 use App\Services\NotificationService;
+use App\Services\OrderLifecycleService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -20,7 +23,11 @@ use Illuminate\Validation\Rule;
 
 class AdminController extends Controller
 {
-    public function __construct(private readonly NotificationService $notifications) {}
+    public function __construct(
+        private readonly NotificationService $notifications,
+        private readonly OrderLifecycleService $orderLifecycle,
+        private readonly MediaStorageService $media,
+    ) {}
 
     public function dashboard(Request $request): JsonResponse
     {
@@ -173,13 +180,40 @@ class AdminController extends Controller
 
     public function orders(Request $request): JsonResponse
     {
-        $data = $request->validate(['search' => ['nullable', 'string', 'max:100'], 'status' => ['nullable', 'string', 'max:40'], 'per_page' => ['nullable', 'integer', 'min:1', 'max:100']]);
-        $query = Order::query()->with(['buyer:id,name,first_name,last_name,email,mobile', 'sellerOrders.seller:id,business_name,trade_name', 'sellerOrders.shipment', 'items:id,order_id,seller_order_id,product_name,sku,quantity,unit_price,subtotal', 'payments' => fn ($query) => $query->latest()]);
-        $query->when($data['status'] ?? null, fn (Builder $query, string $status) => $query->where('status', $status));
+        $data = $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+            'status' => ['nullable', Rule::in(['pending', 'confirmed', 'preparing', 'ready', 'picked-up', 'in-transit', 'out-for-delivery', 'delivered', 'completed', 'cancelled', 'failed'])],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+        $query = $this->adminOrderQuery();
+        $query->when($data['status'] ?? null, fn (Builder $query, string $status) => $query->whereHas('sellerOrders', fn (Builder $sellerOrders) => $sellerOrders->where('status', $status)));
         $query->when(trim((string) ($data['search'] ?? '')), fn (Builder $query, string $search) => $query->where(fn (Builder $nested) => $nested->where('order_number', 'like', "%{$search}%")->orWhereHas('buyer', fn (Builder $buyer) => $buyer->where('name', 'like', "%{$search}%")->orWhere('email', 'like', "%{$search}%"))->orWhereHas('sellerOrders.seller', fn (Builder $seller) => $seller->where('business_name', 'like', "%{$search}%"))));
         $orders = $query->latest('id')->paginate($data['per_page'] ?? 25);
 
         return response()->json(['data' => $orders->getCollection()->map(fn (Order $order) => $this->orderPayload($order))->values(), 'meta' => array_merge($this->paginationMeta($orders), ['gmv' => (float) Order::whereIn('payment_status', ['paid', 'partially_refunded'])->sum('grand_total'), 'open_disputes' => Dispute::whereIn('status', ['open', 'reviewing'])->count()])]);
+    }
+
+    public function order(Order $order): JsonResponse
+    {
+        return response()->json(['data' => $this->orderPayload($this->adminOrderQuery()->findOrFail($order->id))]);
+    }
+
+    public function updateDeliveryStatus(Request $request, SellerOrder $sellerOrder): JsonResponse
+    {
+        $data = $request->validate([
+            'status' => ['required', Rule::in(['picked-up', 'in-transit', 'out-for-delivery', 'delivered'])],
+        ]);
+        $updated = $this->orderLifecycle->transitionByLogisticsActor($sellerOrder, $request->user(), $data['status']);
+
+        return response()->json([
+            'message' => match ($data['status']) {
+                'picked-up' => 'Order marked as picked up.',
+                'in-transit' => 'Order marked as in transit.',
+                'out-for-delivery' => 'Order marked as out for delivery.',
+                'delivered' => 'Order marked as delivered.',
+            },
+            'data' => $this->orderPayload($this->adminOrderQuery()->findOrFail($updated->order_id)),
+        ]);
     }
 
     public function categories(): JsonResponse
@@ -232,7 +266,9 @@ class AdminController extends Controller
 
     private function productPayload(Product $product): array
     {
-        return ['id' => $product->id, 'name' => $product->name, 'slug' => $product->slug, 'sku' => $product->sku, 'price' => (float) $product->price, 'sale_price' => $product->sale_price === null ? null : (float) $product->sale_price, 'stock' => (int) $product->stock_quantity, 'status' => $product->status, 'sales' => (int) ($product->order_items_sum_quantity ?? 0), 'seller' => $product->seller ? ['id' => $product->seller->id, 'name' => $product->seller->trade_name ?: $product->seller->business_name] : null, 'category' => $product->category ? ['id' => $product->category->id, 'name' => $product->category->name] : null, 'image_path' => $product->images->first()?->file_path, 'created_at' => optional($product->created_at)->toISOString(), 'updated_at' => optional($product->updated_at)->toISOString()];
+        $image = $product->images->first();
+
+        return ['id' => $product->id, 'name' => $product->name, 'slug' => $product->slug, 'sku' => $product->sku, 'price' => (float) $product->price, 'sale_price' => $product->sale_price === null ? null : (float) $product->sale_price, 'stock' => (int) $product->stock_quantity, 'status' => $product->status, 'sales' => (int) ($product->order_items_sum_quantity ?? 0), 'seller' => $product->seller ? ['id' => $product->seller->id, 'name' => $product->seller->trade_name ?: $product->seller->business_name] : null, 'category' => $product->category ? ['id' => $product->category->id, 'name' => $product->category->name] : null, 'image_path' => $image ? $this->media->publicUrl($image->file_path, $image->storage_disk ?: 'r2') : null, 'created_at' => optional($product->created_at)->toISOString(), 'updated_at' => optional($product->updated_at)->toISOString()];
     }
 
     private function orderSummary(Order $order): array
@@ -242,7 +278,78 @@ class AdminController extends Controller
 
     private function orderPayload(Order $order): array
     {
-        return array_merge($this->orderSummary($order), ['payment_method' => $order->payment_method, 'placed_at' => optional($order->placed_at)->toISOString(), 'shipping' => ['name' => $order->shipping_name, 'phone' => $order->shipping_phone, 'address' => trim("{$order->shipping_line1} {$order->shipping_line2}, {$order->shipping_city}, {$order->shipping_province} {$order->shipping_postal_code}")], 'buyer' => $order->buyer ? ['id' => $order->buyer->id, 'name' => $order->buyer->display_name, 'email' => $order->buyer->email] : null, 'seller_orders' => $order->sellerOrders->map(fn ($sellerOrder) => ['id' => $sellerOrder->id, 'status' => $sellerOrder->status, 'total' => (float) $sellerOrder->grand_total, 'tracking_number' => $sellerOrder->tracking_number, 'seller' => $sellerOrder->seller ? ['id' => $sellerOrder->seller->id, 'name' => $sellerOrder->seller->trade_name ?: $sellerOrder->seller->business_name] : null])->values(), 'items' => $order->items->map(fn ($item) => ['id' => $item->id, 'seller_order_id' => $item->seller_order_id, 'product_name' => $item->product_name, 'sku' => $item->sku, 'quantity' => (int) $item->quantity, 'unit_price' => (float) $item->unit_price, 'subtotal' => (float) $item->subtotal])->values(), 'payments' => $order->payments->map(fn ($payment) => ['id' => $payment->id, 'type' => $payment->type ?? 'charge', 'method' => $payment->method, 'status' => $payment->status, 'amount' => (float) $payment->amount, 'reference' => $payment->provider_reference, 'created_at' => optional($payment->created_at)->toISOString()])->values()]);
+        return array_merge($this->orderSummary($order), [
+            'payment_method' => $order->payment_method,
+            'placed_at' => optional($order->placed_at)->toISOString(),
+            'updated_at' => optional($order->updated_at)->toISOString(),
+            'shipping' => [
+                'name' => $order->shipping_name,
+                'phone' => $order->shipping_phone,
+                'address' => trim("{$order->shipping_line1} {$order->shipping_line2}, {$order->shipping_city}, {$order->shipping_province} {$order->shipping_postal_code}"),
+            ],
+            'buyer' => $order->buyer ? ['id' => $order->buyer->id, 'name' => $order->buyer->display_name, 'email' => $order->buyer->email] : null,
+            'seller_orders' => $order->sellerOrders->map(function ($sellerOrder) {
+                $shipment = $sellerOrder->shipment;
+
+                return [
+                    'id' => $sellerOrder->id,
+                    'status' => $sellerOrder->status,
+                    'delivery_status' => $shipment?->status ?? ($sellerOrder->status === 'ready' ? 'ready' : null),
+                    'next_delivery_status' => match ($sellerOrder->status) {
+                        'ready' => 'picked-up',
+                        'picked-up' => 'in-transit',
+                        'in-transit' => 'out-for-delivery',
+                        'out-for-delivery' => 'delivered',
+                        default => null,
+                    },
+                    'total' => (float) $sellerOrder->grand_total,
+                    'tracking_number' => $shipment?->tracking_number ?? $sellerOrder->tracking_number,
+                    'delivery_handler' => $shipment?->courier?->name ?? ($shipment ? 'Maketo Logistics' : null),
+                    'courier_id' => $shipment?->courier_id,
+                    'seller' => $sellerOrder->seller ? [
+                        'id' => $sellerOrder->seller->id,
+                        'name' => $sellerOrder->seller->trade_name ?: $sellerOrder->seller->business_name,
+                        'pickup_address' => trim(implode(', ', array_filter([
+                            $sellerOrder->seller->address_line1,
+                            $sellerOrder->seller->address_line2,
+                            $sellerOrder->seller->city,
+                            $sellerOrder->seller->province,
+                            $sellerOrder->seller->postal_code,
+                        ]))),
+                    ] : null,
+                    'tracking_events' => $shipment?->trackingEvents->sortBy('occurred_at')->map(fn ($event) => [
+                        'id' => $event->id,
+                        'status' => $event->status,
+                        'note' => $event->note,
+                        'occurred_at' => optional($event->occurred_at)->toISOString(),
+                        'actor_type' => $event->actor_type,
+                    ])->values() ?? [],
+                ];
+            })->values(),
+            'items' => $order->items->map(fn ($item) => [
+                'id' => $item->id,
+                'seller_order_id' => $item->seller_order_id,
+                'product_name' => $item->product_name,
+                'variant_name' => $item->variant_name,
+                'sku' => $item->sku,
+                'quantity' => (int) $item->quantity,
+                'unit_price' => (float) $item->unit_price,
+                'subtotal' => (float) $item->subtotal,
+            ])->values(),
+            'payments' => $order->payments->map(fn ($payment) => ['id' => $payment->id, 'type' => $payment->type ?? 'charge', 'method' => $payment->method, 'status' => $payment->status, 'amount' => (float) $payment->amount, 'reference' => $payment->provider_reference, 'created_at' => optional($payment->created_at)->toISOString()])->values(),
+        ]);
+    }
+
+    private function adminOrderQuery(): Builder
+    {
+        return Order::query()->with([
+            'buyer:id,name,first_name,last_name,email,mobile',
+            'sellerOrders.seller:id,business_name,trade_name,address_line1,address_line2,city,province,postal_code',
+            'sellerOrders.shipment.courier',
+            'sellerOrders.shipment.trackingEvents' => fn ($query) => $query->orderBy('occurred_at')->orderBy('id'),
+            'items:id,order_id,seller_order_id,product_name,variant_name,sku,quantity,unit_price,subtotal',
+            'payments' => fn ($query) => $query->latest(),
+        ]);
     }
 
     private function categoryPayload(Category $category): array

@@ -3,9 +3,6 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Services\MediaStorageService;
-use App\Services\NotificationService;
-use App\Services\OrderLifecycleService;
 use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\ProductImage;
@@ -15,26 +12,37 @@ use App\Models\Review;
 use App\Models\ReviewReply;
 use App\Models\Seller;
 use App\Models\SellerOrder;
+use App\Services\MediaStorageService;
+use App\Services\NotificationService;
+use App\Services\OrderLifecycleService;
+use App\Services\PsgcService;
+use App\Services\SellerSalesReportService;
 use Carbon\Carbon;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class SellerController extends Controller
 {
     public function __construct(
         private readonly OrderLifecycleService $orderLifecycle,
         private readonly NotificationService $notifications,
-    ) {
-    }
+        private readonly SellerSalesReportService $salesReports,
+        private readonly MediaStorageService $media,
+    ) {}
 
     public function dashboard(Request $request): JsonResponse
     {
+        $validated = $request->validate([
+            'range' => ['nullable', Rule::in([7, 30, 90])],
+        ]);
+        $days = (int) ($validated['range'] ?? 30);
         $seller = $request->user()->seller;
 
         if (! $seller) {
@@ -53,57 +61,87 @@ class SellerController extends Controller
         }
 
         $seller->load(['categories']);
+        [$from, $to] = $this->salesReports->presetRange($days);
+        $salesReport = $this->salesReports->build($seller, $from, $to);
 
-        $products = Product::query()
-            ->with(['category', 'images' => fn ($query) => $query->orderBy('sort_order')->orderBy('id'), 'variants.options'])
+        $productQuery = Product::query()
             ->where('seller_id', $seller->id)
-            ->whereNull('deleted_at')
+            ->whereNull('deleted_at');
+        $productStats = (clone $productQuery)->selectRaw('COUNT(*) AS total_products')
+            ->selectRaw("SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_products")
+            ->selectRaw("SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) AS draft_products")
+            ->selectRaw("SUM(CASE WHEN status = 'archived' THEN 1 ELSE 0 END) AS archived_products")
+            ->selectRaw('SUM(CASE WHEN track_inventory = 1 AND stock_quantity > 0 AND stock_quantity <= COALESCE(low_stock_threshold, 10) THEN 1 ELSE 0 END) AS low_stock_products')
+            ->selectRaw('SUM(CASE WHEN track_inventory = 1 AND stock_quantity <= 0 THEN 1 ELSE 0 END) AS out_of_stock_products')
+            ->first();
+        $recentProducts = (clone $productQuery)
+            ->with(['category', 'images' => fn ($query) => $query->orderBy('sort_order')->orderBy('id'), 'variants.options'])
+            ->latest()
+            ->limit(5)
             ->get();
 
-        $sellerOrders = SellerOrder::query()
-            ->with(['order.items.product.images', 'order.buyer', 'shipment.trackingEvents'])
-            ->where('seller_id', $seller->id)
+        $orderQuery = SellerOrder::query()->where('seller_id', $seller->id);
+        $orderStats = (clone $orderQuery)
+            ->selectRaw("SUM(CASE WHEN status IN ('pending', 'new') THEN 1 ELSE 0 END) AS pending_orders")
+            ->selectRaw("SUM(CASE WHEN status IN ('confirmed', 'preparing', 'ready') THEN 1 ELSE 0 END) AS processing_orders")
+            ->selectRaw("SUM(CASE WHEN status IN ('picked-up', 'in-transit', 'out-for-delivery', 'shipped') THEN 1 ELSE 0 END) AS shipped_orders")
+            ->selectRaw("SUM(CASE WHEN status IN ('delivered', 'completed') THEN 1 ELSE 0 END) AS completed_orders")
+            ->selectRaw("SUM(CASE WHEN status IN ('cancelled', 'failed') THEN 1 ELSE 0 END) AS cancelled_orders")
+            ->selectRaw("SUM(CASE WHEN status IN ('pending', 'new') THEN grand_total ELSE 0 END) AS pending_sales")
+            ->first();
+        $recentSellerOrders = (clone $orderQuery)
+            ->with(['order.items.product.images', 'order.buyer', 'shipment.courier', 'shipment.trackingEvents'])
+            ->latest('updated_at')
+            ->limit(5)
             ->get();
 
         $summary = [
-            'total_products' => $products->count(),
-            'active_products' => $products->where('status', 'active')->count(),
-            'draft_products' => $products->where('status', 'draft')->count(),
-            'archived_products' => $products->where('status', 'archived')->count(),
-            'low_stock_products' => $products->filter(fn (Product $product) => (bool) $product->track_inventory && (int) $product->stock_quantity > 0 && (int) $product->stock_quantity <= (int) ($product->low_stock_threshold ?? 10))->count(),
-            'out_of_stock_products' => $products->filter(fn (Product $product) => (bool) $product->track_inventory && (int) $product->stock_quantity <= 0)->count(),
-            'pending_orders' => $sellerOrders->whereIn('status', ['pending', 'new'])->count(),
-            'processing_orders' => $sellerOrders->whereIn('status', ['confirmed', 'preparing', 'ready'])->count(),
-            'shipped_orders' => $sellerOrders->whereIn('status', ['picked-up', 'in-transit', 'shipped'])->count(),
-            'completed_orders' => $sellerOrders->whereIn('status', ['delivered', 'completed'])->count(),
-            'cancelled_orders' => $sellerOrders->whereIn('status', ['cancelled', 'failed'])->count(),
-            'total_sales' => (float) $sellerOrders->sum('grand_total'),
-            'pending_sales' => (float) $sellerOrders->whereIn('status', ['pending', 'new'])->sum('grand_total'),
-            'orders_count' => $sellerOrders->count(),
+            'total_products' => (int) $productStats->total_products,
+            'active_products' => (int) $productStats->active_products,
+            'draft_products' => (int) $productStats->draft_products,
+            'archived_products' => (int) $productStats->archived_products,
+            'low_stock_products' => (int) $productStats->low_stock_products,
+            'out_of_stock_products' => (int) $productStats->out_of_stock_products,
+            'pending_orders' => (int) $orderStats->pending_orders,
+            'processing_orders' => (int) $orderStats->processing_orders,
+            'shipped_orders' => (int) $orderStats->shipped_orders,
+            'completed_orders' => (int) $orderStats->completed_orders,
+            'cancelled_orders' => (int) $orderStats->cancelled_orders,
+            'total_sales' => $salesReport['summary']['net_product_sales'],
+            'pending_sales' => (float) $orderStats->pending_sales,
+            'orders_count' => $salesReport['summary']['total_orders'],
             'promotions_count' => Promotion::where('seller_id', $seller->id)->count(),
-            'recent_activity' => $sellerOrders->sortByDesc('updated_at')->take(5)->values()->all(),
+            'recent_activity' => $recentSellerOrders->values()->all(),
         ];
 
         return response()->json([
             'data' => [
                 'seller' => $this->sellerPayload($seller),
                 'summary' => $summary,
-                'recent_orders' => $sellerOrders
+                'recent_orders' => $recentSellerOrders
                     ->sortByDesc(fn (SellerOrder $order) => $order->order?->placed_at ?? $order->created_at)
                     ->take(5)
                     ->values()
                     ->map(fn (SellerOrder $sellerOrder) => $this->sellerOrderPayload($sellerOrder))
                     ->all(),
-                'recent_products' => $products
-                    ->sortByDesc('created_at')
-                    ->take(5)
+                'recent_products' => $recentProducts
                     ->values()
                     ->map(fn (Product $product) => $this->productPayload($product))
                     ->all(),
-                'top_products' => $this->topProductsPayload($sellerOrders),
-                'revenue_series' => $this->seriesPayload($sellerOrders, 'grand_total', 30),
-                'order_series' => $this->seriesPayload($sellerOrders, null, 30, true),
-                'category_breakdown' => $this->categoryBreakdownPayload($products, $sellerOrders),
+                'top_products' => $salesReport['top_products'],
+                'revenue_series' => collect($salesReport['series'])->map(fn (array $row) => [
+                    'date' => $row['date'],
+                    'label' => $row['label'],
+                    'value' => $row['revenue'],
+                ])->all(),
+                'order_series' => collect($salesReport['series'])->map(fn (array $row) => [
+                    'date' => $row['date'],
+                    'label' => $row['label'],
+                    'value' => $row['orders'],
+                ])->all(),
+                'category_breakdown' => $salesReport['category_breakdown'],
+                'sales_summary' => $salesReport['summary'],
+                'reporting_period' => $salesReport['period'],
             ],
         ]);
     }
@@ -117,7 +155,7 @@ class SellerController extends Controller
         ]);
     }
 
-    public function updateMe(Request $request, MediaStorageService $storage): JsonResponse
+    public function updateMe(Request $request, MediaStorageService $storage, PsgcService $psgc): JsonResponse
     {
         $seller = $request->user()->seller;
 
@@ -128,16 +166,10 @@ class SellerController extends Controller
             ], 404);
         }
 
-        if (is_string($request->input('brand_colors'))) {
-            $decodedBrandColors = json_decode($request->input('brand_colors'), true);
-            if (json_last_error() === JSON_ERROR_NONE && is_array($decodedBrandColors)) {
-                $request->merge(['brand_colors' => $decodedBrandColors]);
-            }
-        }
-
         $data = $request->validate([
             'business_name' => ['nullable', 'string', 'max:255'],
             'trade_name' => ['nullable', 'string', 'max:255'],
+            'slug' => ['nullable', 'string', 'max:255', Rule::unique('sellers', 'slug')->ignore($seller->id)],
             'tagline' => ['nullable', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],
             'contact_email' => ['nullable', 'email:rfc,dns', 'max:255'],
@@ -146,9 +178,13 @@ class SellerController extends Controller
             'messaging_phone' => ['nullable', 'string', 'max:30'],
             'address_line1' => ['nullable', 'string', 'max:255'],
             'address_line2' => ['nullable', 'string', 'max:255'],
+            'region_code' => ['nullable', 'string', 'size:10'],
+            'province_code' => ['nullable', 'string', 'size:10'],
+            'city_code' => ['nullable', 'string', 'size:10'],
+            'barangay_code' => ['nullable', 'string', 'size:10'],
             'province' => ['nullable', 'string', 'max:255'],
             'city' => ['nullable', 'string', 'max:255'],
-            'postal_code' => ['nullable', 'string', 'max:20'],
+            'postal_code' => ['nullable', 'regex:/^\d{4}$/'],
             'payout_method' => ['nullable', 'string', 'max:60'],
             'payout_schedule' => ['nullable', 'string', 'max:60'],
             'bank_name' => ['nullable', 'string', 'max:255'],
@@ -160,8 +196,6 @@ class SellerController extends Controller
             'return_policy' => ['nullable', 'string', 'max:10000'],
             'shipping_policy' => ['nullable', 'string', 'max:10000'],
             'privacy_policy' => ['nullable', 'string', 'max:10000'],
-            'brand_colors' => ['nullable', 'array', 'max:3'],
-            'brand_colors.*' => ['nullable', 'string', 'max:20'],
             'operating_hours' => ['nullable', 'array'],
             'operating_hours.*.day' => ['nullable', 'string', 'max:60'],
             'operating_hours.*.hours' => ['nullable', 'string', 'max:120'],
@@ -170,6 +204,18 @@ class SellerController extends Controller
             'remove_logo' => ['nullable', 'boolean'],
             'remove_banner' => ['nullable', 'boolean'],
         ]);
+
+        if (collect(['region_code', 'province_code', 'city_code', 'barangay_code'])
+            ->contains(fn (string $key) => filled($data[$key] ?? null))) {
+            $location = Validator::make($data, [
+                'region_code' => ['required', 'string', 'size:10'],
+                'province_code' => ['nullable', 'string', 'size:10'],
+                'city_code' => ['required', 'string', 'size:10'],
+                'barangay_code' => ['required', 'string', 'size:10'],
+                'postal_code' => ['required', 'regex:/^\d{4}$/'],
+            ])->validate();
+            $data = array_merge($data, $psgc->validateHierarchy($location));
+        }
 
         $oldLogoPath = $seller->logo_path;
         $oldBannerPath = $seller->banner_path;
@@ -186,6 +232,8 @@ class SellerController extends Controller
 
         try {
             $businessName = $this->nullableTrim($data['business_name'] ?? null) ?? $seller->business_name;
+            $slug = array_key_exists('slug', $data) ? Str::slug((string) ($data['slug'] ?? '')) : $seller->slug;
+            $slug = $slug !== '' ? $slug : $seller->slug;
 
             if ($request->boolean('remove_logo')) {
                 $logoPath = null;
@@ -207,6 +255,7 @@ class SellerController extends Controller
 
             $seller->forceFill([
                 'business_name' => $businessName,
+                'slug' => $slug,
                 'trade_name' => $optionalText('trade_name', $seller->trade_name),
                 'tagline' => $optionalText('tagline', $seller->tagline),
                 'description' => $optionalText('description', $seller->description),
@@ -216,8 +265,14 @@ class SellerController extends Controller
                 'messaging_phone' => $optionalText('messaging_phone', $seller->messaging_phone),
                 'address_line1' => $optionalText('address_line1', $seller->address_line1),
                 'address_line2' => $optionalText('address_line2', $seller->address_line2),
+                'region' => array_key_exists('region', $data) ? $data['region'] : $seller->region,
+                'region_code' => array_key_exists('region_code', $data) ? $data['region_code'] : $seller->region_code,
                 'province' => $optionalText('province', $seller->province),
+                'province_code' => array_key_exists('province_code', $data) ? $data['province_code'] : $seller->province_code,
                 'city' => $optionalText('city', $seller->city),
+                'city_code' => array_key_exists('city_code', $data) ? $data['city_code'] : $seller->city_code,
+                'barangay' => array_key_exists('barangay', $data) ? $data['barangay'] : $seller->barangay,
+                'barangay_code' => array_key_exists('barangay_code', $data) ? $data['barangay_code'] : $seller->barangay_code,
                 'postal_code' => $optionalText('postal_code', $seller->postal_code),
                 'payout_method' => $optionalText('payout_method', $seller->payout_method),
                 'payout_schedule' => $optionalText('payout_schedule', $seller->payout_schedule),
@@ -241,7 +296,6 @@ class SellerController extends Controller
                 'return_policy' => $optionalText('return_policy', $seller->return_policy),
                 'shipping_policy' => $optionalText('shipping_policy', $seller->shipping_policy),
                 'privacy_policy' => $optionalText('privacy_policy', $seller->privacy_policy),
-                'brand_colors' => array_key_exists('brand_colors', $data) ? $this->normalizeBrandColors($data['brand_colors'] ?? []) : $seller->brand_colors,
                 'operating_hours' => array_key_exists('operating_hours', $data) ? $data['operating_hours'] : $seller->operating_hours,
                 'logo_path' => $logoPath,
                 'banner_path' => $bannerPath,
@@ -355,7 +409,9 @@ class SellerController extends Controller
                     'status' => $data['status'],
                     'delivery_type' => $data['delivery_type'],
                     'track_inventory' => (bool) ($data['track_inventory'] ?? true),
-                    'stock_quantity' => $data['stock_quantity'],
+                    'stock_quantity' => $data['variants'] === []
+                        ? $data['stock_quantity']
+                        : (int) collect($data['variants'])->sum(fn (array $variant) => ($variant['active'] ?? true) ? (int) $variant['stock_quantity'] : 0),
                     'low_stock_threshold' => $data['low_stock_threshold'],
                     'weight_grams' => $data['weight_grams'],
                     'length_cm' => $data['length_cm'],
@@ -414,7 +470,9 @@ class SellerController extends Controller
                     'status' => $data['status'],
                     'delivery_type' => $data['delivery_type'],
                     'track_inventory' => (bool) ($data['track_inventory'] ?? true),
-                    'stock_quantity' => $data['stock_quantity'],
+                    'stock_quantity' => $data['variants'] === []
+                        ? $data['stock_quantity']
+                        : (int) collect($data['variants'])->sum(fn (array $variant) => ($variant['active'] ?? true) ? (int) $variant['stock_quantity'] : 0),
                     'low_stock_threshold' => $data['low_stock_threshold'],
                     'weight_grams' => $data['weight_grams'],
                     'length_cm' => $data['length_cm'],
@@ -538,11 +596,11 @@ class SellerController extends Controller
         $seller = $request->user()->seller;
 
         if (! $seller) {
-            return response()->json(['data' => []]);
+            return response()->json(['data' => [], 'server_time' => now()->toISOString()]);
         }
 
         $orders = SellerOrder::query()
-            ->with(['order.items.product.images', 'order.buyer', 'shipment.trackingEvents'])
+            ->with(['order.items.product.images', 'order.buyer', 'shipment.courier', 'shipment.trackingEvents'])
             ->where('seller_id', $seller->id)
             ->latest('id')
             ->limit(50)
@@ -563,7 +621,7 @@ class SellerController extends Controller
         }
 
         $data = $request->validate([
-            'status' => ['required', 'in:confirmed,preparing,ready,in-transit,delivered'],
+            'status' => ['required', 'in:confirmed,preparing,ready'],
             'tracking_number' => ['nullable', 'string', 'max:100'],
         ]);
 
@@ -640,7 +698,7 @@ class SellerController extends Controller
                     'id' => $review->id,
                     'product_id' => $review->product_id,
                     'product_name' => $review->orderItem?->product_name ?? $review->product?->name,
-                    'product_image' => $review->product?->images?->sortBy('sort_order')->first()?->file_path,
+                    'product_image' => $this->optionalImageUrl($review->product?->images?->sortBy('sort_order')->first()),
                     'buyer_name' => trim($firstName.' '.$lastInitial),
                     'rating' => (int) $review->rating,
                     'title' => $review->title,
@@ -676,15 +734,73 @@ class SellerController extends Controller
             return response()->json(['data' => []]);
         }
 
-        $products = Product::query()
+        $query = Product::query()
             ->with(['category', 'images' => fn ($query) => $query->orderBy('sort_order')->orderBy('id'), 'variants.options'])
             ->where('seller_id', $seller->id)
-            ->whereNull('deleted_at')
-            ->latest('id')
-            ->limit(100)
-            ->get()
-            ->map(fn (Product $product) => $this->productPayload($product))
-            ->values();
+            ->whereNull('deleted_at');
+
+        $search = trim((string) $request->input('search', ''));
+        if ($search !== '') {
+            $query->where(function ($builder) use ($search) {
+                $builder->where('name', 'like', "%{$search}%")
+                    ->orWhere('sku', 'like', "%{$search}%")
+                    ->orWhereHas('variants', fn ($variantQuery) => $variantQuery
+                        ->where('name', 'like', "%{$search}%")
+                        ->orWhere('sku', 'like', "%{$search}%"));
+            });
+        }
+
+        $countQuery = clone $query;
+        $applyStockStatus = function ($builder, string $status) {
+            $comparison = match ($status) {
+                'in-stock' => fn ($stockQuery) => $stockQuery->whereColumn('stock_quantity', '>', 'low_stock_threshold'),
+                'low-stock' => fn ($stockQuery) => $stockQuery->where('stock_quantity', '>', 0)->whereColumn('stock_quantity', '<=', 'low_stock_threshold'),
+                default => fn ($stockQuery) => $stockQuery->where('stock_quantity', '<=', 0),
+            };
+
+            return $builder->where(function ($statusQuery) use ($comparison) {
+                $statusQuery->whereHas('variants', $comparison)
+                    ->orWhere(function ($productQuery) use ($comparison) {
+                        $productQuery->whereDoesntHave('variants');
+                        $comparison($productQuery);
+                    });
+            });
+        };
+        $counts = [
+            'all' => (clone $countQuery)->count(),
+            'in-stock' => $applyStockStatus(clone $countQuery, 'in-stock')->count(),
+            'low-stock' => $applyStockStatus(clone $countQuery, 'low-stock')->count(),
+            'out-of-stock' => $applyStockStatus(clone $countQuery, 'out-of-stock')->count(),
+        ];
+
+        match ($request->input('stock_status')) {
+            'in-stock' => $applyStockStatus($query, 'in-stock'),
+            'low-stock' => $applyStockStatus($query, 'low-stock'),
+            'out-of-stock' => $applyStockStatus($query, 'out-of-stock'),
+            default => null,
+        };
+
+        if ($request->hasAny(['page', 'per_page', 'search', 'stock_status'])) {
+            $perPage = min(100, max(1, (int) $request->input('per_page', 20)));
+            $products = $query->latest('id')->paginate($perPage);
+            $products->setCollection($products->getCollection()->map(fn (Product $product) => $this->productPayload($product)));
+
+            return response()->json([
+                'data' => $products->items(),
+                'meta' => [
+                    'current_page' => $products->currentPage(),
+                    'per_page' => $products->perPage(),
+                    'last_page' => $products->lastPage(),
+                    'total' => $products->total(),
+                    'from' => $products->firstItem(),
+                    'to' => $products->lastItem(),
+                    'counts' => $counts,
+                ],
+            ]);
+        }
+
+        $products = $query->latest('id')->limit(100)->get()
+            ->map(fn (Product $product) => $this->productPayload($product))->values();
 
         return response()->json([
             'data' => $products,
@@ -700,36 +816,154 @@ class SellerController extends Controller
         }
 
         $promotions = Promotion::query()
-            ->with(['category'])
+            ->with(['category', 'product:id,seller_id,name,slug,price,sale_price', 'product.variants:id,product_id,active'])
             ->where('seller_id', $seller->id)
             ->latest('id')
             ->get()
-            ->map(function (Promotion $promotion) {
-                return [
-                    'id' => $promotion->id,
-                    'code' => $promotion->code,
-                    'type' => $promotion->type,
-                    'value' => (float) $promotion->value,
-                    'min_order' => $promotion->min_order !== null ? (float) $promotion->min_order : null,
-                    'usage_count' => (int) $promotion->usage_count,
-                    'usage_limit' => $promotion->usage_limit !== null ? (int) $promotion->usage_limit : null,
-                    'start_date' => optional($promotion->starts_at)->toDateString(),
-                    'end_date' => optional($promotion->ends_at)->toDateString(),
-                    'status' => $promotion->status,
-                    'applies_to' => $promotion->applies_to_label ?? ($promotion->category?->name ?? 'All products'),
-                    'category' => $promotion->category ? [
-                        'id' => $promotion->category->id,
-                        'name' => $promotion->category->name,
-                        'slug' => $promotion->category->slug,
-                    ] : null,
-                    'new_customers_only' => (bool) $promotion->new_customers_only,
-                ];
-            })
+            ->map(fn (Promotion $promotion) => $this->promotionPayload($promotion))
             ->values();
 
         return response()->json([
             'data' => $promotions,
+            'server_time' => now()->toISOString(),
         ]);
+    }
+
+    public function storePromotion(Request $request): JsonResponse
+    {
+        $seller = $request->user()->seller;
+        $data = $this->validateTimedPromotion($request, $seller);
+        $promotion = DB::transaction(function () use ($data, $seller): Promotion {
+            $product = Product::query()->where('seller_id', $seller->id)->where('status', 'active')->whereNull('deleted_at')->lockForUpdate()->findOrFail($data['product_id']);
+            $this->ensureNoPromotionOverlap($product, $data['starts_at'], $data['ends_at']);
+
+            return Promotion::create([
+                ...$data,
+                'seller_id' => $seller->id,
+                'kind' => 'deal',
+                'code' => 'DEAL-'.strtoupper(Str::random(12)),
+                'status' => 'active',
+                'applies_to_label' => $product->name,
+            ])->load('product.variants');
+        });
+
+        return response()->json(['message' => 'Timed promotion created.', 'data' => $this->promotionPayload($promotion)], 201);
+    }
+
+    public function updatePromotion(Request $request, Promotion $promotion): JsonResponse
+    {
+        $seller = $request->user()->seller;
+        abort_unless($promotion->seller_id === $seller?->id && $promotion->kind === 'deal', 404);
+
+        if ($promotion->derivedStatus() !== 'scheduled') {
+            return response()->json(['message' => 'Only scheduled promotions can be edited.'], 422);
+        }
+
+        $data = $this->validateTimedPromotion($request, $seller);
+        DB::transaction(function () use ($data, $promotion, $seller): void {
+            $product = Product::query()->where('seller_id', $seller->id)->where('status', 'active')->whereNull('deleted_at')->lockForUpdate()->findOrFail($data['product_id']);
+            $this->ensureNoPromotionOverlap($product, $data['starts_at'], $data['ends_at'], $promotion->id);
+            $promotion->update([...$data, 'applies_to_label' => $product->name]);
+        });
+
+        return response()->json(['message' => 'Timed promotion updated.', 'data' => $this->promotionPayload($promotion->fresh('product.variants'))]);
+    }
+
+    public function cancelPromotion(Request $request, Promotion $promotion): JsonResponse
+    {
+        $seller = $request->user()->seller;
+        abort_unless($promotion->seller_id === $seller?->id && $promotion->kind === 'deal', 404);
+        if (! in_array($promotion->derivedStatus(), ['active', 'scheduled'], true)) {
+            return response()->json(['message' => 'Only active or scheduled promotions can be cancelled.'], 422);
+        }
+        $promotion->update(['status' => 'cancelled', 'cancelled_at' => now()]);
+
+        return response()->json(['message' => 'Promotion cancelled.', 'data' => $this->promotionPayload($promotion->fresh('product.variants'))]);
+    }
+
+    private function validateTimedPromotion(Request $request, Seller $seller): array
+    {
+        // Keep older clients compatible while making the discount contract explicit.
+        if (! $request->filled('type') && $request->filled('deal_price')) {
+            $request->merge(['type' => 'fixed-price', 'value' => $request->input('deal_price')]);
+        }
+
+        $data = $request->validate([
+            'product_id' => ['required', 'integer'],
+            'name' => ['required', 'string', 'max:120'],
+            'type' => ['required', Rule::in(['fixed-price', 'percentage'])],
+            'value' => ['required', 'numeric', 'gt:0'],
+            'deal_price' => ['nullable', 'numeric', 'gt:0'],
+            'starts_at' => ['required', 'date'],
+            'ends_at' => ['required', 'date', 'after:starts_at'],
+        ]);
+
+        $product = Product::query()->where('seller_id', $seller->id)->where('status', 'active')->whereNull('deleted_at')->find($data['product_id']);
+        if (! $product) {
+            abort(422, 'Select an active product that belongs to your store.');
+        }
+
+        $normalPrice = (float) ($product->sale_price ?? $product->price);
+        if ($data['type'] === 'percentage') {
+            if ((float) $data['value'] >= 100) {
+                abort(422, 'The discount percentage must be less than 100.');
+            }
+            $data['deal_price'] = null;
+        } else {
+            if ($product->variants()->where('active', true)->exists()) {
+                abort(422, 'Products with variants must use a percentage deal so each variant keeps its own price basis.');
+            }
+            $data['deal_price'] = (float) ($data['deal_price'] ?? $data['value']);
+            $data['value'] = $data['deal_price'];
+            if ($data['deal_price'] >= $normalPrice) {
+                abort(422, 'The deal price must be lower than the current normal price.');
+            }
+        }
+
+        $data['starts_at'] = Carbon::parse($data['starts_at'])->setTimezone(config('app.timezone'));
+        $data['ends_at'] = Carbon::parse($data['ends_at'])->setTimezone(config('app.timezone'));
+
+        return $data;
+    }
+
+    private function ensureNoPromotionOverlap(Product $product, mixed $startsAt, mixed $endsAt, ?int $exceptId = null): void
+    {
+        $overlap = Promotion::query()->where('product_id', $product->id)->where('kind', 'deal')
+            ->whereNull('cancelled_at')->where('status', '!=', 'cancelled')
+            ->when($exceptId, fn ($query) => $query->whereKeyNot($exceptId))
+            ->where('starts_at', '<', $endsAt)->where('ends_at', '>', $startsAt)->exists();
+
+        abort_if($overlap, 422, 'This product already has a promotion scheduled during the selected period.');
+    }
+
+    private function promotionPayload(Promotion $promotion): array
+    {
+        $product = $promotion->product;
+        $normalPrice = $product ? (float) ($product->sale_price ?? $product->price) : null;
+        $previewPrice = $normalPrice === null ? null : ($promotion->type === 'percentage'
+            ? round($normalPrice * (1 - ((float) $promotion->value / 100)), 2)
+            : (float) $promotion->deal_price);
+
+        return [
+            'id' => $promotion->id, 'code' => $promotion->code, 'kind' => $promotion->kind,
+            'name' => $promotion->name ?? $promotion->code, 'type' => $promotion->type,
+            'value' => (float) $promotion->value, 'deal_price' => $promotion->deal_price !== null ? (float) $promotion->deal_price : null,
+            'regular_price' => $product ? (float) $product->price : null,
+            'sale_price' => $product?->sale_price !== null ? (float) $product->sale_price : null,
+            'promotion_price' => $previewPrice,
+            'variant_pricing' => $product?->relationLoaded('variants') && $product->variants->contains(fn (ProductVariant $variant) => (bool) $variant->active)
+                ? 'percentage-applied-per-variant'
+                : 'product-price',
+            'min_order' => $promotion->min_order !== null ? (float) $promotion->min_order : null,
+            'usage_count' => (int) $promotion->usage_count, 'usage_limit' => $promotion->usage_limit !== null ? (int) $promotion->usage_limit : null,
+            'starts_at' => $promotion->starts_at?->toISOString(), 'ends_at' => $promotion->ends_at?->toISOString(),
+            'start_date' => $promotion->starts_at?->toDateString(), 'end_date' => $promotion->ends_at?->toDateString(),
+            'status' => $promotion->kind === 'deal' ? $promotion->derivedStatus() : $promotion->status,
+            'applies_to' => $promotion->product?->name ?? $promotion->applies_to_label ?? ($promotion->category?->name ?? 'All products'),
+            'product' => $promotion->product ? ['id' => $promotion->product->id, 'name' => $promotion->product->name, 'slug' => $promotion->product->slug] : null,
+            'category' => $promotion->category ? ['id' => $promotion->category->id, 'name' => $promotion->category->name, 'slug' => $promotion->category->slug] : null,
+            'new_customers_only' => (bool) $promotion->new_customers_only,
+        ];
     }
 
     protected function sellerPayload($seller): array
@@ -751,8 +985,14 @@ class SellerController extends Controller
             'verified' => (bool) ($seller?->verified ?? false),
             'address_line1' => $seller?->address_line1,
             'address_line2' => $seller?->address_line2,
+            'region' => $seller?->region,
+            'region_code' => $seller?->region_code,
             'province' => $seller?->province,
+            'province_code' => $seller?->province_code,
             'city' => $seller?->city,
+            'city_code' => $seller?->city_code,
+            'barangay' => $seller?->barangay,
+            'barangay_code' => $seller?->barangay_code,
             'postal_code' => $seller?->postal_code,
             'owner_id_number' => $seller?->owner_id_number,
             'tin' => $seller?->tin,
@@ -771,7 +1011,6 @@ class SellerController extends Controller
             'return_policy' => $seller?->return_policy,
             'shipping_policy' => $seller?->shipping_policy,
             'privacy_policy' => $seller?->privacy_policy,
-            'brand_colors' => $seller?->brand_colors ?? [],
             'categories' => $seller?->relationLoaded('categories')
                 ? $seller->categories->map(fn ($category) => [
                     'id' => $category->id,
@@ -830,6 +1069,12 @@ class SellerController extends Controller
                 'options' => $variant->relationLoaded('options')
                     ? $variant->options->sortBy('sort_order')->pluck('value')->values()->all()
                     : [],
+                'option_values' => $variant->relationLoaded('options')
+                    ? $variant->options->sortBy('sort_order')->map(fn ($option) => [
+                        'name' => $option->option_name ?? $variant->name,
+                        'value' => $option->value,
+                    ])->values()->all()
+                    : [],
                 'price_override' => $variant->price_override !== null ? (float) $variant->price_override : null,
                 'sale_price_override' => $variant->sale_price_override !== null ? (float) $variant->sale_price_override : null,
                 'stock_quantity' => (int) $variant->stock_quantity,
@@ -847,6 +1092,7 @@ class SellerController extends Controller
 
         return [
             'id' => $sellerOrder->id,
+            'order_id' => $sellerOrder->order_id,
             'order_number' => $order?->order_number,
             'status' => $sellerOrder->status,
             'subtotal' => (float) $sellerOrder->subtotal,
@@ -862,8 +1108,6 @@ class SellerController extends Controller
                 'pending', 'new' => 'confirmed',
                 'confirmed' => 'preparing',
                 'preparing' => 'ready',
-                'ready' => 'in-transit',
-                'in-transit' => 'delivered',
                 default => null,
             },
             'placed_at' => optional($order?->placed_at)->toISOString(),
@@ -884,12 +1128,12 @@ class SellerController extends Controller
             ]))) : null,
             'tracking_number' => $sellerOrder->tracking_number,
             'courier' => $sellerOrder->shipment ? [
-                'name' => $sellerOrder->shipment->courier?->name ?? $sellerOrder->shipment->driver_name,
+                'name' => $sellerOrder->shipment->courier?->name ?? 'Maketo Logistics',
                 'tracking' => $sellerOrder->shipment->tracking_number,
                 'driver' => $sellerOrder->shipment->driver_name,
                 'status' => $sellerOrder->shipment->status,
                 'events' => $sellerOrder->shipment->relationLoaded('trackingEvents')
-                    ? $sellerOrder->shipment->trackingEvents->sortByDesc('occurred_at')->map(fn ($event) => [
+                    ? $sellerOrder->shipment->trackingEvents->sortByDesc('id')->map(fn ($event) => [
                         'status' => $event->status,
                         'note' => $event->note,
                         'occurred_at' => optional($event->occurred_at)->toISOString(),
@@ -901,13 +1145,14 @@ class SellerController extends Controller
                     ->where('seller_order_id', $sellerOrder->id)
                     ->map(fn ($item) => [
                         'id' => $item->id,
+                        'product_id' => $item->product_id,
                         'product_name' => $item->product_name,
                         'variant_name' => $item->variant_name,
                         'sku' => $item->sku,
                         'quantity' => (int) $item->quantity,
                         'unit_price' => (float) $item->unit_price,
                         'subtotal' => (float) $item->subtotal,
-                        'image' => $item->product_image_storage_path ?? $item->product?->images?->first()?->file_path,
+                        'image' => $this->orderItemImage($item),
                     ])->values()->all()
                 : [],
         ];
@@ -925,7 +1170,7 @@ class SellerController extends Controller
                     'revenue' => (float) $items->sum('subtotal'),
                     'orders' => (int) $items->sum('quantity'),
                     'returns' => 0,
-                    'image' => $items->first()?->product?->images?->first()?->file_path ?? 'https://images.unsplash.com/photo-1512820790803-83ca734da794',
+                    'image' => $this->imageUrl($items->first()?->product?->images?->first()),
                 ];
             })
             ->sortByDesc('revenue')
@@ -1041,13 +1286,15 @@ class SellerController extends Controller
 
     private function validateProductRequest(Request $request, ?Product $product): array
     {
+        $variants = $this->normalizeArrayInput($request->input('variants', []));
+        $hasVariants = $variants !== [];
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:5000'],
             'category_id' => ['required', Rule::exists('categories', 'id')],
             'tags' => ['nullable'],
             'sku' => [
-                'required',
+                $hasVariants ? 'nullable' : 'required',
                 'string',
                 'max:255',
                 Rule::unique('products', 'sku')->ignore($product?->id),
@@ -1069,18 +1316,84 @@ class SellerController extends Controller
             'variants' => ['nullable'],
             'keep_image_ids' => ['nullable'],
             'images' => ['nullable', 'array'],
-            'images.*' => ['file', 'image', 'max:5120'],
+            'images.*' => ['file', 'image', 'max:15360'],
         ]);
 
-        $variants = $this->normalizeArrayInput($request->input('variants', []));
+        if ($hasVariants) {
+            Validator::make(['variants' => $variants], [
+                'variants' => ['required', 'array', 'min:1', 'max:200'],
+                'variants.*.server_id' => ['nullable', 'integer'],
+                'variants.*.name' => ['required', 'string', 'max:255'],
+                'variants.*.sku' => ['required', 'string', 'max:255', 'distinct'],
+                'variants.*.barcode' => ['nullable', 'string', 'max:255'],
+                'variants.*.price_override' => ['required', 'numeric', 'min:0'],
+                'variants.*.sale_price_override' => ['nullable', 'numeric', 'min:0'],
+                'variants.*.stock_quantity' => ['required', 'integer', 'min:0'],
+                'variants.*.low_stock_threshold' => ['nullable', 'integer', 'min:0'],
+                'variants.*.active' => ['sometimes', 'boolean'],
+                'variants.*.option_values' => ['required', 'array', 'min:1'],
+                'variants.*.option_values.*.name' => ['required', 'string', 'max:100'],
+                'variants.*.option_values.*.value' => ['required', 'string', 'max:100'],
+            ])->validate();
+
+            $variantErrors = [];
+            $payloadSkus = [];
+            $combinationKeys = [];
+            foreach ($variants as $index => $variantData) {
+                $serverId = isset($variantData['server_id']) ? (int) $variantData['server_id'] : null;
+                $normalizedSku = Str::lower(trim((string) $variantData['sku']));
+                if (isset($payloadSkus[$normalizedSku])) {
+                    $variantErrors["variants.{$index}.sku"] = ["{$variantData['name']}: SKU already used by another variant."];
+                }
+                $payloadSkus[$normalizedSku] = true;
+
+                $optionNames = [];
+                $combinationParts = [];
+                foreach ($variantData['option_values'] as $optionIndex => $option) {
+                    $normalizedName = Str::lower(trim((string) $option['name']));
+                    if (isset($optionNames[$normalizedName])) {
+                        $variantErrors["variants.{$index}.option_values.{$optionIndex}.name"] = ['Each option group may appear only once in a combination.'];
+                    }
+                    $optionNames[$normalizedName] = true;
+                    $combinationParts[] = $normalizedName.'='.Str::lower(trim((string) $option['value']));
+                }
+                sort($combinationParts);
+                $combinationKey = implode('|', $combinationParts);
+                if (isset($combinationKeys[$combinationKey])) {
+                    $variantErrors["variants.{$index}.option_values"] = ["{$variantData['name']}: This option combination already exists."];
+                }
+                $combinationKeys[$combinationKey] = true;
+
+                if ($serverId && (! $product || ! $product->variants()->whereKey($serverId)->exists())) {
+                    $variantErrors["variants.{$index}.server_id"] = ['This variant does not belong to the product being edited.'];
+                }
+
+                $duplicateSku = ProductVariant::query()
+                    ->where('sku', trim((string) $variantData['sku']))
+                    ->when($serverId, fn ($query) => $query->whereKeyNot($serverId))
+                    ->first();
+                if ($duplicateSku && ($serverId || $duplicateSku->product_id !== $product?->id)) {
+                    $variantErrors["variants.{$index}.sku"] = ["{$variantData['name']}: SKU already used by another variant."];
+                }
+            }
+
+            if ($variantErrors !== []) {
+                throw ValidationException::withMessages($variantErrors);
+            }
+        }
+
         $tags = $this->normalizeTags($request->input('tags', []));
+        $productSku = trim((string) ($validated['sku'] ?? ''));
+        if ($productSku === '') {
+            $productSku = $product?->sku ?? $this->generateUniqueProductSku($validated['name']);
+        }
 
         return [
             'name' => trim($validated['name']),
             'description' => $this->nullableTrim($validated['description'] ?? null),
             'category_id' => (int) $validated['category_id'],
             'tags' => $tags,
-            'sku' => trim($validated['sku']),
+            'sku' => $productSku,
             'barcode' => $this->nullableTrim($validated['barcode'] ?? null),
             'price' => (float) $validated['price'],
             'sale_price' => array_key_exists('sale_price', $validated) && $validated['sale_price'] !== null ? (float) $validated['sale_price'] : null,
@@ -1167,7 +1480,7 @@ class SellerController extends Controller
                 ->exists()
         ) {
             $attempt++;
-            $slug = $base . '-' . Str::lower(Str::random(6 + $attempt));
+            $slug = $base.'-'.Str::lower(Str::random(6 + $attempt));
         }
 
         return $slug;
@@ -1242,7 +1555,9 @@ class SellerController extends Controller
             }
 
             $variantId = isset($variantData['server_id']) && is_numeric($variantData['server_id']) ? (int) $variantData['server_id'] : null;
-            $variant = $variantId ? $product->variants()->whereKey($variantId)->first() : null;
+            $variant = $variantId
+                ? $product->variants()->whereKey($variantId)->first()
+                : $product->variants()->where('sku', trim((string) ($variantData['sku'] ?? '')))->first();
 
             if (! $variant) {
                 $variant = $product->variants()->create([
@@ -1272,14 +1587,15 @@ class SellerController extends Controller
 
             $variant->options()->delete();
 
-            $options = $this->normalizeArrayInput($variantData['options'] ?? []);
-            foreach (array_values($options) as $sortOrder => $option) {
-                if (! is_string($option) || trim($option) === '') {
+            $optionValues = $this->normalizeArrayInput($variantData['option_values'] ?? []);
+            foreach (array_values($optionValues) as $sortOrder => $option) {
+                if (! is_array($option) || trim((string) ($option['name'] ?? '')) === '' || trim((string) ($option['value'] ?? '')) === '') {
                     continue;
                 }
 
                 $variant->options()->create([
-                    'value' => trim($option),
+                    'option_name' => trim((string) $option['name']),
+                    'value' => trim((string) $option['value']),
                     'sort_order' => $sortOrder,
                 ]);
             }
@@ -1287,19 +1603,38 @@ class SellerController extends Controller
 
         if ($shouldSync) {
             $product->variants()->whereNotIn('id', $existingIds)->get()->each(function (ProductVariant $variant) {
-                $variant->options()->delete();
-                $variant->delete();
+                $isReferenced = $variant->cartItems()->exists()
+                    || OrderItem::query()->where('product_variant_id', $variant->id)->exists();
+
+                if ($isReferenced) {
+                    $variant->forceFill(['active' => false])->save();
+                } else {
+                    $variant->options()->delete();
+                    $variant->delete();
+                }
             });
         }
     }
 
     private function recalculateStockFromVariants(Product $product): void
     {
-        if ($product->variants()->exists()) {
+        if ($product->variants()->where('active', true)->exists()) {
             $product->forceFill([
-                'stock_quantity' => (int) $product->variants()->sum('stock_quantity'),
+                'stock_quantity' => (int) $product->variants()->where('active', true)->sum('stock_quantity'),
             ])->save();
         }
+    }
+
+    private function generateUniqueProductSku(string $name): string
+    {
+        $base = strtoupper(Str::slug($name, '-'));
+        $base = $base !== '' ? substr($base, 0, 220) : 'PRODUCT';
+
+        do {
+            $sku = $base.'-'.strtoupper(Str::random(8));
+        } while (Product::query()->where('sku', $sku)->exists());
+
+        return $sku;
     }
 
     private function deleteStoredImage(ProductImage $image, MediaStorageService $storage): void
@@ -1317,24 +1652,27 @@ class SellerController extends Controller
 
     private function imageUrl(?ProductImage $image): string
     {
-        if (! $image) {
-            return 'https://images.unsplash.com/photo-1512820790803-83ca734da794';
+        return $this->optionalImageUrl($image)
+            ?? 'https://images.unsplash.com/photo-1512820790803-83ca734da794';
+    }
+
+    private function optionalImageUrl(?ProductImage $image): ?string
+    {
+        return $image
+            ? $this->media->publicUrl($image->file_path, $image->storage_disk ?: 'r2')
+            : null;
+    }
+
+    private function orderItemImage(OrderItem $item): ?string
+    {
+        if ($item->product_image_storage_path) {
+            return $this->media->publicUrl(
+                $item->product_image_storage_path,
+                $item->product_image_storage_disk ?: 'r2'
+            );
         }
 
-        if (is_string($image->file_path) && Str::startsWith($image->file_path, ['http://', 'https://'])) {
-            return $image->file_path;
-        }
-
-        try {
-            $disk = $image->storage_disk ?: 'r2';
-            $diskInstance = Storage::disk($disk);
-
-            return method_exists($diskInstance, 'url')
-                ? (string) $diskInstance->url($image->file_path)
-                : $image->file_path;
-        } catch (\Throwable) {
-            return $image->file_path;
-        }
+        return $this->optionalImageUrl($item->product?->images?->first());
     }
 
     private function sanitizeAccountNumber(?string $value): ?string
@@ -1364,49 +1702,12 @@ class SellerController extends Controller
             return null;
         }
 
-        if (Str::startsWith($path, ['http://', 'https://'])) {
-            return $path;
-        }
-
-        try {
-            $disk = Storage::disk('r2');
-            $url = method_exists($disk, 'url') ? (string) $disk->url($path) : $path;
-
-            if ($url !== '' && ! Str::startsWith($url, ['/'])) {
-                return $url;
-            }
-
-            return method_exists($disk, 'temporaryUrl')
-                ? (string) $disk->temporaryUrl($path, now()->addHours(12))
-                : $path;
-        } catch (\Throwable) {
-            return $path;
-        }
+        return $this->media->publicUrl($path);
     }
 
     private function storeSellerMedia(MediaStorageService $storage, UploadedFile $file, Seller $seller, string $folder): array
     {
         return $storage->storePublicFile($file, "seller-stores/{$seller->id}/{$folder}");
-    }
-
-    private function normalizeBrandColors(array $colors): array
-    {
-        return array_values(array_filter(array_map(static function ($color): ?string {
-            if (! is_string($color)) {
-                return null;
-            }
-
-            $trimmed = trim($color);
-            if ($trimmed === '') {
-                return null;
-            }
-
-            if (! preg_match('/^#?[0-9a-fA-F]{6}$/', $trimmed)) {
-                return null;
-            }
-
-            return str_starts_with($trimmed, '#') ? strtoupper($trimmed) : '#' . strtoupper($trimmed);
-        }, $colors)));
     }
 
     private function emptyDashboardSummary(): array

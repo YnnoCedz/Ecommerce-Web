@@ -26,7 +26,7 @@ export type AuthUser = {
 
 export type AuthSessionResponse = {
   message: string;
-  user: AuthUser | null;
+  user?: AuthUser | null;
   token?: string;
   token_type?: "Bearer";
   redirect_to?: string;

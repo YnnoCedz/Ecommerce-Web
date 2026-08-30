@@ -2,6 +2,12 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "ecommerce-web",
   "compatibility_date": "2026-08-23",
+  "routes": [
+    {
+      "pattern": "marketohub.online",
+      "custom_domain": true
+    }
+  ],
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application"

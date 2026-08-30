@@ -13,6 +13,7 @@ const AdminLayout = lazy(() => import("./layouts/AdminLayout"));
 const HomePage = lazy(() => import("./pages/pub/HomePage"));
 const CategoryPage = lazy(() => import("./pages/pub/CategoryPage"));
 const SearchPage = lazy(() => import("./pages/pub/SearchPage"));
+const DealsPage = lazy(() => import("./pages/pub/DealsPage"));
 const ProductPage = lazy(() => import("./pages/pub/ProductPage"));
 const SellerStorePage = lazy(() => import("./pages/pub/SellerStorePage"));
 
@@ -63,6 +64,7 @@ const ReportsModerationPage = lazy(() => import("./pages/admin/ReportsModeration
 const AdminDisputesPage = lazy(() => import("./pages/admin/AdminDisputesPage"));
 const AdminAnalyticsPage = lazy(() => import("./pages/admin/AdminAnalyticsPage"));
 const AdminSettingsPage = lazy(() => import("./pages/admin/AdminSettingsPage"));
+const AdminProfilePage = lazy(() => import("./pages/admin/AdminProfilePage"));
 
 const ForbiddenPage = lazy(() => import("./pages/errors/ForbiddenPage"));
 
@@ -371,6 +373,7 @@ export const router = createBrowserRouter([
           { path: "notifications", Component: NotificationCenter },
           { path: "analytics", Component: AdminAnalyticsPage },
           { path: "settings", Component: AdminSettingsPage },
+          { path: "profile", Component: AdminProfilePage },
         ],
       },
     ],
@@ -382,6 +385,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, Component: HomeRoute },
       { path: "search", Component: SearchRoute },
+      { path: "deals", Component: DealsPage },
       { path: "c/:slug", Component: CategoryRoute },
       { path: "p/:id", Component: ProductRoute },
       { path: "s/:id", Component: SellerStoreRoute },

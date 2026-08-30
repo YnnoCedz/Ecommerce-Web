@@ -21,6 +21,7 @@ export default function VerifyEmailPage({ onNavigate }: { onNavigate: NavFn }) {
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const resendInFlight = useRef(false);
+  const verifyInFlight = useRef(false);
   const [message, setMessage] = useState<string | null>(() =>
     registrationState?.verificationEmailSent === false ? null : registrationState?.registrationMessage ?? null
   );
@@ -57,7 +58,7 @@ export default function VerifyEmailPage({ onNavigate }: { onNavigate: NavFn }) {
   const verify = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
 
-    if (loading) {
+    if (verifyInFlight.current) {
       return;
     }
 
@@ -71,6 +72,7 @@ export default function VerifyEmailPage({ onNavigate }: { onNavigate: NavFn }) {
       return;
     }
 
+    verifyInFlight.current = true;
     setLoading(true);
     setError(null);
     setMessage(null);
@@ -90,6 +92,7 @@ export default function VerifyEmailPage({ onNavigate }: { onNavigate: NavFn }) {
         setError(err instanceof ApiError ? err.message : "Unable to verify your email right now.");
       }
     } finally {
+      verifyInFlight.current = false;
       setLoading(false);
     }
   };

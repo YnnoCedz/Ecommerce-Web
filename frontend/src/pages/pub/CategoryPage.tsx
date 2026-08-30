@@ -38,7 +38,7 @@ function FilterSection({ title, open, onToggle, children }: { title: string; ope
 
 function ProductCard({ product, onNavigate }: { product: CatalogProduct; onNavigate: NavFn }) {
   const { wished, busy, toggle } = usePersistedWishlist(product.id, product.name, () => onNavigate("login"));
-  const discount = product.original_price ? Math.round(((product.original_price - product.price) / product.original_price) * 100) : null;
+  const discount = product.discount_percentage || null;
   return (
     <div className="group bg-white border border-[var(--color-border)] rounded-sm overflow-hidden hover:shadow-[0_4px_20px_rgba(28,27,24,0.10)] hover:border-[var(--color-border-strong)] transition-all cursor-pointer" onClick={() => onNavigate("product", { slug: product.slug })}>
       <div className="relative overflow-hidden bg-[var(--color-surface)] aspect-square">

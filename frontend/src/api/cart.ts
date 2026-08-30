@@ -14,6 +14,10 @@ export type CartItem = {
   image: string | null;
   quantity: number;
   unit_price: number;
+  original_unit_price: number | null;
+  discount_percentage: number;
+  pricing_source: "regular" | "sale" | "promotion";
+  promotion: { id: number; name: string | null; ends_at: string | null } | null;
   line_total: number;
   stock: number;
   saved_for_later: boolean;

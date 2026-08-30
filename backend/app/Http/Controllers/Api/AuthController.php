@@ -4,8 +4,11 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuthChallenge;
+use App\Models\PendingRegistration;
+use App\Models\PendingRegistrationChallenge;
 use App\Models\User;
 use App\Notifications\AuthChallengeNotification;
+use App\Notifications\EmailVerificationCodeNotification;
 use App\Services\MediaStorageService;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\JsonResponse;
@@ -51,16 +54,26 @@ class AuthController extends Controller
             'first_name' => ['required', 'string', 'max:255'],
             'last_name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
-            'phone' => ['required', 'string', 'max:30', 'unique:users,phone', 'unique:users,mobile'],
+            'phone' => ['required', 'string', 'max:30', 'unique:users,phone', 'unique:users,mobile', 'unique:pending_registrations,phone'],
             'password' => $this->strongPasswordRules(),
         ]);
 
         $email = $this->normalizeEmail($data['email']);
         $phone = $data['phone'];
 
+        $this->prunePendingRegistrations();
+
         try {
-            $user = DB::transaction(function () use ($data, $email, $phone) {
-                return User::create([
+            $pending = DB::transaction(function () use ($data, $email, $phone) {
+                $existing = PendingRegistration::where('email', $email)->first();
+
+                if ($existing && $existing->expires_at->isFuture()) {
+                    return $existing;
+                }
+
+                $existing?->delete();
+
+                return PendingRegistration::create([
                     'first_name' => $data['first_name'],
                     'last_name' => $data['last_name'],
                     'name' => trim($data['first_name'].' '.$data['last_name']),
@@ -68,12 +81,7 @@ class AuthController extends Controller
                     'mobile' => $phone,
                     'phone' => $phone,
                     'password' => Hash::make($data['password']),
-                    'role' => 'buyer',
-                    'status' => 'active',
-                    'location_label' => null,
-                    'email_verified_at' => null,
-                    'last_active_at' => now(),
-                    'two_factor_enabled' => false,
+                    'expires_at' => now()->addHour(),
                 ]);
             });
         } catch (\Throwable $e) {
@@ -88,27 +96,26 @@ class AuthController extends Controller
         $verificationEmailSent = true;
 
         try {
-            $user->sendEmailVerificationNotification();
+            $this->sendPendingVerificationNotification($pending);
         } catch (\Throwable $e) {
             $verificationEmailSent = false;
 
             Log::warning('Registration completed but verification email delivery failed.', [
-                'user_id' => $user->id,
+                'pending_registration_id' => $pending->id,
                 'exception_class' => $e::class,
             ]);
         }
 
         $message = $verificationEmailSent
             ? 'Registration successful. Please verify your email before signing in.'
-            : 'Your account was created, but the verification email could not be sent. Please use Resend code.';
+            : 'Your registration is saved temporarily, but the verification email could not be sent. Please use Resend code.';
 
         return response()->json([
             'message' => $message,
-            'user' => $this->userPayload($user),
             'requires_email_verification' => true,
-            'verification_email' => $user->email,
+            'verification_email' => $pending->email,
             'verification_email_sent' => $verificationEmailSent,
-            'redirect_to' => '/auth/verify-email?email='.urlencode($user->email)
+            'redirect_to' => '/auth/verify-email?email='.urlencode($pending->email)
                 .($verificationEmailSent ? '' : '&delivery=pending'),
         ], 201);
     }
@@ -130,7 +137,8 @@ class AuthController extends Controller
         ]);
 
         $operationStartedAt = hrtime(true);
-        $user = User::where('email', $this->normalizeEmail($data['email']))->first();
+        $email = $this->normalizeEmail($data['email']);
+        $user = User::where('email', $email)->first();
         $this->recordTiming($timings, 'email_lookup_ms', $operationStartedAt);
 
         $operationStartedAt = hrtime(true);
@@ -370,7 +378,48 @@ class AuthController extends Controller
             'email' => ['required', 'string', 'email'],
         ]);
 
-        $user = User::where('email', $this->normalizeEmail($data['email']))->first();
+        $email = $this->normalizeEmail($data['email']);
+        $pending = PendingRegistration::where('email', $email)->first();
+
+        if ($pending) {
+            if ($pending->expires_at->isPast()) {
+                $pending->delete();
+
+                return response()->json([
+                    'message' => 'This registration has expired. Please register again.',
+                    'code' => 'registration_expired',
+                ], 410);
+            }
+
+            $challenge = $this->resolvePendingRegistrationChallenge($pending);
+            if ($challenge?->resend_available_at?->isFuture()) {
+                return response()->json([
+                    'message' => 'Please wait before requesting another verification code.',
+                    'code' => 'verification_resend_cooldown',
+                    'retry_after' => now()->diffInSeconds($challenge->resend_available_at, false),
+                ], 429);
+            }
+
+            try {
+                $this->sendPendingVerificationNotification($pending);
+            } catch (\Throwable $e) {
+                report($e);
+
+                return response()->json([
+                    'message' => 'Unable to send the verification code right now. Please try again.',
+                    'code' => 'verification_delivery_failed',
+                ], 503);
+            }
+
+            return response()->json([
+                'message' => 'A new verification code has been sent.',
+                'retry_after' => User::EMAIL_VERIFICATION_RESEND_SECONDS,
+                'expires_in' => User::EMAIL_VERIFICATION_EXPIRES_MINUTES * 60,
+            ]);
+        }
+
+        $this->prunePendingRegistrations();
+        $user = User::where('email', $email)->first();
 
         if ($user && ! $user->hasVerifiedEmail()) {
             $challenge = $this->resolveEmailVerificationChallenge($user);
@@ -505,6 +554,23 @@ class AuthController extends Controller
         ]);
 
         $email = $this->normalizeEmail($data['email']);
+        $pending = PendingRegistration::where('email', $email)->first();
+
+        if ($pending) {
+            if ($pending->expires_at->isPast()) {
+                $pending->delete();
+
+                return response()->json([
+                    'message' => 'This registration has expired. Please register again.',
+                    'code' => 'registration_expired',
+                ], 410);
+            }
+
+            return $this->verifyPendingRegistration($pending, $data['code']);
+        }
+
+        $this->prunePendingRegistrations();
+
         $user = User::where('email', $email)->first();
 
         if (! $user) {
@@ -637,9 +703,7 @@ class AuthController extends Controller
     {
         return match ($user->role) {
             'admin' => '/admin',
-            'seller' => $user->hasApprovedSellerProfile()
-                ? '/seller-center'
-                : '/seller-center/onboarding/status',
+            'seller' => '/',
             default => '/',
         };
     }
@@ -763,6 +827,111 @@ class AuthController extends Controller
             ->whereNull('consumed_at')
             ->orderByDesc('id')
             ->first();
+    }
+
+    protected function resolvePendingRegistrationChallenge(PendingRegistration $pending): ?PendingRegistrationChallenge
+    {
+        return PendingRegistrationChallenge::query()
+            ->where('pending_registration_id', $pending->id)
+            ->whereNull('consumed_at')
+            ->latest('id')
+            ->first();
+    }
+
+    protected function verifyPendingRegistration(PendingRegistration $pending, string $code): JsonResponse
+    {
+        $challenge = $this->resolvePendingRegistrationChallenge($pending);
+
+        if (! $challenge) {
+            return response()->json(['message' => 'The verification code is invalid or has expired.', 'code' => 'verification_challenge_not_found'], 422);
+        }
+
+        if ($challenge->expires_at->isPast()) {
+            return response()->json(['message' => 'This verification code has expired. Please request a new code.', 'code' => 'verification_code_expired'], 410);
+        }
+
+        if ($challenge->attempts >= $challenge->max_attempts) {
+            $challenge->forceFill(['consumed_at' => now()])->save();
+
+            return response()->json(['message' => 'Too many incorrect attempts. Please request a new code.', 'code' => 'verification_code_locked'], 429);
+        }
+
+        if (! Hash::check($code, $challenge->code_hash)) {
+            $challenge->increment('attempts');
+            $challenge->refresh();
+
+            if ($challenge->attempts >= $challenge->max_attempts) {
+                $challenge->forceFill(['consumed_at' => now()])->save();
+
+                return response()->json(['message' => 'Too many incorrect attempts. Please request a new code.', 'code' => 'verification_code_locked'], 429);
+            }
+
+            return response()->json([
+                'message' => 'The verification code is invalid.',
+                'code' => 'verification_code_invalid',
+                'remaining_attempts' => max(0, $challenge->max_attempts - $challenge->attempts),
+            ], 422);
+        }
+
+        $user = DB::transaction(function () use ($pending, $challenge) {
+            $user = User::create([
+                'first_name' => $pending->first_name,
+                'last_name' => $pending->last_name,
+                'name' => $pending->name,
+                'email' => $pending->email,
+                'mobile' => $pending->mobile,
+                'phone' => $pending->phone,
+                'password' => $pending->password,
+                'role' => 'buyer',
+                'status' => 'active',
+                'email_verified_at' => now(),
+                'last_active_at' => now(),
+                'two_factor_enabled' => false,
+            ]);
+
+            $challenge->forceFill(['consumed_at' => now()])->save();
+            $pending->delete();
+
+            return $user;
+        });
+
+        return response()->json([
+            'message' => 'Email verified successfully.',
+            ...$this->accessTokenPayload($user),
+            'user' => $this->userPayload($user),
+            'redirect_to' => '/',
+        ]);
+    }
+
+    protected function sendPendingVerificationNotification(PendingRegistration $pending): void
+    {
+        PendingRegistrationChallenge::query()
+            ->where('pending_registration_id', $pending->id)
+            ->whereNull('consumed_at')
+            ->update(['consumed_at' => now()]);
+
+        $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $challenge = $pending->challenges()->create([
+            'code_hash' => Hash::make($code),
+            'attempts' => 0,
+            'max_attempts' => User::EMAIL_VERIFICATION_MAX_ATTEMPTS,
+            'expires_at' => now()->addMinutes(User::EMAIL_VERIFICATION_EXPIRES_MINUTES),
+            'resend_available_at' => now()->addSeconds(User::EMAIL_VERIFICATION_RESEND_SECONDS),
+            'sent_to' => $pending->email,
+            'metadata' => ['issued_at' => now()->toISOString()],
+        ]);
+
+        try {
+            Notification::send($pending, new EmailVerificationCodeNotification($challenge, $code));
+        } catch (\Throwable $e) {
+            $challenge->forceFill(['consumed_at' => now(), 'resend_available_at' => now()])->save();
+            throw $e;
+        }
+    }
+
+    protected function prunePendingRegistrations(): void
+    {
+        PendingRegistration::query()->where('expires_at', '<=', now())->delete();
     }
 
     protected function sendTwoFactorChallenge(User $user, AuthChallenge $challenge, string $code): void

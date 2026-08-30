@@ -33,6 +33,7 @@ export default function TwoFactorPage() {
   const [success, setSuccess] = useState(false);
   const [now, setNow] = useState(Date.now());
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const verifyInFlight = useRef(false);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -90,6 +91,7 @@ export default function TwoFactorPage() {
   };
 
   const verify = async () => {
+    if (verifyInFlight.current) return;
     if (!pendingTwoFactor) {
       navigate("/auth/login", { replace: true });
       return;
@@ -105,6 +107,7 @@ export default function TwoFactorPage() {
       return;
     }
 
+    verifyInFlight.current = true;
     setLoading(true);
     setError(null);
 
@@ -123,6 +126,7 @@ export default function TwoFactorPage() {
         setError("Unable to verify your code right now. Please try again.");
       }
     } finally {
+      verifyInFlight.current = false;
       setLoading(false);
     }
   };
@@ -198,6 +202,7 @@ export default function TwoFactorPage() {
       {error && <AuthAlert type="error" message={error} />}
       {isExpired && <AuthAlert type="warning" message="This code has expired. Please request a new one." />}
 
+      <form onSubmit={event => { event.preventDefault(); void verify(); }} className="space-y-5">
       <div>
         <label className="block text-xs font-[600] text-[var(--color-ink)] mb-3">Verification code</label>
         <div className="flex gap-2" onPaste={handlePaste}>
@@ -227,7 +232,7 @@ export default function TwoFactorPage() {
       </div>
 
       <button
-        onClick={verify}
+        type="submit"
         disabled={loading || digits.some((digit) => !digit) || isExpired}
         className="w-full py-3 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center justify-center gap-2"
       >
@@ -241,6 +246,7 @@ export default function TwoFactorPage() {
           </>
         ) : "Verify code"}
       </button>
+      </form>
 
       <div className="space-y-2 text-center">
         <p className="text-sm text-[var(--color-ink-muted)]">

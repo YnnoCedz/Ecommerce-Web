@@ -6,11 +6,13 @@ RUN apt-get update && apt-get install -y \
     libzip-dev \
     libicu-dev \
     libonig-dev \
+    libpng-dev \
     default-mysql-client \
     && docker-php-ext-install \
     pdo_mysql \
     mbstring \
     intl \
+    gd \
     zip \
     bcmath \
     opcache \
@@ -46,12 +48,14 @@ RUN set -eux; \
         storage/framework/cache \
         storage/framework/sessions \
         storage/framework/views \
+        storage/app/public \
         storage/logs; \
     chown -R "${APACHE_RUN_USER}:${APACHE_RUN_GROUP}" storage bootstrap/cache; \
     chmod -R ug+rwX,o-rwx storage bootstrap/cache
 
 RUN set -eux; \
     rm -f bootstrap/cache/*.php; \
+    php artisan storage:link; \
     composer dump-autoload --optimize --no-dev; \
     . /etc/apache2/envvars; \
     chown -R "${APACHE_RUN_USER}:${APACHE_RUN_GROUP}" storage bootstrap/cache; \

@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
-import { Bell, Eye, EyeOff, LockKeyhole, Banknote, UserRound, Store } from "lucide-react";
+import { Bell, Eye, EyeOff, LockKeyhole, Banknote, UserRound } from "lucide-react";
 import { useAuth } from "../../auth/AuthContext";
 import { fetchSellerProfile, updateSellerProfile, type SellerProfile } from "../../api/seller";
 import { updatePasswordRequest } from "../../api/auth";
 import { PasswordStrength } from "../auth/AuthLayout";
+import { useUrlTab } from "../../hooks/useUrlTab";
 
 type SettingsTab = "account" | "payouts" | "notifications" | "security";
+
+const SETTINGS_TABS: readonly SettingsTab[] = ["account", "payouts", "notifications", "security"];
 
 const INPUT =
   "w-full px-3 py-2.5 border border-[var(--color-border)] rounded-sm text-sm text-[var(--color-ink)] placeholder:text-[var(--color-ink-disabled)] focus:outline-none focus:border-[var(--color-navy)] bg-white transition-colors font-[var(--font-body)]";
@@ -31,7 +34,7 @@ function Toggle({ checked }: { checked: boolean }) {
   );
 }
 
-function AccountTab({ profile }: { profile: SellerProfile | null }) {
+function AccountTab() {
   const { user } = useAuth();
   const displayName = user?.display_name ?? user?.name ?? "";
   const nameParts = displayName.trim().split(/\s+/).filter(Boolean);
@@ -224,31 +227,6 @@ function AccountTab({ profile }: { profile: SellerProfile | null }) {
           >
             {savingPassword ? "Updating..." : "Update password"}
           </button>
-        </div>
-      </SectionCard>
-
-      <SectionCard title="Store profile" subtitle="Pulled from the active seller profile. Missing values stay blank.">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className={LABEL}>Business name</label>
-            <input type="text" value={profile?.business_name ?? ""} readOnly className={INPUT} />
-          </div>
-          <div>
-            <label className={LABEL}>Seller slug</label>
-            <input type="text" value={profile?.slug ?? ""} readOnly className={INPUT} />
-          </div>
-          <div>
-            <label className={LABEL}>Trade name</label>
-            <input type="text" value={profile?.trade_name ?? ""} readOnly className={INPUT} />
-          </div>
-          <div>
-            <label className={LABEL}>Status</label>
-            <input type="text" value={profile?.status ?? ""} readOnly className={INPUT} />
-          </div>
-          <div className="md:col-span-2">
-            <label className={LABEL}>Description</label>
-            <textarea value={profile?.description ?? ""} readOnly className={`${INPUT} min-h-28 resize-none`} />
-          </div>
         </div>
       </SectionCard>
 
@@ -725,7 +703,7 @@ function SecurityTab({ profile }: { profile: SellerProfile | null }) {
 }
 
 export default function SellerSettingsPage() {
-  const [tab, setTab] = useState<SettingsTab>("account");
+  const { activeTab: tab, setActiveTab: setTab } = useUrlTab(SETTINGS_TABS, "account");
   const [profile, setProfile] = useState<SellerProfile | null>(null);
 
   useEffect(() => {
@@ -781,7 +759,7 @@ export default function SellerSettingsPage() {
         })}
       </div>
 
-      {tab === "account" && <AccountTab profile={profile} />}
+      {tab === "account" && <AccountTab />}
       {tab === "payouts" && <PayoutsTab profile={profile} />}
       {tab === "notifications" && <NotificationsTab />}
       {tab === "security" && <SecurityTab profile={profile} />}

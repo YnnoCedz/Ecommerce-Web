@@ -1,332 +1,68 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { ApiError } from "../../api/client";
 import { fetchAccountAddresses, removeAccountAddress, storeAccountAddress, updateAccountAddress, type BuyerAddress } from "../../api/buyer";
+import PhilippineAddressSelector, { EMPTY_PHILIPPINE_ADDRESS, type PhilippineAddressValue } from "../../components/PhilippineAddressSelector";
+import PhilippinePhoneField from "../../components/PhilippinePhoneField";
+import { useAuth } from "../../auth/AuthContext";
 
-type LocationOption = { name: string; postal: string };
+type Draft = PhilippineAddressValue & { label: string; custom_label: string; recipient_name: string; phone: string; line1: string; line2: string; is_default: boolean };
+const blank: Draft = { label: "Home", custom_label: "", recipient_name: "", phone: "", line1: "", line2: "", is_default: false, ...EMPTY_PHILIPPINE_ADDRESS };
 
-const ADDRESS_LOCATIONS: Record<string, LocationOption[]> = {
-  "Metro Manila": [
-    { name: "Quezon City", postal: "1100" },
-    { name: "Manila", postal: "1000" },
-    { name: "Makati", postal: "1200" },
-    { name: "Pasig", postal: "1600" },
-    { name: "Taguig", postal: "1630" },
-  ],
-  Cebu: [
-    { name: "Cebu City", postal: "6000" },
-    { name: "Mandaue City", postal: "6014" },
-    { name: "Lapu-Lapu City", postal: "6015" },
-  ],
-  Cavite: [
-    { name: "Bacoor", postal: "4102" },
-    { name: "Imus", postal: "4103" },
-    { name: "Dasmariñas", postal: "4114" },
-  ],
-  Laguna: [
-    { name: "Santa Rosa", postal: "4026" },
-    { name: "Calamba", postal: "4027" },
-    { name: "Biñan", postal: "4024" },
-  ],
-};
-
-const ADDRESS_REGIONS = Object.keys(ADDRESS_LOCATIONS);
-const LABELS = ["Home", "Office", "Other"];
-
-type AddressDraft = {
-  label: string;
-  recipient_name: string;
-  phone: string;
-  line1: string;
-  line2: string;
-  city: string;
-  province: string;
-  postal_code: string;
-  is_default: boolean;
-};
-
-const BLANK_ADDRESS: AddressDraft = {
-  label: "Home",
-  recipient_name: "",
-  phone: "",
-  line1: "",
-  line2: "",
-  city: "",
-  province: "",
-  postal_code: "",
-  is_default: false,
-};
-
-function mapAddress(address: BuyerAddress) {
-  return {
-    id: address.id,
-    label: address.label,
-    name: address.recipient_name,
-    phone: address.phone,
-    line1: address.line1,
-    line2: address.line2 ?? "",
-    city: address.city,
-    province: address.province,
-    postal: address.postal_code,
-    isDefault: address.is_default,
-  };
+function Field({ label, value, onChange, placeholder, error }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; error?: string }) {
+  return <div><label className="mb-1.5 block text-xs font-[600] text-[var(--color-ink)]">{label}</label><input value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder} className="w-full rounded-sm border border-[var(--color-border)] bg-white px-3.5 py-2.5 text-sm outline-none focus:border-[var(--color-navy)] focus:ring-2 focus:ring-[var(--color-navy)]/10" />{error && <p className="mt-1 text-xs text-[var(--color-red)]">{error}</p>}</div>;
 }
 
-function Field({ label, value, onChange, placeholder, readOnly = false, disabled = false }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; readOnly?: boolean; disabled?: boolean; }) {
-  return (
-    <div>
-      <label className="block text-xs font-[600] text-[var(--color-ink)] mb-1.5">{label}</label>
-      <input
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        readOnly={readOnly}
-        disabled={disabled}
-        className="w-full px-3.5 py-2.5 text-sm border border-[var(--color-border)] rounded-sm bg-white text-[var(--color-ink)] placeholder:text-[var(--color-ink-disabled)] outline-none focus:border-[var(--color-navy)] focus:ring-2 focus:ring-[var(--color-navy)]/10 transition-all disabled:bg-[var(--color-surface)] disabled:text-[var(--color-ink-disabled)]"
-      />
-    </div>
-  );
+function draftFrom(address: BuyerAddress): Draft {
+  return { label: ["Home", "Work"].includes(address.label) ? address.label : "Other", custom_label: ["Home", "Work"].includes(address.label) ? "" : address.label, recipient_name: address.recipient_name, phone: address.phone, line1: address.line1, line2: address.line2 ?? "", is_default: address.is_default, region: address.region ?? "", region_code: address.region_code ?? "", province: address.province ?? "", province_code: address.province_code ?? "", city: address.city, city_code: address.city_code ?? "", barangay: address.barangay ?? "", barangay_code: address.barangay_code ?? "", postal_code: address.postal_code };
 }
 
-function SelectField({ label, value, onChange, options, placeholder, disabled = false }: { label: string; value: string; onChange: (v: string) => void; options: string[]; placeholder?: string; disabled?: boolean; }) {
-  return (
-    <div>
-      <label className="block text-xs font-[600] text-[var(--color-ink)] mb-1.5">{label}</label>
-      <select
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        disabled={disabled}
-        className="w-full px-3.5 py-2.5 text-sm border border-[var(--color-border)] rounded-sm bg-white text-[var(--color-ink)] outline-none focus:border-[var(--color-navy)] focus:ring-2 focus:ring-[var(--color-navy)]/10 cursor-pointer transition-all disabled:bg-[var(--color-surface)] disabled:text-[var(--color-ink-disabled)]"
-      >
-        {placeholder && <option value="">{placeholder}</option>}
-        {options.map(o => <option key={o} value={o}>{o}</option>)}
-      </select>
-    </div>
-  );
+function formatted(address: BuyerAddress): string[] {
+  return [address.line1, address.line2, address.barangay, [address.city, address.province, address.postal_code].filter(Boolean).join(", "), address.region, "Philippines"].filter((line): line is string => Boolean(line));
 }
 
 export default function AddressesPage() {
-  const [addresses, setAddresses] = useState<ReturnType<typeof mapAddress>[]>([]);
+  const { user } = useAuth();
+  const [addresses, setAddresses] = useState<BuyerAddress[]>([]);
+  const [modal, setModal] = useState<{ id: number | null; draft: Draft } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState<{ id: number | null; draft: AddressDraft } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
 
-  useEffect(() => {
-    let active = true;
-
-    void (async () => {
-      try {
-        const response = await fetchAccountAddresses();
-        if (!active) return;
-        setAddresses(response.data.map(mapAddress));
-      } catch (err) {
-        if (!active) return;
-        setError(err instanceof Error ? err.message : "Unable to load addresses.");
-        setAddresses([]);
-      } finally {
-        if (active) setLoading(false);
-      }
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const selectedCityOptions = useMemo(() => modal?.draft.province ? ADDRESS_LOCATIONS[modal.draft.province] ?? [] : [], [modal?.draft.province]);
-
-  const openAdd = () => setModal({ id: null, draft: { ...BLANK_ADDRESS } });
-  const openEdit = (address: ReturnType<typeof mapAddress>) => setModal({
-    id: address.id,
-    draft: {
-      label: address.label,
-      recipient_name: address.name,
-      phone: address.phone,
-      line1: address.line1,
-      line2: address.line2,
-      city: address.city,
-      province: address.province,
-      postal_code: address.postal,
-      is_default: address.isDefault,
-    },
-  });
-  const updateDraft = (key: keyof AddressDraft) => (value: string | boolean) => {
-    setModal((current) => {
-      if (!current) return null;
-      if (key === "province" && typeof value === "string") {
-        return { ...current, draft: { ...current.draft, province: value, city: "", postal_code: "" } };
-      }
-      if (key === "city" && typeof value === "string") {
-        const postal_code = (ADDRESS_LOCATIONS[current.draft.province] ?? []).find(loc => loc.name === value)?.postal ?? "";
-        return { ...current, draft: { ...current.draft, city: value, postal_code } };
-      }
-      return { ...current, draft: { ...current.draft, [key]: value } };
-    });
-  };
+  const refresh = async () => { const response = await fetchAccountAddresses(); setAddresses(response.data); };
+  useEffect(() => { let active = true; void fetchAccountAddresses().then(response => { if (active) setAddresses(response.data); }).catch(err => { if (active) setError(err instanceof Error ? err.message : "Unable to load addresses."); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, []);
+  const update = <K extends keyof Draft>(key: K, value: Draft[K]) => setModal(current => current ? { ...current, draft: { ...current.draft, [key]: value } } : null);
+  const openNew = () => setModal({ id: null, draft: { ...blank, phone: user?.phone ?? user?.mobile ?? "", recipient_name: user?.name ?? "" } });
 
   const save = async () => {
-    if (!modal) return;
-    setSaving(true);
-    setError(null);
+    if (!modal || saving) return;
+    setSaving(true); setError(null); setFieldErrors({});
+    const payload = { label: modal.draft.label === "Other" ? modal.draft.custom_label.trim() : modal.draft.label, recipient_name: modal.draft.recipient_name, phone: modal.draft.phone, line1: modal.draft.line1, line2: modal.draft.line2 || null, region_code: modal.draft.region_code, province_code: modal.draft.province_code || null, city_code: modal.draft.city_code, barangay_code: modal.draft.barangay_code, postal_code: modal.draft.postal_code, is_default: modal.draft.is_default };
     try {
-      const payload = {
-        ...modal.draft,
-        line2: modal.draft.line2 || null,
-      };
-      const response = modal.id
-        ? await updateAccountAddress(modal.id, payload)
-        : await storeAccountAddress(payload);
-
-      setAddresses((current) => {
-        const next = current
-          .filter((address) => address.id !== response.data.id)
-          .map((address) => response.data.is_default ? { ...address, isDefault: false } : address);
-        return [...next, mapAddress(response.data)];
-      });
+      const response = modal.id ? await updateAccountAddress(modal.id, payload) : await storeAccountAddress(payload);
+      setAddresses(current => [...current.filter(item => item.id !== response.data.id).map(item => response.data.is_default ? { ...item, is_default: false } : item), response.data]);
       setModal(null);
     } catch (err) {
+      if (err instanceof ApiError && err.errors) setFieldErrors(err.errors);
       setError(err instanceof Error ? err.message : "Unable to save address.");
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
-  const remove = async (addressId: number) => {
-    setSaving(true);
-    setError(null);
-    try {
-      await removeAccountAddress(addressId);
-      const response = await fetchAccountAddresses();
-      setAddresses(response.data.map(mapAddress));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to remove address.");
-    } finally {
-      setSaving(false);
-    }
-  };
+  const remove = async (id: number) => { if (saving) return; setSaving(true); try { await removeAccountAddress(id); await refresh(); } catch (err) { setError(err instanceof Error ? err.message : "Unable to remove address."); } finally { setSaving(false); } };
+  const makeDefault = async (id: number) => { if (saving) return; setSaving(true); try { const response = await updateAccountAddress(id, { is_default: true }); setAddresses(current => current.map(item => item.id === id ? response.data : { ...item, is_default: false })); } catch (err) { setError(err instanceof Error ? err.message : "Unable to set the default address."); } finally { setSaving(false); } };
 
-  const makeDefault = async (address: ReturnType<typeof mapAddress>) => {
-    setSaving(true);
-    setError(null);
-    try {
-      const response = await updateAccountAddress(address.id, {
-        label: address.label,
-        recipient_name: address.name,
-        phone: address.phone,
-        line1: address.line1,
-        line2: address.line2 || null,
-        city: address.city,
-        province: address.province,
-        postal_code: address.postal,
-        is_default: true,
-      });
-      setAddresses((current) => current.map((entry) => entry.id === address.id ? mapAddress(response.data) : { ...entry, isDefault: false }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to set the default address.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (loading) {
-    return <div className="bg-[var(--color-ground)] min-h-full p-6 max-w-screen-xl mx-auto text-sm text-[var(--color-ink-muted)]">Loading addresses...</div>;
-  }
-
-  return (
-    <div className="bg-[var(--color-ground)] min-h-full">
-      <div className="max-w-screen-xl mx-auto px-4 md:px-8 lg:px-12 py-6">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="font-[var(--font-display)] text-2xl font-[400] text-[var(--color-ink)]">Saved Addresses</h1>
-            <p className="text-sm text-[var(--color-ink-muted)] mt-1">{addresses.length} address{addresses.length === 1 ? "" : "es"} loaded from the backend</p>
-          </div>
-          <button onClick={openAdd} className="flex items-center gap-2 px-4 py-2.5 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] transition-colors cursor-pointer">
-            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M6 2v8M2 6h8" /></svg>
-            Add address
-          </button>
-        </div>
-
-        {error && (
-          <div className="mb-4 bg-[var(--color-red-light)] border border-[var(--color-red-border)] text-[var(--color-red)] text-sm rounded-sm px-4 py-3">
-            {error}
-          </div>
-        )}
-
-        {addresses.length === 0 ? (
-          <div className="bg-white border border-[var(--color-border)] rounded-sm p-16 text-center">
-            <p className="font-[var(--font-display)] text-lg font-[400] text-[var(--color-ink)] mb-1">No addresses yet</p>
-            <p className="text-sm text-[var(--color-ink-muted)] mb-4">Add your first shipping address to speed up checkout.</p>
-            <button onClick={openAdd} className="px-4 py-2.5 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] cursor-pointer">
-              Add address
-            </button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {addresses.map(addr => (
-              <div key={addr.id} className={`bg-white border rounded-sm p-5 ${addr.isDefault ? "border-[var(--color-navy)]" : "border-[var(--color-border)]"}`}>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="font-[var(--font-mono)] text-[10px] font-[500] px-2 py-0.5 rounded-sm bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-ink-muted)]">
-                    {addr.label}
-                  </span>
-                  {addr.isDefault && <span className="font-[var(--font-mono)] text-[10px] font-[500] px-2 py-0.5 rounded-sm bg-[var(--color-navy)] text-white">Default</span>}
-                </div>
-                <p className="text-sm font-[600] text-[var(--color-ink)] mb-0.5">{addr.name}</p>
-                <p className="text-sm text-[var(--color-ink-muted)] leading-relaxed mb-0.5">{addr.line1}</p>
-                {addr.line2 && <p className="text-sm text-[var(--color-ink-muted)]">{addr.line2}</p>}
-                <p className="text-sm text-[var(--color-ink-muted)]">{addr.city}, {addr.province} {addr.postal}</p>
-                <p className="text-sm text-[var(--color-ink-muted)] mt-0.5">{addr.phone}</p>
-                <div className="flex flex-wrap gap-3 mt-4 pt-3 border-t border-[var(--color-border-subtle)]">
-                  <button type="button" onClick={() => openEdit(addr)} className="text-xs font-[500] text-[var(--color-navy)]">Edit</button>
-                  {!addr.isDefault && <button type="button" onClick={() => void makeDefault(addr)} disabled={saving} className="text-xs font-[500] text-[var(--color-ink-muted)] disabled:opacity-50">Set default</button>}
-                  <button type="button" onClick={() => void remove(addr.id)} disabled={saving} className="text-xs font-[500] text-[var(--color-red)] disabled:opacity-50">Delete</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {modal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-0 sm:px-4">
-          <div className="bg-white rounded-t-sm sm:rounded-sm shadow-xl w-full sm:max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
-              <h3 className="font-[var(--font-display)] text-lg font-[400] text-[var(--color-ink)]">{modal.id ? "Edit address" : "Add new address"}</h3>
-              <button onClick={() => setModal(null)} className="w-8 h-8 flex items-center justify-center text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] cursor-pointer">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M2 2l10 10M12 2L2 12" /></svg>
-              </button>
-            </div>
-            <div className="px-6 py-5 space-y-4">
-              <SelectField label="Address type" value={modal.draft.label} onChange={updateDraft("label")} options={LABELS} />
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Full name" value={modal.draft.recipient_name} onChange={updateDraft("recipient_name") as (v: string) => void} placeholder="Ana Reyes" />
-                <Field label="Phone number" value={modal.draft.phone} onChange={updateDraft("phone") as (v: string) => void} placeholder="+63 9XX XXX XXXX" />
-              </div>
-              <Field label="Address line 1" value={modal.draft.line1} onChange={updateDraft("line1") as (v: string) => void} placeholder="Street / Building / House no." />
-              <Field label="Address line 2 (optional)" value={modal.draft.line2} onChange={updateDraft("line2") as (v: string) => void} placeholder="Subdivision / Barangay" />
-              <div className="grid grid-cols-2 gap-3">
-                <SelectField label="Province / Region" value={modal.draft.province} onChange={updateDraft("province") as (v: string) => void} options={ADDRESS_REGIONS} placeholder="Select province / region" />
-                <div>
-                  <label className="block text-xs font-[600] text-[var(--color-ink)] mb-1.5">City / Municipality</label>
-                  <select
-                    value={modal.draft.city}
-                    onChange={e => updateDraft("city")(e.target.value)}
-                    disabled={!modal.draft.province}
-                    className="w-full px-3.5 py-2.5 text-sm border border-[var(--color-border)] rounded-sm bg-white text-[var(--color-ink)] outline-none focus:border-[var(--color-navy)] focus:ring-2 focus:ring-[var(--color-navy)]/10 cursor-pointer transition-all disabled:bg-[var(--color-surface)] disabled:text-[var(--color-ink-disabled)]">
-                    <option value="">{modal.draft.province ? "Select city / municipality" : "Select province first"}</option>
-                    {selectedCityOptions.map(city => <option key={city.name} value={city.name}>{city.name}</option>)}
-                  </select>
-                </div>
-              </div>
-              <Field label="Postal code" value={modal.draft.postal_code} onChange={updateDraft("postal_code") as (v: string) => void} placeholder="Auto-filled" readOnly />
-            </div>
-            <div className="sticky bottom-0 bg-white flex gap-3 px-6 py-4 border-t border-[var(--color-border)]">
-              <button onClick={() => setModal(null)} className="flex-1 py-2.5 border border-[var(--color-border)] text-sm font-[500] text-[var(--color-ink-muted)] rounded-sm hover:bg-[var(--color-surface)] cursor-pointer">Cancel</button>
-              <button onClick={save} disabled={saving} className="flex-1 py-2.5 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] cursor-pointer disabled:opacity-60">
-                {saving ? "Saving..." : "Save address"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  if (loading) return <div className="p-6 text-sm text-[var(--color-ink-muted)]">Loading addresses...</div>;
+  return <div className="min-h-full bg-[var(--color-ground)]"><div className="mx-auto max-w-screen-xl px-4 py-6 md:px-8 lg:px-12">
+    <div className="mb-6 flex items-center justify-between"><div><h1 className="font-[var(--font-display)] text-2xl text-[var(--color-ink)]">Saved Addresses</h1><p className="mt-1 text-sm text-[var(--color-ink-muted)]">{addresses.length} saved address{addresses.length === 1 ? "" : "es"}</p></div><button onClick={openNew} className="rounded-sm bg-[var(--color-navy)] px-4 py-2.5 text-sm font-[500] text-white">Add address</button></div>
+    {error && <div role="alert" className="mb-4 border border-[var(--color-red)]/30 bg-red-50 p-3 text-sm text-[var(--color-red)]">{error}</div>}
+    {addresses.length === 0 ? <div className="border border-dashed border-[var(--color-border)] bg-white p-10 text-center text-sm text-[var(--color-ink-muted)]">Add your first shipping address to speed up checkout.</div> : <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{addresses.map(address => <article key={address.id} className={`rounded-sm border bg-white p-5 ${address.is_default ? "border-[var(--color-navy)]" : "border-[var(--color-border)]"}`}><div className="mb-3 flex gap-2"><span className="rounded-sm border px-2 py-0.5 text-[10px]">{address.label}</span>{address.is_default && <span className="rounded-sm bg-[var(--color-navy)] px-2 py-0.5 text-[10px] text-white">Default</span>}</div><p className="text-sm font-[600]">{address.recipient_name}</p>{formatted(address).map((line, index) => <p key={`${line}-${index}`} className="text-sm text-[var(--color-ink-muted)]">{line}</p>)}<p className="mt-1 text-sm text-[var(--color-ink-muted)]">{address.phone}</p><div className="mt-4 flex gap-3 border-t pt-3 text-xs"><button onClick={() => { setFieldErrors({}); setModal({ id: address.id, draft: draftFrom(address) }); }} className="text-[var(--color-navy)]">Edit</button>{!address.is_default && <button disabled={saving} onClick={() => void makeDefault(address.id)}>Set default</button>}<button disabled={saving} onClick={() => void remove(address.id)} className="text-[var(--color-red)]">Delete</button></div></article>)}</div>}
+  </div>
+  {modal && <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:px-4"><div role="dialog" aria-modal="true" aria-labelledby="address-modal-title" className="max-h-[94vh] w-full overflow-y-auto rounded-t-sm bg-white shadow-xl sm:max-w-2xl sm:rounded-sm"><header className="sticky top-0 z-10 flex items-center justify-between border-b bg-white px-5 py-4"><div><h2 id="address-modal-title" className="font-[var(--font-display)] text-xl">{modal.id ? "Edit address" : "Add new address"}</h2><p className="text-xs text-[var(--color-ink-muted)]">Philippine shipping information</p></div><button aria-label="Close address modal" onClick={() => setModal(null)} className="h-10 w-10 text-xl">×</button></header>
+    <div className="space-y-6 px-5 py-5"><section><h3 className="mb-3 text-xs font-[700] uppercase tracking-wide text-[var(--color-ink-muted)]">Contact information</h3><div className="grid gap-3 sm:grid-cols-2"><Field label="Recipient name" value={modal.draft.recipient_name} onChange={value => update("recipient_name", value)} error={fieldErrors.recipient_name?.[0]} /><PhilippinePhoneField value={modal.draft.phone} onChange={value => update("phone", value)} error={fieldErrors.phone?.[0]} disabled={saving} /></div></section>
+    <section><h3 className="mb-3 text-xs font-[700] uppercase tracking-wide text-[var(--color-ink-muted)]">Location</h3>{modal.id && !modal.draft.region_code && <p className="mb-3 rounded-sm bg-amber-50 p-3 text-xs text-amber-800">This legacy address needs its location reselected before saving.</p>}<PhilippineAddressSelector value={modal.draft} onChange={location => setModal(current => current ? { ...current, draft: { ...current.draft, ...location } } : null)} errors={fieldErrors} disabled={saving} /><div className="mt-3"><Field label="Postal code" value={modal.draft.postal_code} onChange={value => update("postal_code", value.replace(/\D/g, "").slice(0, 4))} placeholder="4-digit postal code" error={fieldErrors.postal_code?.[0]} /></div></section>
+    <section><h3 className="mb-3 text-xs font-[700] uppercase tracking-wide text-[var(--color-ink-muted)]">Detailed address</h3><div className="space-y-3"><Field label="House / Unit / Building / Street" value={modal.draft.line1} onChange={value => update("line1", value)} error={fieldErrors.line1?.[0]} /><Field label="Subdivision / Village / Landmark" value={modal.draft.line2} onChange={value => update("line2", value)} /></div></section>
+    <section><h3 className="mb-3 text-xs font-[700] uppercase tracking-wide text-[var(--color-ink-muted)]">Address label</h3><div className="flex flex-wrap gap-2">{["Home", "Work", "Other"].map(label => <button type="button" key={label} onClick={() => update("label", label)} className={`rounded-sm border px-4 py-2 text-sm ${modal.draft.label === label ? "border-[var(--color-navy)] bg-[var(--color-navy)] text-white" : "border-[var(--color-border)]"}`}>{label}</button>)}</div>{modal.draft.label === "Other" && <div className="mt-3"><Field label="Custom label" value={modal.draft.custom_label} onChange={value => update("custom_label", value)} placeholder="Parents' House" error={fieldErrors.label?.[0]} /></div>}<label className="mt-4 flex items-center gap-2 text-sm"><input type="checkbox" checked={modal.draft.is_default} onChange={event => update("is_default", event.target.checked)} /> Set as default address</label></section></div>
+    <footer className="sticky bottom-0 flex gap-3 border-t bg-white px-5 py-4"><button onClick={() => setModal(null)} className="flex-1 rounded-sm border py-2.5 text-sm">Cancel</button><button onClick={() => void save()} disabled={saving || !modal.draft.recipient_name || !modal.draft.phone || !modal.draft.line1 || !modal.draft.region_code || !modal.draft.city_code || !modal.draft.barangay_code || !modal.draft.postal_code || (modal.draft.label === "Other" && !modal.draft.custom_label.trim())} className="flex-1 rounded-sm bg-[var(--color-navy)] py-2.5 text-sm text-white disabled:opacity-50">{saving ? "Saving..." : "Save address"}</button></footer>
+  </div></div>}
+  </div>;
 }

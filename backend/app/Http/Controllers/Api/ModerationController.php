@@ -220,6 +220,7 @@ class ModerationController extends Controller
         $limit = $limit > 0 ? min($limit, 100) : 25;
 
         $notifications = $query
+            ->with('order:id,order_number')
             ->limit($limit)
             ->get()
             ->map(fn (MarketplaceNotification $notification) => $this->notificationPayload($notification))
@@ -320,6 +321,8 @@ class ModerationController extends Controller
             'action_type' => $notification->action_type,
             'action_label' => $notification->action_label,
             'order_id' => $notification->order_id,
+            'order_number' => $notification->order?->order_number,
+            'seller_order_id' => $notification->seller_order_id,
             'product_id' => $notification->product_id,
             'conversation_id' => $notification->conversation_id,
             'read_at' => optional($notification->read_at)->toISOString(),

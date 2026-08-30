@@ -74,4 +74,20 @@ class Product extends Model
     {
         return $this->hasMany(Review::class);
     }
+
+    public function promotions()
+    {
+        return $this->hasMany(Promotion::class);
+    }
+
+    public function activePromotion()
+    {
+        return $this->hasOne(Promotion::class)
+            ->where('kind', 'deal')
+            ->where('status', '!=', 'cancelled')
+            ->whereNull('cancelled_at')
+            ->where('starts_at', '<=', now())
+            ->where('ends_at', '>', now())
+            ->orderByDesc('starts_at');
+    }
 }

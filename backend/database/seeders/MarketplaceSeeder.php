@@ -41,7 +41,7 @@ class MarketplaceSeeder extends Seeder
             );
         }
 
-        $buyer = User::firstOrCreate(
+        $buyer = User::updateOrCreate(
             ['email' => 'ana.reyes@email.com'],
             [
                 'first_name' => 'Ana',
@@ -49,7 +49,7 @@ class MarketplaceSeeder extends Seeder
                 'name' => 'Ana Reyes',
                 'mobile' => '+639175550182',
                 'phone' => '+639175550182',
-                'password' => Hash::make('password'),
+                'password' => Hash::make('Password123!'),
                 'role' => 'buyer',
                 'status' => 'active',
                 'location_label' => 'Makati',
@@ -59,7 +59,7 @@ class MarketplaceSeeder extends Seeder
             ]
         );
 
-        User::firstOrCreate(
+        User::updateOrCreate(
             ['email' => 'otp.demo@maketo.local'],
             [
                 'first_name' => 'Olivia',
@@ -67,7 +67,7 @@ class MarketplaceSeeder extends Seeder
                 'name' => 'Olivia Perez',
                 'mobile' => '+639175550199',
                 'phone' => '+639175550199',
-                'password' => Hash::make('password123'),
+                'password' => Hash::make('Password123!'),
                 'role' => 'buyer',
                 'status' => 'active',
                 'location_label' => 'Quezon City',
@@ -78,7 +78,7 @@ class MarketplaceSeeder extends Seeder
             ]
         );
 
-        $sellerUser = User::firstOrCreate(
+        $sellerUser = User::updateOrCreate(
             ['email' => 'maria@verdebotanics.com'],
             [
                 'first_name' => 'Maria',
@@ -86,7 +86,7 @@ class MarketplaceSeeder extends Seeder
                 'name' => 'Maria Santos',
                 'mobile' => '+639170000000',
                 'phone' => '+639170000000',
-                'password' => Hash::make('password'),
+                'password' => Hash::make('Password123!'),
                 'role' => 'seller',
                 'status' => 'active',
                 'location_label' => 'Pasig',
@@ -96,7 +96,7 @@ class MarketplaceSeeder extends Seeder
             ]
         );
 
-        $artisanUser = User::firstOrCreate(
+        $artisanUser = User::updateOrCreate(
             ['email' => 'luis@artisangoods.ph'],
             [
                 'first_name' => 'Luis',
@@ -104,7 +104,7 @@ class MarketplaceSeeder extends Seeder
                 'name' => 'Luis Reyes',
                 'mobile' => '+639180000001',
                 'phone' => '+639180000001',
-                'password' => Hash::make('password'),
+                'password' => Hash::make('Password123!'),
                 'role' => 'seller',
                 'status' => 'active',
                 'location_label' => 'Makati',

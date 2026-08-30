@@ -17,10 +17,11 @@ class OrderLifecycleTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_seller_and_buyer_complete_the_authorized_order_lifecycle_before_reviewing(): void
+    public function test_seller_admin_and_buyer_complete_the_authorized_order_lifecycle_before_reviewing(): void
     {
         [$buyer, $sellerUser, $sellerOrder, $item] = $this->orderPortion('LIFECYCLE-1');
         $otherSeller = $this->approvedSeller('other-lifecycle-seller');
+        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
 
         $this->actingAs($sellerUser)->patchJson("/api/seller/orders/{$sellerOrder->id}/status", [
             'status' => 'delivered',
@@ -30,17 +31,32 @@ class OrderLifecycleTest extends TestCase
             'status' => 'confirmed',
         ])->assertNotFound();
 
-        foreach (['confirmed', 'preparing', 'ready', 'in-transit', 'delivered'] as $status) {
+        foreach (['confirmed', 'preparing', 'ready'] as $status) {
             $this->actingAs($sellerUser)->patchJson("/api/seller/orders/{$sellerOrder->id}/status", [
                 'status' => $status,
             ])->assertOk()->assertJsonPath('data.status', $status);
+        }
+
+        $this->actingAs($sellerUser)->patchJson("/api/seller/orders/{$sellerOrder->id}/status", ['status' => 'in-transit'])
+            ->assertUnprocessable();
+        $this->actingAs($buyer)->patchJson("/api/admin/seller-orders/{$sellerOrder->id}/delivery-status", ['status' => 'picked-up'])
+            ->assertForbidden();
+        $this->actingAs($admin)->patchJson("/api/admin/seller-orders/{$sellerOrder->id}/delivery-status", ['status' => 'delivered'])
+            ->assertUnprocessable();
+
+        foreach (['picked-up', 'in-transit', 'out-for-delivery', 'delivered'] as $status) {
+            $this->actingAs($admin)->patchJson("/api/admin/seller-orders/{$sellerOrder->id}/delivery-status", [
+                'status' => $status,
+            ])->assertOk()->assertJsonPath('data.seller_orders.0.status', $status);
         }
 
         $this->assertDatabaseHas('shipments', [
             'seller_order_id' => $sellerOrder->id,
             'status' => 'delivered',
         ]);
-        $this->assertDatabaseCount('tracking_events', 2);
+        $this->assertDatabaseCount('tracking_events', 5);
+        $this->assertDatabaseHas('shipments', ['seller_order_id' => $sellerOrder->id, 'courier_id' => null]);
+        $this->assertDatabaseHas('tracking_events', ['status' => 'out-for-delivery', 'actor_type' => 'admin_logistics', 'actor_user_id' => $admin->id]);
         $this->assertDatabaseHas('orders', [
             'id' => $sellerOrder->order_id,
             'status' => 'delivered',
@@ -118,6 +134,7 @@ class OrderLifecycleTest extends TestCase
     public function test_multi_seller_portions_complete_and_become_reviewable_independently(): void
     {
         [$buyer, $firstSellerUser, $firstSellerOrder, $firstItem] = $this->orderPortion('MULTI-1');
+        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
         $order = $firstSellerOrder->order;
         $secondSeller = $this->approvedSeller('second-multi-seller');
         $secondProduct = $this->productFor($secondSeller, 'second-multi-product');
@@ -139,8 +156,11 @@ class OrderLifecycleTest extends TestCase
             'subtotal' => 500,
         ]);
 
-        foreach (['confirmed', 'preparing', 'ready', 'in-transit', 'delivered'] as $status) {
+        foreach (['confirmed', 'preparing', 'ready'] as $status) {
             $this->actingAs($firstSellerUser)->patchJson("/api/seller/orders/{$firstSellerOrder->id}/status", ['status' => $status])->assertOk();
+        }
+        foreach (['picked-up', 'in-transit', 'out-for-delivery', 'delivered'] as $status) {
+            $this->actingAs($admin)->patchJson("/api/admin/seller-orders/{$firstSellerOrder->id}/delivery-status", ['status' => $status])->assertOk();
         }
         $this->actingAs($buyer)->postJson("/api/orders/MULTI-1/seller-orders/{$firstSellerOrder->id}/complete")->assertOk();
 
@@ -152,6 +172,45 @@ class OrderLifecycleTest extends TestCase
             'rating' => 5,
         ])->assertUnprocessable();
         $this->assertDatabaseHas('seller_orders', ['id' => $secondSellerOrder->id, 'status' => 'pending']);
+        $this->assertDatabaseHas('orders', ['id' => $order->id, 'status' => 'pending']);
+    }
+
+    public function test_admin_delivery_api_is_real_filtered_idempotent_and_visible_to_buyer_and_seller(): void
+    {
+        [$buyer, $sellerUser, $sellerOrder] = $this->orderPortion('ADMIN-DELIVERY-1');
+        $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
+
+        foreach (['confirmed', 'preparing', 'ready'] as $status) {
+            $this->actingAs($sellerUser)->patchJson("/api/seller/orders/{$sellerOrder->id}/status", ['status' => $status])->assertOk();
+        }
+
+        $this->actingAs($sellerUser)->getJson('/api/admin/orders')->assertForbidden();
+        $this->actingAs($admin)->getJson('/api/admin/orders?status=ready')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.order_number', 'ADMIN-DELIVERY-1')
+            ->assertJsonPath('data.0.seller_orders.0.next_delivery_status', 'picked-up')
+            ->assertJsonPath('data.0.seller_orders.0.delivery_handler', 'Maketo Logistics')
+            ->assertJsonPath('data.0.seller_orders.0.courier_id', null)
+            ->assertJsonPath('data.0.seller_orders.0.tracking_events.0.status', 'ready');
+
+        $this->actingAs($admin)->patchJson("/api/admin/seller-orders/{$sellerOrder->id}/delivery-status", ['status' => 'picked-up'])
+            ->assertOk()
+            ->assertJsonPath('data.status', 'picked-up')
+            ->assertJsonPath('data.seller_orders.0.status', 'picked-up');
+        $this->actingAs($admin)->patchJson("/api/admin/seller-orders/{$sellerOrder->id}/delivery-status", ['status' => 'picked-up'])
+            ->assertUnprocessable();
+
+        $this->assertDatabaseCount('tracking_events', 2);
+        $this->actingAs($sellerUser)->getJson('/api/seller/orders')
+            ->assertOk()
+            ->assertJsonPath('data.0.status', 'picked-up')
+            ->assertJsonPath('data.0.courier.name', 'Maketo Logistics');
+        $this->actingAs($buyer)->getJson('/api/orders/ADMIN-DELIVERY-1')
+            ->assertOk()
+            ->assertJsonPath('data.status', 'picked-up')
+            ->assertJsonPath('data.seller_orders.0.courier_name', 'Maketo Logistics')
+            ->assertJsonPath('data.seller_orders.0.tracking_events.0.status', 'picked-up');
     }
 
     private function orderPortion(string $orderNumber): array

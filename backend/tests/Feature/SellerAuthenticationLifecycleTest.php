@@ -9,6 +9,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -21,6 +22,12 @@ class SellerAuthenticationLifecycleTest extends TestCase
     {
         Notification::fake();
         Storage::fake('r2');
+        Http::fake([
+            '*/regions' => Http::response(['data' => [['code' => '1300000000', 'name' => 'National Capital Region (NCR)']]]),
+            '*/regions/1300000000/provinces' => Http::response(['data' => []]),
+            '*/regions/1300000000/cities-municipalities' => Http::response(['data' => [['code' => '1376020000', 'name' => 'City of Makati', 'zip_code' => '1200']]]),
+            '*/cities-municipalities/1376020000/barangays' => Http::response(['data' => [['code' => '1376020001', 'name' => 'Barangay One', 'zip_code' => '1200']]]),
+        ]);
 
         $buyer = User::factory()->create([
             'role' => 'buyer',
@@ -42,8 +49,9 @@ class SellerAuthenticationLifecycleTest extends TestCase
             'registration_number' => 'REG-1001',
             'established_on' => '2024-01-15',
             'address_line1' => '100 Test Street',
-            'province' => 'Metro Manila',
-            'city' => 'Makati',
+            'region_code' => '1300000000',
+            'city_code' => '1376020000',
+            'barangay_code' => '1376020001',
             'postal_code' => '1200',
             'contact_email' => 'seller.lifecycle@gmail.com',
             'contact_phone' => '+639175551001',
@@ -81,7 +89,7 @@ class SellerAuthenticationLifecycleTest extends TestCase
             ->assertJsonPath('token_type', 'Bearer')
             ->assertJsonPath('user.role', 'seller')
             ->assertJsonPath('user.seller_approved', true)
-            ->assertJsonPath('redirect_to', '/seller-center');
+            ->assertJsonPath('redirect_to', '/');
 
         $token = $login->json('token');
         $this->withToken($token)->getJson('/api/auth/me')->assertOk();

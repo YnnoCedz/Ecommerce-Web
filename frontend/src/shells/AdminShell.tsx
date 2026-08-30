@@ -94,7 +94,7 @@ interface AdminShellProps {
 
 export default function AdminShell({ children, activeNav = "dashboard", onNavChange }: AdminShellProps) {
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const [activeItem, setActiveItem] = useState(activeNav);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -434,19 +434,19 @@ export default function AdminShell({ children, activeNav = "dashboard", onNavCha
                 aria-haspopup="true"
                 className="flex items-center gap-2 pl-2 pr-2 h-8 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface)] rounded-sm cursor-pointer transition-colors">
                 <div className="w-6 h-6 rounded-full bg-[var(--color-violet)] flex items-center justify-center">
-                  <span className="text-white text-[10px] font-[500]">A</span>
+                  <span className="text-white text-[10px] font-[500]">{(user?.display_name || user?.name || "A").slice(0, 1).toUpperCase()}</span>
                 </div>
-                <span className="text-xs font-[500] hidden sm:block">Admin</span>
+                <span className="text-xs font-[500] hidden sm:block">{user?.display_name || user?.name || "Admin"}</span>
                 <IconChevronDown size={10} className="text-[var(--color-ink-muted)]" />
               </button>
               {accountOpen && (
                 <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-[var(--color-border)] rounded-sm shadow-[0_8px_24px_rgba(28,27,24,0.12)] z-50">
                   <div className="px-4 py-3 border-b border-[var(--color-border)]">
-                    <p className="text-xs font-[600] text-[var(--color-ink)]">Administrator</p>
-                    <p className="text-[10px] text-[var(--color-ink-muted)]">admin@marketo.ph</p>
+                    <p className="text-xs font-[600] text-[var(--color-ink)]">{user?.display_name || user?.name || "Administrator"}</p>
+                    <p className="text-[10px] text-[var(--color-ink-muted)]">{user?.email}</p>
                   </div>
                   {["Profile", "Admin Settings"].map(l => (
-                    <button key={l} onClick={() => { setAccountOpen(false); navigate(l === "Profile" ? "/account/profile" : "/admin/settings"); }} className="w-full flex items-center px-4 py-2.5 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface)] cursor-pointer">{l}</button>
+                    <button key={l} onClick={() => { setAccountOpen(false); navigate(l === "Profile" ? "/admin/profile" : "/admin/settings"); }} className="w-full flex items-center px-4 py-2.5 text-sm text-[var(--color-ink)] hover:bg-[var(--color-surface)] cursor-pointer">{l}</button>
                   ))}
                   <div className="border-t border-[var(--color-border)]">
                     <button onClick={() => setLogoutConfirmOpen(true)} className="w-full flex items-center px-4 py-2.5 text-sm text-[var(--color-red)] hover:bg-[var(--color-red-light)] cursor-pointer">Log out</button>

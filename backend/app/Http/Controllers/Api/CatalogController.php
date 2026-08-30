@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\Review;
 use App\Models\Seller;
 use App\Services\MediaStorageService;
+use App\Services\ProductPricingService;
 use App\Services\ProductSearchService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
@@ -20,6 +21,7 @@ class CatalogController extends Controller
     public function __construct(
         private readonly ProductSearchService $searchService,
         private readonly MediaStorageService $mediaStorage,
+        private readonly ProductPricingService $pricing,
     ) {}
 
     public function categories(): JsonResponse
@@ -46,9 +48,10 @@ class CatalogController extends Controller
         $query = Product::query()
             ->select([
                 'id', 'seller_id', 'category_id', 'slug', 'name', 'price', 'sale_price',
-                'stock_quantity', 'track_inventory', 'free_shipping', 'published_at',
+                'stock_quantity', 'track_inventory', 'free_shipping', 'status', 'published_at',
             ])
             ->with([
+                'activePromotion:id,product_id,name,type,value,deal_price,starts_at,ends_at',
                 'seller:id,user_id,slug,business_name,trade_name',
                 'category:id,slug,name',
                 'images' => fn ($images) => $images
@@ -56,6 +59,7 @@ class CatalogController extends Controller
                     ->orderBy('sort_order')
                     ->orderBy('id'),
             ])
+            ->withExists(['variants as has_active_variants' => fn ($variants) => $variants->where('active', true)])
             ->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
             ->withCount(['reviews as rating_count' => fn ($reviews) => $reviews->where('status', 'approved')])
             ->withSum(['orderItems as sold_count' => fn ($items) => $items->whereHas(
@@ -98,6 +102,35 @@ class CatalogController extends Controller
             ->map(fn (Product $product) => $this->productPayload($product));
 
         return response()->json(['data' => $products]);
+    }
+
+    public function deals(): JsonResponse
+    {
+        $products = Product::query()
+            ->select(['id', 'seller_id', 'category_id', 'slug', 'name', 'price', 'sale_price', 'stock_quantity', 'track_inventory', 'free_shipping', 'status', 'published_at'])
+            ->with([
+                'activePromotion:id,product_id,name,type,value,deal_price,starts_at,ends_at',
+                'seller:id,user_id,slug,business_name,trade_name',
+                'category:id,slug,name',
+                'images' => fn ($images) => $images->select(['id', 'product_id', 'file_path', 'storage_disk', 'sort_order'])->orderBy('sort_order')->orderBy('id'),
+            ])
+            ->withExists(['variants as has_active_variants' => fn ($variants) => $variants->where('active', true)])
+            ->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
+            ->withCount(['reviews as rating_count' => fn ($reviews) => $reviews->where('status', 'approved')])
+            ->withSum('orderItems as sold_count', 'quantity')
+            ->where('status', 'active')
+            ->whereNull('deleted_at')
+            ->whereHas('activePromotion')
+            ->where(fn (Builder $stock) => $stock->where('track_inventory', false)->orWhere('stock_quantity', '>', 0))
+            ->whereHas('seller', fn (Builder $seller) => $this->applyPublicSellerVisibility($seller))
+            ->orderByDesc('published_at')
+            ->limit(30)
+            ->get()
+            ->map(fn (Product $product) => $this->productPayload($product))
+            ->filter(fn (array $product) => $product['is_deal'])
+            ->values();
+
+        return response()->json(['data' => $products, 'server_time' => now()->toISOString()]);
     }
 
     public function search(Request $request): JsonResponse
@@ -154,7 +187,9 @@ class CatalogController extends Controller
                     $product->seller?->trade_name ?: $product->seller?->business_name,
                 ])),
                 'slug' => $product->slug,
-                'image' => $product->images->first()?->file_path,
+                'image' => ($image = $product->images->first())
+                    ? $this->publicMediaUrl($image->file_path, $image->storage_disk ?? 'r2')
+                    : null,
             ])
             ->values();
 
@@ -181,6 +216,7 @@ class CatalogController extends Controller
                 'category.parent',
                 'images' => fn ($images) => $images->orderByDesc('is_primary')->orderBy('sort_order')->orderBy('id'),
                 'variants.options',
+                'activePromotion:id,product_id,name,type,value,deal_price,starts_at,ends_at',
             ])
             ->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
             ->withCount(['reviews as rating_count' => fn ($reviews) => $reviews->where('status', 'approved')])
@@ -205,7 +241,9 @@ class CatalogController extends Controller
                 'seller.user',
                 'category',
                 'images' => fn ($images) => $images->orderBy('sort_order')->orderBy('id'),
+                'activePromotion:id,product_id,name,type,value,deal_price,starts_at,ends_at',
             ])
+            ->withExists(['variants as has_active_variants' => fn ($variants) => $variants->where('active', true)])
             ->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
             ->withCount(['reviews as rating_count' => fn ($reviews) => $reviews->where('status', 'approved')])
             ->withSum(['orderItems as sold_count' => fn ($items) => $items->whereHas(
@@ -226,6 +264,7 @@ class CatalogController extends Controller
 
         return response()->json([
             'data' => $this->productDetailPayload($product, $related),
+            'server_time' => now()->toISOString(),
         ]);
     }
 
@@ -310,7 +349,9 @@ class CatalogController extends Controller
                     'images' => fn ($images) => $images->orderBy('sort_order')->orderBy('id'),
                     'category',
                     'seller.user',
+                    'activePromotion:id,product_id,name,type,value,deal_price,starts_at,ends_at',
                 ])
+                    ->withExists(['variants as has_active_variants' => fn ($variants) => $variants->where('active', true)])
                     ->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
                     ->withCount(['reviews as rating_count' => fn ($reviews) => $reviews->where('status', 'approved')])
                     ->withSum(['orderItems as sold_count' => fn ($items) => $items->whereHas('sellerOrder', fn ($orders) => $orders->whereIn('status', ['delivered', 'completed']))], 'quantity')
@@ -354,6 +395,8 @@ class CatalogController extends Controller
     protected function productPayload(Product $product): array
     {
         $primaryImage = $product->images->first();
+        $pricing = $this->pricing->for($product);
+        $promotion = $pricing['promotion'];
 
         return [
             'id' => $product->id,
@@ -366,15 +409,35 @@ class CatalogController extends Controller
                 ?? 'Maketo Seller',
             'category_slug' => $product->category?->slug,
             'category' => $product->category?->name ?? 'Uncategorized',
-            'price' => (float) ($product->sale_price ?? $product->price),
-            'original_price' => $product->sale_price ? (float) $product->price : null,
+            'regular_price' => $pricing['regular_price'],
+            'sale_price' => $pricing['sale_price'],
+            'promotion_price' => $pricing['promotion_price'],
+            'price' => $pricing['effective_price'],
+            'original_price' => $pricing['original_price'],
+            'discount_amount' => $pricing['discount_amount'],
+            'discount_percentage' => $pricing['discount_percentage'],
+            'pricing_source' => $pricing['pricing_source'],
             'rating' => round((float) ($product->rating ?? 0), 1),
             'rating_count' => (int) ($product->rating_count ?? 0),
             'sold_count' => (int) ($product->sold_count ?? 0),
             'image' => $primaryImage
                 ? $this->publicMediaUrl($primaryImage->file_path, $primaryImage->storage_disk ?? 'r2')
                 : '/images/product-placeholder.svg',
-            'badge' => $product->sale_price ? 'SALE' : null,
+            'badge' => $promotion ? 'DEAL' : ($pricing['pricing_source'] === 'sale' ? 'SALE' : null),
+            'is_deal' => (bool) $promotion,
+            'promotion' => $promotion ? [
+                'id' => $promotion->id,
+                'name' => $promotion->name,
+                'type' => $promotion->type,
+                'value' => (float) $promotion->value,
+                'deal_price' => $promotion->deal_price !== null ? (float) $promotion->deal_price : null,
+                'promotion_price' => $pricing['promotion_price'],
+                'original_price' => $pricing['original_price'],
+                'discount_amount' => $pricing['discount_amount'],
+                'discount_percentage' => $pricing['discount_percentage'],
+                'starts_at' => $promotion->starts_at?->toISOString(),
+                'ends_at' => $promotion->ends_at?->toISOString(),
+            ] : null,
             'in_stock' => $product->track_inventory ? $product->stock_quantity > 0 : true,
             'free_shipping' => (bool) $product->free_shipping,
         ];
@@ -412,15 +475,31 @@ class CatalogController extends Controller
             ])->values()->all(),
             'variants' => $product->variants
                 ->where('active', true)
-                ->map(fn ($variant) => [
-                    'id' => $variant->id,
-                    'name' => $variant->name,
-                    'sku' => $variant->sku,
-                    'price' => (float) ($variant->sale_price_override ?? $variant->price_override ?? $product->sale_price ?? $product->price),
-                    'stock_quantity' => (int) $variant->stock_quantity,
-                    'active' => (bool) $variant->active,
-                    'options' => $variant->options->pluck('value')->values()->all(),
-                ])->values()->all(),
+                ->map(function ($variant) use ($product): array {
+                    $pricing = $this->pricing->for($product, $variant);
+
+                    return [
+                        'id' => $variant->id,
+                        'name' => $variant->name,
+                        'sku' => $variant->sku,
+                        'price' => $pricing['effective_price'],
+                        'regular_price' => $pricing['regular_price'],
+                        'sale_price' => $pricing['sale_price'],
+                        'promotion_price' => $pricing['promotion_price'],
+                        'original_price' => $pricing['original_price'],
+                        'discount_amount' => $pricing['discount_amount'],
+                        'discount_percentage' => $pricing['discount_percentage'],
+                        'pricing_source' => $pricing['pricing_source'],
+                        'is_deal' => $pricing['promotion'] !== null,
+                        'stock_quantity' => (int) $variant->stock_quantity,
+                        'active' => (bool) $variant->active,
+                        'options' => $variant->options->pluck('value')->values()->all(),
+                        'option_values' => $variant->options->sortBy('sort_order')->map(fn ($option) => [
+                            'name' => $option->option_name ?? $variant->name,
+                            'value' => $option->value,
+                        ])->values()->all(),
+                    ];
+                })->values()->all(),
             'review_summary' => [
                 'average_rating' => round((float) ($product->rating ?? 0), 2),
                 'review_count' => (int) ($product->rating_count ?? 0),
@@ -516,6 +595,6 @@ class CatalogController extends Controller
             return $path;
         }
 
-        return $this->mediaStorage->publicUrl($path, $disk) ?: $path;
+        return $this->mediaStorage->publicUrl($path, $disk);
     }
 }

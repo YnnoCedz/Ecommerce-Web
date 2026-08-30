@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Address;
 use App\Models\UserPreference;
 use App\Services\MediaStorageService;
+use App\Services\PsgcService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -132,8 +133,14 @@ class AccountController extends Controller
                     'phone' => $address->phone,
                     'line1' => $address->line1,
                     'line2' => $address->line2,
+                    'region' => $address->region,
+                    'region_code' => $address->region_code,
                     'city' => $address->city,
+                    'city_code' => $address->city_code,
                     'province' => $address->province,
+                    'province_code' => $address->province_code,
+                    'barangay' => $address->barangay,
+                    'barangay_code' => $address->barangay_code,
                     'postal_code' => $address->postal_code,
                     'is_default' => (bool) $address->is_default,
                 ])
@@ -141,9 +148,9 @@ class AccountController extends Controller
         ]);
     }
 
-    public function storeAddress(Request $request): JsonResponse
+    public function storeAddress(Request $request, PsgcService $psgc): JsonResponse
     {
-        $data = $this->validateAddress($request);
+        $data = $this->validateAddress($request, $psgc);
 
         $user = $request->user();
         $address = DB::transaction(function () use ($user, $data) {
@@ -166,9 +173,23 @@ class AccountController extends Controller
         ], 201);
     }
 
-    public function updateAddress(Request $request, int $addressId): JsonResponse
+    public function updateAddress(Request $request, int $addressId, PsgcService $psgc): JsonResponse
     {
-        $data = $this->validateAddress($request);
+        if ($request->has('is_default') && count($request->all()) === 1) {
+            $request->validate(['is_default' => ['required', 'accepted']]);
+            $user = $request->user();
+            $address = DB::transaction(function () use ($user, $addressId) {
+                $address = $user->addresses()->whereKey($addressId)->firstOrFail();
+                $user->addresses()->where('id', '!=', $address->id)->update(['is_default' => false]);
+                $address->update(['is_default' => true]);
+
+                return $address->fresh();
+            });
+
+            return response()->json(['message' => 'Default address updated.', 'data' => $this->addressPayload($address)]);
+        }
+
+        $data = $this->validateAddress($request, $psgc);
         $user = $request->user();
 
         $address = DB::transaction(function () use ($user, $addressId, $data) {
@@ -248,27 +269,31 @@ class AccountController extends Controller
         ]);
     }
 
-    private function validateAddress(Request $request): array
+    private function validateAddress(Request $request, PsgcService $psgc): array
     {
         $request->merge([
             'phone' => preg_replace('/[\s()-]+/', '', (string) $request->input('phone')),
             'postal_code' => trim((string) $request->input('postal_code')),
         ]);
 
-        return $request->validate([
+        $data = $request->validate([
             'label' => ['required', 'string', 'max:120'],
             'recipient_name' => ['required', 'string', 'max:255'],
             'phone' => ['required', 'string', 'regex:/^(?:\+639|09)\d{9}$/'],
             'line1' => ['required', 'string', 'max:255'],
             'line2' => ['nullable', 'string', 'max:255'],
-            'city' => ['required', 'string', 'max:120'],
-            'province' => ['required', 'string', 'max:120'],
+            'region_code' => ['required', 'string', 'size:10'],
+            'province_code' => ['nullable', 'string', 'size:10'],
+            'city_code' => ['required', 'string', 'size:10'],
+            'barangay_code' => ['required', 'string', 'size:10'],
             'postal_code' => ['required', 'regex:/^\d{4}$/'],
             'is_default' => ['sometimes', 'boolean'],
         ], [
             'phone.regex' => 'Enter a valid Philippine mobile number (09XXXXXXXXX or +639XXXXXXXXX).',
             'postal_code.regex' => 'The postal code must contain exactly 4 digits.',
         ]);
+
+        return array_merge($data, $psgc->validateHierarchy($data));
     }
 
     private function addressPayload(Address $address): array
@@ -280,8 +305,14 @@ class AccountController extends Controller
             'phone' => $address->phone,
             'line1' => $address->line1,
             'line2' => $address->line2,
+            'region' => $address->region,
+            'region_code' => $address->region_code,
             'city' => $address->city,
+            'city_code' => $address->city_code,
             'province' => $address->province,
+            'province_code' => $address->province_code,
+            'barangay' => $address->barangay,
+            'barangay_code' => $address->barangay_code,
             'postal_code' => $address->postal_code,
             'is_default' => (bool) $address->is_default,
         ];

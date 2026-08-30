@@ -46,7 +46,7 @@ export default function LoginPage({ onNavigate }: { onNavigate: NavFn }) {
         navigate("/auth/two-factor", { replace: true });
         return;
       }
-      const redirectTo = response.redirectTo ?? (response.user.role === "seller" ? "/seller-center" : response.user.role === "admin" ? "/admin" : "/");
+      const redirectTo = response.redirectTo ?? (response.user.role === "admin" ? "/admin" : "/");
       navigate(redirectTo);
     } catch (err) {
       if (err instanceof ApiError && err.errors) {
@@ -82,13 +82,15 @@ export default function LoginPage({ onNavigate }: { onNavigate: NavFn }) {
 
       {error && <AuthAlert type="error" message={error} />}
 
+      <form onSubmit={event => { event.preventDefault(); void submit(); }} className="space-y-5">
+
       <Field label="Email address" type="email" value={email} onChange={setEmail}
         placeholder="you@example.com" error={fieldErrors.email} required />
 
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <label className="text-xs font-[600] text-[var(--color-ink)]">Password <span className="text-[var(--color-red)]">*</span></label>
-          <button onClick={() => onNavigate("forgot-password")}
+          <button type="button" onClick={() => onNavigate("forgot-password")}
             className="text-xs text-[var(--color-navy)] hover:underline cursor-pointer font-[500]">
             Forgot password?
           </button>
@@ -98,15 +100,15 @@ export default function LoginPage({ onNavigate }: { onNavigate: NavFn }) {
       </div>
 
       <label className="flex items-center gap-2.5 cursor-pointer group">
-        <div onClick={() => setRemember(r => !r)}
-          className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${remember ? "bg-[var(--color-navy)] border-[var(--color-navy)]" : "border-[var(--color-border-strong)] group-hover:border-[var(--color-navy)]"}`}>
+        <input type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} className="sr-only" />
+        <span className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${remember ? "bg-[var(--color-navy)] border-[var(--color-navy)]" : "border-[var(--color-border-strong)] group-hover:border-[var(--color-navy)]"}`}>
           {remember && <Check size={8} className="text-white" aria-hidden="true" />}
-        </div>
+        </span>
         <span className="text-sm text-[var(--color-ink-muted)]">Remember me for 30 days</span>
       </label>
 
       <button
-        onClick={submit}
+        type="submit"
         disabled={loading}
         className="w-full py-3 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center justify-center gap-2">
         {loading ? (
@@ -135,6 +137,7 @@ export default function LoginPage({ onNavigate }: { onNavigate: NavFn }) {
       <p className="text-center font-[var(--font-mono)] text-[9px] text-[var(--color-ink-disabled)] tracking-wide">
         SOCIAL AUTH - DESIGN PREVIEW ONLY
       </p>
+      </form>
     </AuthLayout>
   );
 }

@@ -35,20 +35,43 @@ class MediaStorageService
 
     public function publicUrl(string $path, ?string $disk = 'r2'): ?string
     {
+        $path = trim($path);
+
+        if ($path === '') {
+            return null;
+        }
+
+        if (Str::startsWith($path, ['http://', 'https://', 'data:', 'blob:'])) {
+            return $path;
+        }
+
+        if (Str::startsWith($path, ['/storage/', 'storage/'])) {
+            return rtrim((string) config('app.url'), '/').'/'.ltrim($path, '/');
+        }
+
         try {
             $diskInstance = Storage::disk($disk);
             $url = method_exists($diskInstance, 'url') ? $diskInstance->url($path) : null;
 
-            if (is_string($url) && $url !== '' && ! Str::startsWith($url, ['/'])) {
+            if ($this->isAbsoluteWebUrl($url)) {
                 return $url;
             }
 
-            return method_exists($diskInstance, 'temporaryUrl')
+            $temporaryUrl = method_exists($diskInstance, 'temporaryUrl')
                 ? $diskInstance->temporaryUrl($path, now()->addHours(12))
-                : $url;
+                : null;
+
+            return $this->isAbsoluteWebUrl($temporaryUrl) ? $temporaryUrl : null;
         } catch (\Throwable $e) {
             return null;
         }
+    }
+
+    private function isAbsoluteWebUrl(mixed $value): bool
+    {
+        return is_string($value)
+            && filter_var($value, FILTER_VALIDATE_URL) !== false
+            && Str::startsWith($value, ['http://', 'https://']);
     }
 
     public function snapshotPublicFile(string $sourcePath, string $prefix, ?string $disk = 'r2'): ?array
@@ -75,8 +98,8 @@ class MediaStorageService
     {
         $this->assertR2Configured();
 
-        $key = $prefix . '/r2-connection-test.txt';
-        $payload = 'Maketo R2 connection test at ' . now()->toDateTimeString();
+        $key = $prefix.'/r2-connection-test.txt';
+        $payload = 'Maketo R2 connection test at '.now()->toDateTimeString();
 
         $disk = Storage::disk('r2');
         $disk->put($key, $payload);
@@ -108,8 +131,8 @@ class MediaStorageService
     {
         $extension = strtolower($file->getClientOriginalExtension() ?: $file->extension() ?: 'bin');
         $safePrefix = trim($prefix, '/');
-        $fileName = Str::uuid()->toString() . '.' . $extension;
-        $path = $safePrefix === '' ? $fileName : $safePrefix . '/' . $fileName;
+        $fileName = Str::uuid()->toString().'.'.$extension;
+        $path = $safePrefix === '' ? $fileName : $safePrefix.'/'.$fileName;
 
         Storage::disk($disk)->putFileAs(dirname($path), $file, basename($path), [
             'visibility' => $visibility,

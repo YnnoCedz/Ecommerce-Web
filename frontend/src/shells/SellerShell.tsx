@@ -127,7 +127,7 @@ export default function SellerShell({
   const ACCOUNT_ROUTES: Record<string, string> = {
     "Profile": "/account/profile",
     "Account Settings": "/seller-center/settings",
-    "Billing": "/seller-center/settings",
+    "Billing": "/seller-center/settings?tab=payouts",
     "Switch to Buyer": "/",
   };
   const [notifOpen, setNotifOpen] = useState(false);
@@ -149,6 +149,18 @@ export default function SellerShell({
   useEffect(() => {
     setActiveItem(activeNav);
   }, [activeNav]);
+
+  useEffect(() => {
+    const handleProfileUpdated = (event: Event) => {
+      const profile = (event as CustomEvent<SellerProfile>).detail;
+      if (profile && typeof profile === "object") {
+        setSellerProfile(profile);
+      }
+    };
+
+    window.addEventListener("seller-profile-updated", handleProfileUpdated);
+    return () => window.removeEventListener("seller-profile-updated", handleProfileUpdated);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -284,25 +296,9 @@ export default function SellerShell({
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
-      {/* Brand + collapse toggle */}
-      <div className={`flex items-center h-14 px-4 border-b border-white/10 shrink-0 ${collapsed ? "justify-center" : "justify-between"}`}>
-        {!collapsed && (
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-6 h-6 bg-[var(--color-amber)] rounded flex items-center justify-center shrink-0">
-              <span className="text-white font-[var(--font-display)] text-xs font-[400]">M</span>
-            </div>
-          </div>
-        )}
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="hidden lg:flex w-6 h-6 items-center justify-center text-white/40 hover:text-white/80 cursor-pointer transition-colors shrink-0">
-          {collapsed ? <IconChevronRight size={13} /> : <IconChevronLeft size={13} />}
-        </button>
-      </div>
-
       {/* Store identity */}
       {!collapsed && (
-        <div className="px-4 py-4 border-b border-white/10 shrink-0">
+        <div className="order-1 px-4 py-4 border-b border-white/10 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded bg-white/15 flex items-center justify-center shrink-0 overflow-hidden">
               {sellerProfile?.logo_url ? (
@@ -315,12 +311,18 @@ export default function SellerShell({
               <p className="text-sm font-[600] text-white truncate">{resolvedStoreName}</p>
               <p className="text-xs text-white/50 truncate">{resolvedStoreCategory}</p>
             </div>
+            <button
+              onClick={() => setCollapsed(!collapsed)}
+              aria-label="Collapse seller sidebar"
+              className="hidden lg:flex ml-auto w-6 h-6 items-center justify-center text-white/40 hover:text-white/80 cursor-pointer transition-colors shrink-0">
+              <IconChevronLeft size={13} />
+            </button>
           </div>
         </div>
       )}
 
       {collapsed && (
-        <div className="px-4 py-3 border-b border-white/10 shrink-0 flex justify-center">
+        <div className="order-1 px-2 py-3 border-b border-white/10 shrink-0 flex flex-col items-center gap-2">
           <div className="w-8 h-8 rounded bg-white/15 flex items-center justify-center overflow-hidden" title={resolvedStoreName}>
             {sellerProfile?.logo_url ? (
               <img src={sellerProfile.logo_url} alt="" className="h-full w-full object-cover" />
@@ -328,11 +330,17 @@ export default function SellerShell({
               <span className="font-[var(--font-display)] text-sm text-white font-[400]">{resolvedStoreInitials}</span>
             )}
           </div>
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            aria-label="Expand seller sidebar"
+            className="hidden lg:flex w-6 h-6 items-center justify-center text-white/40 hover:text-white/80 cursor-pointer transition-colors shrink-0">
+            <IconChevronRight size={13} />
+          </button>
         </div>
       )}
 
       {/* Main nav */}
-      <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
+      <nav className="order-2 flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
         {!collapsed && (
           <p className="font-[var(--font-mono)] text-[9px] text-white/30 tracking-widest uppercase px-3 mb-2">Management</p>
         )}
@@ -340,7 +348,7 @@ export default function SellerShell({
       </nav>
 
       {/* Bottom nav */}
-      <div className="px-2 pb-3 pt-2 border-t border-white/10 space-y-0.5 shrink-0">
+      <div className="order-3 px-2 pb-3 pt-2 border-t border-white/10 space-y-0.5 shrink-0">
         {BOTTOM_NAV.map(item => <SidebarLink key={item.id} item={item} />)}
         <button onClick={() => setLogoutConfirmOpen(true)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-sm text-white/40 hover:text-white/80 hover:bg-white/8 transition-all cursor-pointer`}
           title={collapsed ? "Log out" : undefined}>

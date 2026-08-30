@@ -18,6 +18,7 @@ function buildNavFn(navigate: ReturnType<typeof useNavigate>): NavFn {
       case "home":           return navigate("/");
       case "category":       return navigate(`/c/${params?.cat ?? params?.slug ?? "all"}`);
       case "search":         return navigate(`/search?q=${encodeURIComponent(params?.q ?? "")}`);
+      case "deals":          return navigate("/deals");
       case "product":        return navigate(`/p/${params?.slug ?? params?.id ?? ""}`);
       case "seller":         return navigate(`/s/${params?.slug ?? params?.id ?? ""}`);
       case "cart":           return navigate("/cart");

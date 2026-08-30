@@ -27,8 +27,10 @@ export type SellerApplicationSummary = {
   established_on: string | null;
   address_line1: string;
   address_line2: string | null;
-  province: string;
-  city: string;
+  region_code: string;
+  province_code?: string;
+  city_code: string;
+  barangay_code: string;
   postal_code: string;
   contact_name: string | null;
   contact_email: string | null;
@@ -82,8 +84,10 @@ export type SellerApplicationPayload = {
   established_on: string;
   address_line1: string;
   address_line2?: string;
-  province: string;
-  city: string;
+  region_code: string;
+  province_code?: string;
+  city_code: string;
+  barangay_code: string;
   postal_code: string;
   contact_email: string;
   public_email?: string;
@@ -117,8 +121,10 @@ export async function submitSellerApplication(payload: SellerApplicationPayload)
   formData.append("established_on", payload.established_on);
   formData.append("address_line1", payload.address_line1);
   if (payload.address_line2) formData.append("address_line2", payload.address_line2);
-  formData.append("province", payload.province);
-  formData.append("city", payload.city);
+  formData.append("region_code", payload.region_code);
+  if (payload.province_code) formData.append("province_code", payload.province_code);
+  formData.append("city_code", payload.city_code);
+  formData.append("barangay_code", payload.barangay_code);
   formData.append("postal_code", payload.postal_code);
   formData.append("contact_email", payload.contact_email);
   if (payload.public_email) formData.append("public_email", payload.public_email);

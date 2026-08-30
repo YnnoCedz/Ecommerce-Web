@@ -8,6 +8,7 @@ class VariantOption extends Model
 {
     protected $fillable = [
         'product_variant_id',
+        'option_name',
         'value',
         'sort_order',
     ];

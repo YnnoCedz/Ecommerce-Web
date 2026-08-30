@@ -56,6 +56,7 @@ class OrderResolutionService
             foreach ($locked->items as $item) {
                 if ($item->product_variant_id) {
                     ProductVariant::query()->whereKey($item->product_variant_id)->lockForUpdate()->increment('stock_quantity', $item->quantity);
+                    Product::withTrashed()->whereKey($item->product_id)->lockForUpdate()->increment('stock_quantity', $item->quantity);
                 } else {
                     Product::withTrashed()->whereKey($item->product_id)->lockForUpdate()->increment('stock_quantity', $item->quantity);
                 }

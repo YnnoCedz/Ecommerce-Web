@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\PendingRegistration;
 use App\Models\User;
 use App\Notifications\EmailVerificationCodeNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -44,7 +45,7 @@ class AuthRegistrationVerificationTest extends TestCase
             ->assertJsonPath('requires_email_verification', true)
             ->assertJsonPath('verification_email', $email)
             ->assertJsonPath('verification_email_sent', true)
-            ->assertJsonPath('user.email', $email);
+            ->assertJsonMissingPath('user');
 
         $this->withHeaders($this->browserHeaders())
             ->getJson('/api/auth/me')
@@ -57,22 +58,21 @@ class AuthRegistrationVerificationTest extends TestCase
             'phone' => '+63 917 555 0102',
             'password' => 'Password123!',
             'password_confirmation' => 'Password123!',
-        ])->assertStatus(422)->assertJsonValidationErrors(['email']);
+        ])->assertStatus(201);
 
-        $user = User::where('email', $email)->firstOrFail();
+        $this->assertDatabaseMissing('users', ['email' => $email]);
+        $pending = PendingRegistration::where('email', $email)->firstOrFail();
 
-        $this->assertNull($user->email_verified_at);
+        Notification::assertSentTo($pending, EmailVerificationCodeNotification::class);
 
-        Notification::assertSentTo($user, EmailVerificationCodeNotification::class);
-
-        $verificationNotification = Notification::sent($user, EmailVerificationCodeNotification::class)->first();
+        $verificationNotification = Notification::sent($pending, EmailVerificationCodeNotification::class)->last();
         $this->assertNotNull($verificationNotification);
         $code = $verificationNotification->code();
 
         $this->withHeaders($this->browserHeaders())->postJson('/api/auth/login', [
             'email' => $email,
             'password' => 'Password123!',
-        ])->assertStatus(403)->assertJsonPath('code', 'email_unverified');
+        ])->assertStatus(422)->assertJsonPath('code', 'invalid_credentials');
 
         $verificationResponse = $this->withHeaders($this->browserHeaders())->postJson('/api/auth/email/verify', [
             'email' => $email,
@@ -82,7 +82,8 @@ class AuthRegistrationVerificationTest extends TestCase
             ->assertJsonPath('token_type', 'Bearer')
             ->assertJsonPath('user.email', $email);
 
-        $this->assertNotNull($user->refresh()->email_verified_at);
+        $this->assertNotNull(User::where('email', $email)->firstOrFail()->email_verified_at);
+        $this->assertDatabaseMissing('pending_registrations', ['email' => $email]);
         $this->withToken($verificationResponse->json('token'))->getJson('/api/auth/me')
             ->assertOk()
             ->assertJsonPath('user.email', $email);
@@ -134,17 +135,12 @@ class AuthRegistrationVerificationTest extends TestCase
             'email_verified_at' => now()->toISOString(),
             'two_factor_enabled' => true,
         ])->assertCreated()
-            ->assertJsonPath('user.role', 'buyer')
-            ->assertJsonPath('user.status', 'active')
-            ->assertJsonPath('user.email_verified_at', null)
+            ->assertJsonMissingPath('user')
             ->assertJsonMissingPath('token');
 
-        $user = User::where('email', 'public-buyer@maketo.local')->firstOrFail();
-        $this->assertSame('buyer', $user->role);
-        $this->assertSame('active', $user->status);
-        $this->assertSame('+639175550444', $user->mobile);
-        $this->assertFalse($user->two_factor_enabled);
-        $this->assertTrue(Hash::check('Password123!', $user->password));
+        $pending = PendingRegistration::where('email', 'public-buyer@maketo.local')->firstOrFail();
+        $this->assertSame('+639175550444', $pending->phone);
+        $this->assertTrue(Hash::check('Password123!', $pending->password));
 
         $this->postJson('/api/auth/register', [
             'first_name' => 'Duplicate',
@@ -172,11 +168,11 @@ class AuthRegistrationVerificationTest extends TestCase
             'password_confirmation' => 'Password123!',
         ])->assertCreated();
 
-        $user = User::where('email', $email)->firstOrFail();
-        $notification = Notification::sent($user, EmailVerificationCodeNotification::class)->first();
+        $pending = PendingRegistration::where('email', $email)->firstOrFail();
+        $notification = Notification::sent($pending, EmailVerificationCodeNotification::class)->first();
         $this->assertNotNull($notification);
 
-        $mail = $notification->toMail($user);
+        $mail = $notification->toMail($pending);
         $this->assertMatchesRegularExpression('/Verification code: <strong>\d{6}<\/strong>/', (string) $mail->introLines[1]);
         $this->assertSame('This code expires in 10 minutes.', $mail->introLines[2]);
         $this->assertSame('Enter this code on the Maketo verification page. If you did not request it, you can ignore this email.', $mail->introLines[3]);
@@ -390,10 +386,10 @@ class AuthRegistrationVerificationTest extends TestCase
             ->assertJsonPath('verification_email', $email)
             ->assertJsonMissingPath('token');
 
-        $user = User::where('email', $email)->firstOrFail();
+        $pending = PendingRegistration::where('email', $email)->firstOrFail();
 
-        $this->assertNull($user->email_verified_at);
-        $this->assertNotNull($user->authChallenges()->latest('id')->firstOrFail()->consumed_at);
+        $this->assertTrue(Hash::check('Password123!', $pending->password));
+        $this->assertNotNull($pending->challenges()->latest('id')->firstOrFail()->consumed_at);
     }
 
     public function test_resend_returns_safe_service_unavailable_response_when_mail_delivery_fails(): void

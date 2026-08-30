@@ -26,7 +26,7 @@ type AuthContextValue = AuthState & {
   refreshUser: () => Promise<AuthUser | null>;
   login: (payload: LoginPayload) => Promise<{ user: AuthUser; redirectTo?: string; requiresTwoFactor?: boolean }>;
   register: (payload: RegisterPayload) => Promise<{
-    user: AuthUser;
+    user: AuthUser | null;
     redirectTo?: string;
     message?: string;
     requiresEmailVerification?: boolean;
@@ -240,7 +240,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPendingVerificationEmail(response.verification_email ?? payload.email);
     writePendingVerificationEmail(response.verification_email ?? payload.email);
     return {
-      user: response.user as AuthUser,
+      user: response.user ?? null,
       redirectTo: response.redirect_to,
       message: response.message,
       requiresEmailVerification: response.requires_email_verification,

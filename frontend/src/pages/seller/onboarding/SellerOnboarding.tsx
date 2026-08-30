@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { CATEGORY_LABELS } from "../../pub/data";
 import {
@@ -8,6 +8,7 @@ import {
 } from "../../../api/sellerApplications";
 import { fetchCatalogCategories } from "../../../api/catalog";
 import { ApiError } from "../../../api/client";
+import PhilippineAddressSelector, { EMPTY_PHILIPPINE_ADDRESS } from "../../../components/PhilippineAddressSelector";
 
 export type OnboardingView = "form" | "status";
 
@@ -16,8 +17,6 @@ interface SellerOnboardingProps {
 }
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
-
-type BusinessLocation = { name: string; postal: string };
 
 type SellerApplicationForm = {
   firstName: string;
@@ -33,8 +32,14 @@ type SellerApplicationForm = {
   establishedOn: string;
   addressLine1: string;
   addressLine2: string;
+  region: string;
+  regionCode: string;
   province: string;
+  provinceCode: string;
   city: string;
+  cityCode: string;
+  barangay: string;
+  barangayCode: string;
   postalCode: string;
   contactEmail: string;
   publicEmail: string;
@@ -47,52 +52,6 @@ type SellerApplicationForm = {
 const CATEGORIES = CATEGORY_LABELS;
 const DOCUMENT_ACCEPT = "image/jpeg,image/png,application/pdf";
 const FILE_MAX_BYTES = 10 * 1024 * 1024;
-
-const BUSINESS_LOCATIONS: Record<string, BusinessLocation[]> = {
-  "Metro Manila": [
-    { name: "Quezon City", postal: "1100" },
-    { name: "Manila", postal: "1000" },
-    { name: "Makati", postal: "1200" },
-    { name: "Pasig", postal: "1600" },
-    { name: "Taguig", postal: "1630" },
-  ],
-  Cebu: [
-    { name: "Cebu City", postal: "6000" },
-    { name: "Mandaue City", postal: "6014" },
-    { name: "Lapu-Lapu City", postal: "6015" },
-  ],
-  Cavite: [
-    { name: "Bacoor", postal: "4102" },
-    { name: "Imus", postal: "4103" },
-    { name: "Dasmarinas", postal: "4114" },
-  ],
-  Laguna: [
-    { name: "Santa Rosa", postal: "4026" },
-    { name: "Calamba", postal: "4027" },
-    { name: "Binan", postal: "4024" },
-  ],
-  Rizal: [
-    { name: "Antipolo", postal: "1870" },
-    { name: "Cainta", postal: "1900" },
-    { name: "Taytay", postal: "1920" },
-  ],
-  Bulacan: [
-    { name: "Meycauayan", postal: "3020" },
-    { name: "Malolos", postal: "3000" },
-    { name: "San Jose del Monte", postal: "3023" },
-  ],
-  Pampanga: [
-    { name: "San Fernando", postal: "2000" },
-    { name: "Angeles", postal: "2009" },
-    { name: "Mabalacat", postal: "2010" },
-  ],
-  "Davao del Sur": [
-    { name: "Davao City", postal: "8000" },
-    { name: "Digos", postal: "8002" },
-  ],
-};
-
-const BUSINESS_REGIONS = Object.keys(BUSINESS_LOCATIONS);
 
 const STEPS: Array<{ n: Step; label: string }> = [
   { n: 1, label: "Business Info" },
@@ -117,8 +76,14 @@ const INITIAL_FORM: SellerApplicationForm = {
   establishedOn: "",
   addressLine1: "",
   addressLine2: "",
+  region: "",
+  regionCode: "",
   province: "",
+  provinceCode: "",
   city: "",
+  cityCode: "",
+  barangay: "",
+  barangayCode: "",
   postalCode: "",
   contactEmail: "",
   publicEmail: "",
@@ -240,11 +205,6 @@ export default function SellerOnboarding({ view = "form" }: SellerOnboardingProp
   const businessDocRef = useRef<HTMLInputElement>(null);
   const certRef = useRef<HTMLInputElement>(null);
 
-  const selectedLocationOptions = useMemo(
-    () => (form.province ? BUSINESS_LOCATIONS[form.province] ?? [] : []),
-    [form.province],
-  );
-
   useEffect(() => {
     let active = true;
 
@@ -267,18 +227,7 @@ export default function SellerOnboarding({ view = "form" }: SellerOnboardingProp
   }, []);
 
   const updateForm = <K extends keyof SellerApplicationForm>(key: K, value: SellerApplicationForm[K]) => {
-    setForm(prev => {
-      if (key === "province") {
-        return { ...prev, province: value as string, city: "", postalCode: "" };
-      }
-
-      if (key === "city") {
-        const postalCode = (BUSINESS_LOCATIONS[prev.province] ?? []).find(option => option.name === value)?.postal ?? "";
-        return { ...prev, city: value as string, postalCode };
-      }
-
-      return { ...prev, [key]: value };
-    });
+    setForm(prev => ({ ...prev, [key]: value }));
   };
 
   const setMobileNumber = (value: string) => {
@@ -310,7 +259,7 @@ export default function SellerOnboarding({ view = "form" }: SellerOnboardingProp
         if (!form.firstName.trim() || !form.lastName.trim() || !form.businessName.trim() || !form.ownerIdNumber.trim() || !form.tin.trim() || !form.registrationNumber.trim() || !form.establishedOn.trim()) {
           return "Please complete the Business Info step before continuing.";
         }
-        if (!form.addressLine1.trim() || !form.province.trim() || !form.city.trim() || !form.postalCode.trim()) {
+        if (!form.addressLine1.trim() || !form.regionCode || !form.cityCode || !form.barangayCode || !form.postalCode.trim()) {
           return "Please complete the business address fields before continuing.";
         }
         return null;
@@ -386,8 +335,10 @@ export default function SellerOnboarding({ view = "form" }: SellerOnboardingProp
         established_on: form.establishedOn,
         address_line1: form.addressLine1.trim(),
         address_line2: form.addressLine2.trim() || undefined,
-        province: form.province.trim(),
-        city: form.city.trim(),
+        region_code: form.regionCode,
+        province_code: form.provinceCode || undefined,
+        city_code: form.cityCode,
+        barangay_code: form.barangayCode,
         postal_code: form.postalCode.trim(),
         contact_email: form.contactEmail.trim(),
         public_email: form.publicEmail.trim() || undefined,
@@ -536,44 +487,42 @@ export default function SellerOnboarding({ view = "form" }: SellerOnboardingProp
                   />
                 </Field>
 
-                <Field label="Province / Region" required>
-                  <select
-                    value={form.province}
-                    onChange={e => updateForm("province", e.target.value)}
-                    className={INPUT_CLS + " cursor-pointer"}
-                  >
-                    <option value="">Select province / region</option>
-                    {BUSINESS_REGIONS.map(region => (
-                      <option key={region} value={region}>
-                        {region}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
+                <PhilippineAddressSelector
+                  value={{
+                    ...EMPTY_PHILIPPINE_ADDRESS,
+                    region: form.region,
+                    region_code: form.regionCode,
+                    province: form.province,
+                    province_code: form.provinceCode,
+                    city: form.city,
+                    city_code: form.cityCode,
+                    barangay: form.barangay,
+                    barangay_code: form.barangayCode,
+                    postal_code: form.postalCode,
+                  }}
+                  onChange={location => setForm(previous => ({
+                    ...previous,
+                    region: location.region,
+                    regionCode: location.region_code,
+                    province: location.province,
+                    provinceCode: location.province_code,
+                    city: location.city,
+                    cityCode: location.city_code,
+                    barangay: location.barangay,
+                    barangayCode: location.barangay_code,
+                    postalCode: location.postal_code,
+                  }))}
+                  disabled={isSubmitting}
+                />
 
-                <div className="grid grid-cols-1 md:grid-cols-[1fr_220px] gap-4">
-                  <Field label="City / Municipality" required>
-                    <select
-                      value={form.city}
-                      onChange={e => updateForm("city", e.target.value)}
-                      className={INPUT_CLS + " cursor-pointer"}
-                      disabled={!form.province}
-                    >
-                      <option value="">{form.province ? "Select city / municipality" : "Select a province / region first"}</option>
-                      {selectedLocationOptions.map(city => (
-                        <option key={city.name} value={city.name}>
-                          {city.name}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
+                <div className="mt-4 max-w-[220px]">
                   <Field label="Postal code" required>
                     <input
                       type="text"
                       value={form.postalCode}
-                      readOnly
-                      placeholder="Auto-filled"
-                      className={`${INPUT_CLS} bg-[var(--color-surface)] text-[var(--color-ink-muted)]`}
+                      onChange={event => updateForm("postalCode", event.target.value.replace(/\D/g, "").slice(0, 4))}
+                      placeholder="4-digit postal code"
+                      className={INPUT_CLS}
                     />
                   </Field>
                 </div>

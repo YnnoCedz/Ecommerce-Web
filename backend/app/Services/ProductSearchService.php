@@ -91,8 +91,10 @@ class ProductSearchService
             ->with([
                 'seller.user',
                 'category.parent',
+                'activePromotion:id,product_id,name,type,value,deal_price,starts_at,ends_at',
                 'images' => fn ($images) => $images->orderBy('sort_order')->orderBy('id'),
             ])
+            ->withExists(['variants as has_active_variants' => fn ($variants) => $variants->where('active', true)])
             ->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
             ->withCount(['reviews as rating_count' => fn ($reviews) => $reviews->where('status', 'approved')])
             ->withSum('orderItems as sold_count', 'quantity')
@@ -143,7 +145,7 @@ class ProductSearchService
 
         $query->where(function (Builder $candidateQuery) use ($terms): void {
             foreach ($terms as $term) {
-                $like = '%' . $this->escapeLike($term) . '%';
+                $like = '%'.$this->escapeLike($term).'%';
                 $candidateQuery
                     ->orWhere('products.name', 'like', $like)
                     ->orWhere('products.description', 'like', $like)
@@ -158,7 +160,7 @@ class ProductSearchService
                         ->orWhere('business_name', 'like', $like));
 
                 if (mb_strlen($term) >= 4) {
-                    $prefix = '%' . $this->escapeLike(mb_substr($term, 0, 3)) . '%';
+                    $prefix = '%'.$this->escapeLike(mb_substr($term, 0, 3)).'%';
                     $candidateQuery->orWhere('products.name', 'like', $prefix);
                 }
             }
@@ -170,7 +172,7 @@ class ProductSearchService
         $escapedPhrase = $this->escapeLike($phrase);
         $query->orderByRaw(
             'CASE WHEN LOWER(products.name) = ? THEN 0 WHEN LOWER(products.name) LIKE ? THEN 1 WHEN LOWER(products.name) LIKE ? THEN 2 ELSE 3 END',
-            [$phrase, $escapedPhrase . '%', '%' . $escapedPhrase . '%']
+            [$phrase, $escapedPhrase.'%', '%'.$escapedPhrase.'%']
         )->orderByDesc('products.published_at')->orderByDesc('products.id');
     }
 
@@ -231,12 +233,19 @@ class ProductSearchService
         $nameTokens = $this->tokenize($name);
         $score = 0.0;
 
-        if ($name === $query) $score += 1000;
-        elseif (str_starts_with($name, $query)) $score += 650;
-        elseif (str_contains($name, $query)) $score += 500;
+        if ($name === $query) {
+            $score += 1000;
+        } elseif (str_starts_with($name, $query)) {
+            $score += 650;
+        } elseif (str_contains($name, $query)) {
+            $score += 500;
+        }
 
-        if ($sku === $query) $score += 700;
-        elseif ($query !== '' && str_contains($sku, $query)) $score += 250;
+        if ($sku === $query) {
+            $score += 700;
+        } elseif ($query !== '' && str_contains($sku, $query)) {
+            $score += 250;
+        }
 
         $matchedOriginal = 0;
         foreach ($tokens as $token) {
@@ -251,20 +260,40 @@ class ProductSearchService
                 $matchedOriginal++;
             }
 
-            if ($this->containsTerm($category, $token)) $score += 75;
-            if ($this->containsTerm($parentCategory, $token)) $score += 65;
-            if ($this->containsTerm($tags, $token)) $score += 70;
-            if ($this->containsTerm($seller, $token)) $score += 55;
-            if ($this->containsTerm($description, $token)) $score += 18;
+            if ($this->containsTerm($category, $token)) {
+                $score += 75;
+            }
+            if ($this->containsTerm($parentCategory, $token)) {
+                $score += 65;
+            }
+            if ($this->containsTerm($tags, $token)) {
+                $score += 70;
+            }
+            if ($this->containsTerm($seller, $token)) {
+                $score += 55;
+            }
+            if ($this->containsTerm($description, $token)) {
+                $score += 18;
+            }
         }
 
-        if ($tokens !== [] && $matchedOriginal === count($tokens)) $score += 260;
+        if ($tokens !== [] && $matchedOriginal === count($tokens)) {
+            $score += 260;
+        }
 
         foreach (array_diff($expandedTokens, $tokens) as $synonym) {
-            if ($this->containsTerm($name, $synonym)) $score += 70;
-            if ($this->containsTerm($category, $synonym) || $this->containsTerm($parentCategory, $synonym)) $score += 55;
-            if ($this->containsTerm($tags, $synonym)) $score += 45;
-            if ($this->containsTerm($description, $synonym)) $score += 10;
+            if ($this->containsTerm($name, $synonym)) {
+                $score += 70;
+            }
+            if ($this->containsTerm($category, $synonym) || $this->containsTerm($parentCategory, $synonym)) {
+                $score += 55;
+            }
+            if ($this->containsTerm($tags, $synonym)) {
+                $score += 45;
+            }
+            if ($this->containsTerm($description, $synonym)) {
+                $score += 10;
+            }
         }
 
         return $score;
@@ -320,17 +349,22 @@ class ProductSearchService
 
     private function bestSimilarity(string $needle, array $candidates): float
     {
-        if (mb_strlen($needle) < 4) return 0;
+        if (mb_strlen($needle) < 4) {
+            return 0;
+        }
 
         return collect($candidates)->map(function (string $candidate) use ($needle): float {
             $length = max(strlen($needle), strlen($candidate));
+
             return $length === 0 ? 0 : 1 - (levenshtein($needle, $candidate) / $length);
         })->max() ?? 0;
     }
 
     private function suggestCorrection(string $query, array $tokens, Collection $candidates): ?string
     {
-        if ($tokens === [] || $candidates->isEmpty()) return null;
+        if ($tokens === [] || $candidates->isEmpty()) {
+            return null;
+        }
 
         $dictionary = $candidates->flatMap(function (Product $product): array {
             return $this->tokenize($this->normalize(implode(' ', array_filter([
@@ -350,6 +384,7 @@ class ProductSearchService
 
             if ($candidate && $candidate !== $token && $similarity >= 0.80) {
                 $changed = true;
+
                 return $candidate;
             }
 

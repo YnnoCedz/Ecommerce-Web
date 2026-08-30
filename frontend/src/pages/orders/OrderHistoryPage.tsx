@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchBuyerOrders, type BuyerOrderListItem } from "../../api/buyer";
+import { useUrlTab } from "../../hooks/useUrlTab";
 
 type OrderStatus = "processing" | "in-transit" | "out-for-delivery" | "delivered" | "completed" | "cancelled" | "returned" | "refunded" | "failed";
 type FilterTab = "all" | "active" | "completed" | "cancelled" | "returns";
@@ -56,7 +57,10 @@ function filterOrders(orders: BuyerOrderListItem[], tab: FilterTab, search: stri
 export default function OrderHistoryPage({ onViewDetail }: { onViewDetail?: (id: string) => void }) {
   const [orders, setOrders] = useState<BuyerOrderListItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<FilterTab>("all");
+  const { activeTab, setActiveTab } = useUrlTab(
+    FILTER_TABS.map((tab) => tab.id),
+    "all",
+  );
   const [search, setSearch] = useState("");
   const [sellerFilter, setSellerFilter] = useState("");
   const [sortBy, setSortBy] = useState<"date-desc" | "date-asc" | "amount-desc" | "amount-asc">("date-desc");

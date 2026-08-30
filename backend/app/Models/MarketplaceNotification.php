@@ -16,6 +16,7 @@ class MarketplaceNotification extends Model
         'action_type',
         'action_label',
         'order_id',
+        'seller_order_id',
         'product_id',
         'conversation_id',
         'read_at',

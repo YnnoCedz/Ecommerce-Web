@@ -1,8 +1,9 @@
 <?php
 
+use App\Services\MediaStorageService;
 use Illuminate\Foundation\Inspiring;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 
 Artisan::command('inspire', function () {
@@ -26,19 +27,19 @@ Artisan::command('mail:test {email?}', function () {
 
     try {
         Mail::raw(
-            'Maketo mail test sent at ' . now()->toDateTimeString(),
+            'Maketo mail test sent at '.now()->toDateTimeString(),
             function ($message) use ($recipient) {
                 $message->to($recipient);
                 $message->subject('Maketo mail test');
             }
         );
     } catch (Throwable $e) {
-        $this->error('Mail test failed: ' . $e->getMessage());
+        $this->error('Mail test failed: '.$e->getMessage());
 
         return self::FAILURE;
     }
 
-    $this->info('Mail test sent successfully to ' . $recipient . '.');
+    $this->info('Mail test sent successfully to '.$recipient.'.');
 
     return self::SUCCESS;
 })->purpose('Send a safe development mail test using the configured mailer');
@@ -51,14 +52,14 @@ Artisan::command('r2:test', function () {
     }
 
     try {
-        $result = app(\App\Services\MediaStorageService::class)->testConnection();
+        $result = app(MediaStorageService::class)->testConnection();
     } catch (Throwable $e) {
-        $this->error('R2 test failed: ' . $e->getMessage());
+        $this->error('R2 test failed: '.$e->getMessage());
 
         return self::FAILURE;
     }
 
-    $this->info('R2 connection verified successfully for key ' . $result['key'] . '.');
+    $this->info('R2 connection verified successfully for key '.$result['key'].'.');
 
     return self::SUCCESS;
 })->purpose('Verify the configured R2 disk with a write/read/delete cycle');
@@ -75,7 +76,17 @@ Artisan::command('auth:challenges:prune {--hours=24 : Delete consumed or expired
         })
         ->delete();
 
-    $this->info("Pruned {$deleted} auth challenge record" . ($deleted === 1 ? '' : 's') . '.');
+    $this->info("Pruned {$deleted} auth challenge record".($deleted === 1 ? '' : 's').'.');
 
     return self::SUCCESS;
 })->purpose('Delete old consumed or expired auth challenge records');
+
+Artisan::command('auth:pending-registrations:prune', function () {
+    $deleted = DB::table('pending_registrations')
+        ->where('expires_at', '<=', now())
+        ->delete();
+
+    $this->info("Pruned {$deleted} expired pending registration".($deleted === 1 ? '' : 's').'.');
+
+    return self::SUCCESS;
+})->purpose('Delete expired temporary registration records');

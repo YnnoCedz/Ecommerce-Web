@@ -119,7 +119,7 @@ class AuthSessionPersistenceTest extends TestCase
             'password' => 'Password123!',
         ])->assertOk()
             ->assertJsonPath('user.seller_approved', false)
-            ->assertJsonPath('redirect_to', '/seller-center/onboarding/status');
+            ->assertJsonPath('redirect_to', '/');
 
         $token = $login->json('token');
         $this->withToken($token)->getJson('/api/auth/me')->assertOk();

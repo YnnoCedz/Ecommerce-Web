@@ -2,9 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { Pencil, Plus, Search, Trash2, ChevronDown } from "lucide-react";
 import { deleteSellerProduct, fetchSellerProducts, updateSellerProduct, type SellerProduct, type SellerProductSubmission } from "../../api/seller";
+import { useUrlTab } from "../../hooks/useUrlTab";
 
 type ProductStatus = "active" | "draft" | "archived" | "out-of-stock";
 type BulkAction = "publish" | "archive" | "delete";
+type ProductTab = ProductStatus | "all";
+
+const PRODUCT_TABS: readonly ProductTab[] = ["all", "active", "draft", "out-of-stock", "archived"];
 
 const STATUS_CFG: Record<ProductStatus, { label: string; color: string; bg: string }> = {
   active: { label: "Active", color: "var(--color-green)", bg: "var(--color-green-light)" },
@@ -30,7 +34,7 @@ export default function ProductListPage() {
   const [products, setProducts] = useState<SellerProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<ProductStatus | "all">("all");
+  const { activeTab: statusFilter, setActiveTab: setStatusFilter } = useUrlTab(PRODUCT_TABS, "all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [sort, setSort] = useState("newest");
   const [selected, setSelected] = useState<number[]>([]);
@@ -192,7 +196,7 @@ export default function ProductListPage() {
       </div>
 
       <div className="flex gap-1 mb-4 border-b border-[var(--color-border)]">
-        {(["all", "active", "draft", "out-of-stock", "archived"] as const).map((status) => (
+        {PRODUCT_TABS.map((status) => (
           <button
             key={status}
             onClick={() => setStatusFilter(status)}
