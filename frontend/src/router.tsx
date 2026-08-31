@@ -6,11 +6,11 @@ import type { AccountUser } from "./pages/account/AccountLayout";
 import PublicLayout, { useNav } from "./layouts/PublicLayout";
 import SpecLayout from "./layouts/SpecLayout";
 import RouteErrorPage from "./pages/errors/RouteErrorPage";
+import HomePage from "./pages/pub/HomePage";
 
 const SellerLayout = lazy(() => import("./layouts/SellerLayout"));
 const AdminLayout = lazy(() => import("./layouts/AdminLayout"));
 
-const HomePage = lazy(() => import("./pages/pub/HomePage"));
 const CategoryPage = lazy(() => import("./pages/pub/CategoryPage"));
 const SearchPage = lazy(() => import("./pages/pub/SearchPage"));
 const DealsPage = lazy(() => import("./pages/pub/DealsPage"));
@@ -63,6 +63,7 @@ const CategoryManagementPage = lazy(() => import("./pages/admin/CategoryManageme
 const ReportsModerationPage = lazy(() => import("./pages/admin/ReportsModerationPage"));
 const AdminDisputesPage = lazy(() => import("./pages/admin/AdminDisputesPage"));
 const AdminAnalyticsPage = lazy(() => import("./pages/admin/AdminAnalyticsPage"));
+const AdminActivityPage = lazy(() => import("./pages/admin/AdminActivityPage"));
 const AdminSettingsPage = lazy(() => import("./pages/admin/AdminSettingsPage"));
 const AdminProfilePage = lazy(() => import("./pages/admin/AdminProfilePage"));
 
@@ -372,6 +373,7 @@ export const router = createBrowserRouter([
           { path: "moderation", element: <Navigate to="/admin/reports" replace /> },
           { path: "notifications", Component: NotificationCenter },
           { path: "analytics", Component: AdminAnalyticsPage },
+          { path: "activity", Component: AdminActivityPage },
           { path: "settings", Component: AdminSettingsPage },
           { path: "profile", Component: AdminProfilePage },
         ],

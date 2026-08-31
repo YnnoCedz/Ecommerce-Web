@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AdminDisputeController;
+use App\Http\Controllers\Api\AdminPlatformController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CatalogController;
 use App\Http\Controllers\Api\CommerceController;
@@ -14,6 +15,7 @@ use App\Http\Controllers\Api\OrderResolutionController;
 use App\Http\Controllers\Api\SellerApplicationController;
 use App\Http\Controllers\Api\SellerController;
 use App\Http\Controllers\Api\SellerSalesReportController;
+use App\Http\Controllers\Api\SellerSecurityController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class);
@@ -128,6 +130,16 @@ Route::prefix('seller')
         Route::post('/promotions', [SellerController::class, 'storePromotion']);
         Route::put('/promotions/{promotion}', [SellerController::class, 'updatePromotion']);
         Route::patch('/promotions/{promotion}/cancel', [SellerController::class, 'cancelPromotion']);
+        Route::get('/documents', [SellerSecurityController::class, 'documents']);
+        Route::post('/documents/{sellerDocument}/renew', [SellerSecurityController::class, 'renew'])->middleware('throttle:5,60');
+        Route::get('/settings/security', [SellerSecurityController::class, 'security']);
+        Route::post('/settings/security/password/challenge', [SellerSecurityController::class, 'passwordChallenge'])->middleware('throttle:3,10');
+        Route::patch('/settings/security/password', [SellerSecurityController::class, 'changePassword'])->middleware('throttle:5,10');
+        Route::post('/settings/security/mfa/challenge', [SellerSecurityController::class, 'mfaChallenge'])->middleware('throttle:3,10');
+        Route::post('/settings/security/mfa/verify', [SellerSecurityController::class, 'mfaVerify'])->middleware('throttle:5,10');
+        Route::delete('/settings/security/sessions/{tokenId}', [SellerSecurityController::class, 'revokeSession'])->middleware('throttle:10,1');
+        Route::post('/settings/danger-zone/challenge', [SellerSecurityController::class, 'dangerChallenge'])->middleware('throttle:3,10');
+        Route::post('/settings/danger-zone/verify', [SellerSecurityController::class, 'dangerVerify'])->middleware('throttle:5,10');
     });
 
 Route::prefix('admin')
@@ -149,6 +161,15 @@ Route::prefix('admin')
         Route::post('/categories', [AdminController::class, 'storeCategory']);
         Route::patch('/categories/{category}', [AdminController::class, 'updateCategory']);
         Route::get('/analytics', [AdminController::class, 'analytics']);
+        Route::get('/analytics/platform', [AdminPlatformController::class, 'analytics']);
+        Route::get('/activity', [AdminPlatformController::class, 'activity']);
+        Route::get('/settings', [AdminPlatformController::class, 'settings']);
+        Route::put('/settings', [AdminPlatformController::class, 'updateSettings']);
+        Route::patch('/settings', [AdminPlatformController::class, 'updateSettings']);
+        Route::post('/security/password/mfa-challenge', [AdminPlatformController::class, 'passwordChallenge'])->middleware('throttle:3,10');
+        Route::post('/security/password', [AdminPlatformController::class, 'changePassword'])->middleware('throttle:5,10');
+        Route::get('/document-renewals', [AdminPlatformController::class, 'renewals']);
+        Route::patch('/document-renewals/{sellerDocument}', [AdminPlatformController::class, 'reviewRenewal']);
         Route::get('/seller-applications', [SellerApplicationController::class, 'index']);
         Route::get('/seller-applications/{sellerApplication}', [SellerApplicationController::class, 'show']);
         Route::post('/seller-applications/{sellerApplication}/approve', [SellerApplicationController::class, 'approve']);

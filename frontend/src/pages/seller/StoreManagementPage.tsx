@@ -3,9 +3,12 @@ import { useNavigate } from "react-router"
 import {
   fetchSellerProfile,
   fetchSellerProducts,
+  fetchSellerDocuments,
+  renewSellerDocument,
   updateSellerProfile,
   type SellerProduct,
   type SellerProfile,
+  type SellerDocument,
 } from "../../api/seller"
 import PhilippineAddressSelector, {
   EMPTY_PHILIPPINE_ADDRESS,
@@ -16,13 +19,14 @@ import { useToast } from "../../components/ToastProvider"
 import { DEFAULT_SELLER_BANNER } from "../pub/visuals"
 import { useUrlTab } from "../../hooks/useUrlTab"
 
-type StoreTab = "profile" | "branding" | "policies" | "preview"
+type StoreTab = "profile" | "branding" | "policies" | "renewal" | "preview"
 type EditProps = { isEditing: boolean; onEdit: () => void; onCancel: () => void }
 
 const STORE_TABS: readonly StoreTab[] = [
   "profile",
   "branding",
   "policies",
+  "renewal",
   "preview",
 ]
 
@@ -657,6 +661,37 @@ function PoliciesTab({
   )
 }
 
+function RenewalTab() {
+  const { showToast } = useToast()
+  const [documents, setDocuments] = useState<SellerDocument[]>([])
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState<number | null>(null)
+  const load = () => {
+    setLoading(true)
+    void fetchSellerDocuments()
+      .then((response) => setDocuments(response.data))
+      .catch((error: Error) => showToast(error.message, "error"))
+      .finally(() => setLoading(false))
+  }
+  useEffect(load, [])
+  const submit = async (document: SellerDocument, file: File) => {
+    setSubmitting(document.id)
+    try {
+      const response = await renewSellerDocument(document.id, file)
+      showToast(response.message, "success")
+      load()
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Unable to submit renewal.", "error")
+    } finally { setSubmitting(null) }
+  }
+  const labels: Record<string, string> = { owner_id: "Owner ID", seller_certificate: "Seller certificate", business_document: "Business document" }
+  return <div><TabHeader title="Document renewal"><span /></TabHeader>
+    {loading && <p className="py-10 text-center text-sm text-[var(--color-ink-muted)]">Loading documents...</p>}
+    {!loading && documents.length === 0 && <SectionCard title="No documents available"><p className="text-sm text-[var(--color-ink-muted)]">No approved seller documents are attached to this store.</p></SectionCard>}
+    <div className="space-y-3">{documents.map((document) => <section key={document.id} className="border border-[var(--color-border)] bg-white p-5"><div className="flex flex-wrap items-start justify-between gap-4"><div><h3 className="font-[600]">{labels[document.document_type] ?? document.document_type.replaceAll("_", " ")}</h3><p className="mt-1 text-xs text-[var(--color-ink-muted)]">Uploaded {document.uploaded_at ? new Date(document.uploaded_at).toLocaleDateString() : "—"} · Expires {document.expires_at ? new Date(document.expires_at).toLocaleDateString() : "Not tracked"}</p><span className="mt-2 inline-block bg-[var(--color-surface)] px-2 py-1 text-xs capitalize">{document.display_status.replaceAll("_", " ")}</span>{document.renewal?.review_notes && <p className="mt-2 text-xs text-[var(--color-red)]">Review note: {document.renewal.review_notes}</p>}</div><label className={`cursor-pointer border border-[var(--color-border)] px-3 py-2 text-xs ${document.display_status === "renewal_pending" || submitting === document.id ? "pointer-events-none opacity-50" : ""}`}>{submitting === document.id ? "Uploading..." : document.display_status === "renewal_pending" ? "Pending admin review" : "Renew document"}<input type="file" accept=".jpg,.jpeg,.png,.pdf" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void submit(document, file); event.currentTarget.value = "" }}/></label></div></section>)}</div>
+  </div>
+}
+
 function PreviewTab({
   profile,
   products,
@@ -791,6 +826,7 @@ export default function StoreManagementPage() {
     { id: "profile", label: "Store profile" },
     { id: "branding", label: "Branding" },
     { id: "policies", label: "Policies" },
+    { id: "renewal", label: "Renewal" },
     { id: "preview", label: "Public preview" },
   ]
   return (
@@ -828,6 +864,7 @@ export default function StoreManagementPage() {
       {tab === "policies" && (
         <PoliciesTab profile={profile} onUpdated={setProfile} {...editProps} />
       )}
+      {tab === "renewal" && <RenewalTab />}
       {tab === "preview" && (
         <PreviewTab
           profile={profile}

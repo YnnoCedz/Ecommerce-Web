@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
-import { Bell, Eye, EyeOff, LockKeyhole, Banknote, UserRound } from "lucide-react";
+import { Eye, EyeOff, LockKeyhole, Banknote, UserRound, TriangleAlert } from "lucide-react";
+import { createPortal } from "react-dom";
 import { useAuth } from "../../auth/AuthContext";
-import { fetchSellerProfile, updateSellerProfile, type SellerProfile } from "../../api/seller";
-import { updatePasswordRequest } from "../../api/auth";
+import { changeSellerPassword, fetchSellerProfile, fetchSellerSecurity, requestSellerDangerChallenge, requestSellerMfaChallenge, requestSellerPasswordChallenge, revokeSellerSession, updateSellerProfile, verifySellerDangerChallenge, verifySellerMfaChallenge, type SellerProfile, type SellerSecurityChallenge, type SellerSecurityState } from "../../api/seller";
+import { updateAccountProfile } from "../../api/account";
 import { PasswordStrength } from "../auth/AuthLayout";
 import { useUrlTab } from "../../hooks/useUrlTab";
 
-type SettingsTab = "account" | "payouts" | "notifications" | "security";
+type SettingsTab = "profile" | "payouts" | "security" | "danger-zone";
 
-const SETTINGS_TABS: readonly SettingsTab[] = ["account", "payouts", "notifications", "security"];
+const SETTINGS_TABS: readonly SettingsTab[] = ["profile", "payouts", "security", "danger-zone"];
 
 const INPUT =
   "w-full px-3 py-2.5 border border-[var(--color-border)] rounded-sm text-sm text-[var(--color-ink)] placeholder:text-[var(--color-ink-disabled)] focus:outline-none focus:border-[var(--color-navy)] bg-white transition-colors font-[var(--font-body)]";
@@ -27,85 +28,84 @@ function SectionCard({ title, subtitle, children }: { title: string; subtitle?: 
 }
 
 function Toggle({ checked }: { checked: boolean }) {
-  return (
-    <div className={`w-9 h-5 rounded-full transition-colors flex items-center px-0.5 shrink-0 ${checked ? "bg-[var(--color-navy)]" : "bg-[var(--color-border)]"}`}>
-      <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-4" : ""}`} />
-    </div>
-  );
+  return <span className={`inline-block h-5 w-9 rounded-full ${checked ? "bg-[var(--color-navy)]" : "bg-[var(--color-border)]"}`} />;
+}
+
+function DangerZone() {
+  const [action, setAction] = useState<"deactivate" | "close" | null>(null)
+  const [confirmation, setConfirmation] = useState("")
+  const [password, setPassword] = useState("")
+  const [code, setCode] = useState("")
+  const [challenge, setChallenge] = useState<{ challenge_id: number; challenge_token: string; expires_at: string; action: "deactivate" | "close" } | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const phrase = action === "close" ? "CLOSE SELLER ACCOUNT" : "DEACTIVATE STORE"
+  const reset = () => { setAction(null); setConfirmation(""); setPassword(""); setCode(""); setChallenge(null); setNotice(null); setBusy(false) }
+  const send = async () => {
+    if (!action || confirmation !== phrase || !password || busy) return
+    setBusy(true); setNotice(null)
+    try { const response = await requestSellerDangerChallenge({ action, confirmation, password }); setChallenge(response.data); setNotice(response.message); setPassword("") }
+    catch (error) { setNotice(error instanceof Error ? error.message : "Unable to send verification code.") }
+    finally { setBusy(false) }
+  }
+  const verify = async () => {
+    if (!challenge || code.length !== 6 || busy) return
+    setBusy(true); setNotice(null)
+    try { await verifySellerDangerChallenge({ action: challenge.action, challenge_id: challenge.challenge_id, challenge_token: challenge.challenge_token, code }); reset(); window.location.assign("/") }
+    catch (error) { setNotice(error instanceof Error ? error.message : "Unable to complete account action.") }
+    finally { setBusy(false) }
+  }
+  return <SectionCard title="Danger zone" subtitle="Security-sensitive actions preserve orders, transactions, disputes, and audit history.">
+    <div className="space-y-3"><div className="flex items-center justify-between gap-4 border border-[var(--color-border)] px-4 py-3.5"><div><p className="text-sm font-[500]">Deactivate store</p><p className="text-xs text-[var(--color-ink-muted)]">Hide the store from buyers while preserving marketplace history.</p></div><button onClick={() => { reset(); setAction("deactivate") }} className="border border-[var(--color-amber-border)] px-3 py-2 text-xs text-[var(--color-amber)]">Deactivate</button></div>
+      <div className="flex items-center justify-between gap-4 border border-[var(--color-red-border)] bg-[var(--color-red-light)] px-4 py-3.5"><div><p className="text-sm font-[500] text-[var(--color-red)]">Close seller account</p><p className="text-xs text-[var(--color-red)]/70">Close seller access without deleting financial or order records.</p></div><button onClick={() => { reset(); setAction("close") }} className="bg-[var(--color-red)] px-3 py-2 text-xs text-white">Close account</button></div></div>
+    {action && createPortal(<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/55 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) reset() }}>
+      <div role="dialog" aria-modal="true" aria-labelledby="danger-title" className="w-full max-w-lg rounded-sm border border-[var(--color-border)] bg-white p-6 shadow-2xl">
+        <div className="flex items-start gap-3 mb-4"><TriangleAlert className="text-[var(--color-red)] shrink-0" size={22}/><div><h2 id="danger-title" className="text-lg font-[600]">{action === "close" ? "Close Seller Account?" : "Deactivate Store?"}</h2><p className="mt-1 text-sm text-[var(--color-ink-muted)]">{action === "close" ? "Seller access will close, but marketplace, financial, order, review, and audit history will remain." : "Your store and active products will be hidden from buyers while all marketplace history remains."}</p></div></div>
+        <ul className="mb-4 list-disc pl-5 text-xs text-[var(--color-ink-muted)] space-y-1"><li>Open fulfillment, returns, disputes, renewals, or unsettled payments can block this action.</li><li>Email verification is action-scoped, expires after ten minutes, and can be used once.</li></ul>
+        <div className="space-y-3">{!challenge ? <><label className={LABEL}>Type {phrase}</label><input autoFocus className={INPUT} value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder={phrase}/><label className={LABEL}>Current password</label><input type="password" autoComplete="current-password" className={INPUT} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Account password"/></> : <><label className={LABEL}>Email verification code</label><input autoFocus inputMode="numeric" maxLength={6} className={INPUT} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="6-digit code"/><p className="text-xs text-[var(--color-ink-muted)]">Expires {new Date(challenge.expires_at).toLocaleString()}.</p></>}
+          {notice && <p role="status" className="text-xs text-[var(--color-ink-muted)]">{notice}</p>}
+          <div className="flex justify-end gap-2 pt-2"><button type="button" onClick={reset} className="border border-[var(--color-border)] px-4 py-2 text-sm">Cancel</button>{!challenge ? <button type="button" onClick={() => void send()} disabled={busy || confirmation !== phrase || !password} className="bg-[var(--color-red)] px-4 py-2 text-sm text-white disabled:opacity-50">{busy ? "Sending..." : "Send email code"}</button> : <button type="button" onClick={() => void verify()} disabled={busy || code.length !== 6} className="bg-[var(--color-red)] px-4 py-2 text-sm text-white disabled:opacity-50">{busy ? "Verifying..." : action === "close" ? "Confirm closure" : "Confirm deactivation"}</button>}</div>
+        </div>
+      </div>
+    </div>, document.body)}
+  </SectionCard>
 }
 
 function AccountTab() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const displayName = user?.display_name ?? user?.name ?? "";
   const nameParts = displayName.trim().split(/\s+/).filter(Boolean);
   const firstName = user?.first_name ?? nameParts[0] ?? "";
   const lastName = user?.last_name ?? nameParts.slice(1).join(" ") ?? "";
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [savingPassword, setSavingPassword] = useState(false);
-  const [passwordNotice, setPasswordNotice] = useState<string | null>(null);
-  const passwordRequirements = {
-    length: newPassword.length >= 8,
-    maxLength: newPassword.length <= 16,
-    uppercase: /[A-Z]/.test(newPassword),
-    number: /[0-9]/.test(newPassword),
-    symbol: /[^A-Za-z0-9]/.test(newPassword),
-  };
-  const passwordMeetsRequirements =
-    passwordRequirements.length &&
-    passwordRequirements.maxLength &&
-    passwordRequirements.uppercase &&
-    passwordRequirements.number &&
-    passwordRequirements.symbol;
-  const passwordsMatch = !confirmPassword || newPassword === confirmPassword;
-  const canReviewPasswordChange =
-    Boolean(currentPassword.trim()) &&
-    Boolean(newPassword.trim()) &&
-    Boolean(confirmPassword.trim()) &&
-    passwordMeetsRequirements &&
-    newPassword === confirmPassword;
-
-  const handlePasswordSave = async () => {
-    if (!canReviewPasswordChange || savingPassword) {
-      return;
-    }
-
-    setSavingPassword(true);
-    setPasswordNotice(null);
-
+  const saved = { firstName, lastName, phone: user?.phone ?? user?.mobile ?? "" };
+  const [draft, setDraft] = useState(saved);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => { if (!editing) setDraft(saved) }, [firstName, lastName, saved.phone, editing]);
+  const cancel = () => { setDraft(saved); setEditing(false); setNotice(null) };
+  const save = async () => {
+    if (saving) return;
+    setSaving(true); setNotice(null);
     try {
-      const response = await updatePasswordRequest({
-        current_password: currentPassword,
-        password: newPassword,
-        password_confirmation: confirmPassword,
-      });
-
-      setPasswordNotice(response.message);
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-    } catch (error) {
-      setPasswordNotice(error instanceof Error ? error.message : "Unable to update your password right now.");
-    } finally {
-      setSavingPassword(false);
-    }
+      const response = await updateAccountProfile({ first_name: draft.firstName.trim(), last_name: draft.lastName.trim(), phone: draft.phone.trim() });
+      setNotice(response.message); setEditing(false); await refreshUser();
+    } catch (error) { setNotice(error instanceof Error ? error.message : "Unable to save personal information.") }
+    finally { setSaving(false) }
   };
 
   return (
     <div>
-      <SectionCard title="Personal information">
+      <SectionCard title="Personal information" subtitle="Your verified email stays read-only until a secure email-change flow is available.">
+        <div className="flex justify-end mb-4">{!editing ? <button type="button" onClick={() => { setEditing(true); setNotice(null) }} className="px-4 py-2 border border-[var(--color-border)] text-sm">Edit</button> : <div className="flex gap-2"><button type="button" onClick={cancel} className="px-4 py-2 border border-[var(--color-border)] text-sm">Cancel</button><button type="button" onClick={() => void save()} disabled={saving || !draft.firstName.trim() || !draft.lastName.trim() || !draft.phone.trim()} className="px-4 py-2 bg-[var(--color-navy)] text-white text-sm disabled:opacity-50">{saving ? "Saving..." : "Save changes"}</button></div>}</div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <div>
             <label className={LABEL}>First name</label>
-            <input type="text" value={firstName} readOnly className={INPUT} />
+            <input type="text" value={draft.firstName} readOnly={!editing} onChange={(event) => setDraft(current => ({ ...current, firstName: event.target.value }))} className={INPUT} />
           </div>
           <div>
             <label className={LABEL}>Last name</label>
-            <input type="text" value={lastName} readOnly className={INPUT} />
+            <input type="text" value={draft.lastName} readOnly={!editing} onChange={(event) => setDraft(current => ({ ...current, lastName: event.target.value }))} className={INPUT} />
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -115,142 +115,10 @@ function AccountTab() {
           </div>
           <div>
             <label className={LABEL}>Mobile number</label>
-            <input type="tel" value={user?.phone ?? user?.mobile ?? ""} readOnly className={INPUT} />
+            <input type="tel" value={draft.phone} readOnly={!editing} onChange={(event) => setDraft(current => ({ ...current, phone: event.target.value }))} className={INPUT} />
           </div>
         </div>
-        <div className="flex justify-end">
-          <button disabled className="px-4 py-2 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm opacity-60 cursor-not-allowed">
-            Save
-          </button>
-        </div>
-      </SectionCard>
-
-      <SectionCard title="Change password">
-        <div className="space-y-4 max-w-md">
-          <div>
-            <label className={LABEL}>Current password</label>
-            <div className="relative">
-              <input
-                type={showCurrentPassword ? "text" : "password"}
-                value={currentPassword}
-                onChange={(event) => setCurrentPassword(event.target.value)}
-                placeholder="Enter current password"
-                maxLength={16}
-                className={`${INPUT} pr-11`}
-              />
-              <button
-                type="button"
-                onClick={() => setShowCurrentPassword((current) => !current)}
-                aria-label={showCurrentPassword ? "Hide current password" : "Show current password"}
-                className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center text-[var(--color-ink-disabled)] hover:text-[var(--color-ink)] cursor-pointer rounded-sm"
-              >
-                {showCurrentPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-            <p className="mt-1.5 text-xs text-[var(--color-ink-muted)]">
-              Enter your existing password before setting a new one.
-            </p>
-          </div>
-          <div>
-            <label className={LABEL}>New password</label>
-            <div className="relative">
-              <input
-                type={showNewPassword ? "text" : "password"}
-                value={newPassword}
-                onChange={(event) => setNewPassword(event.target.value)}
-                placeholder="At least 8 characters"
-                maxLength={16}
-                className={`${INPUT} pr-11`}
-              />
-              <button
-                type="button"
-                onClick={() => setShowNewPassword((current) => !current)}
-                aria-label={showNewPassword ? "Hide new password" : "Show new password"}
-                className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center text-[var(--color-ink-disabled)] hover:text-[var(--color-ink)] cursor-pointer rounded-sm"
-              >
-                {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-            <p className="mt-1.5 text-xs text-[var(--color-ink-muted)]">
-              Use 8-16 characters with one uppercase letter, one number, and one symbol.
-            </p>
-            <div className="mt-2">
-              <PasswordStrength password={newPassword} />
-            </div>
-            <p className="mt-1.5 text-xs text-[var(--color-ink-muted)]">
-              {canReviewPasswordChange
-                ? "Password meets the current registration rules."
-                : "Password must include 8-16 characters, one uppercase letter, one number, and one symbol."}
-            </p>
-          </div>
-          <div>
-            <label className={LABEL}>Confirm new password</label>
-            <div className="relative">
-              <input
-                type={showConfirmPassword ? "text" : "password"}
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-                placeholder="Repeat new password"
-                maxLength={16}
-                className={`${INPUT} pr-11`}
-              />
-              <button
-                type="button"
-                onClick={() => setShowConfirmPassword((current) => !current)}
-                aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
-                className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center text-[var(--color-ink-disabled)] hover:text-[var(--color-ink)] cursor-pointer rounded-sm"
-              >
-                {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-            {confirmPassword && !passwordsMatch && (
-              <p className="mt-1.5 text-xs text-[var(--color-red)]">
-                Passwords do not match.
-              </p>
-            )}
-            {confirmPassword && passwordsMatch && (
-              <p className="mt-1.5 text-xs text-[var(--color-ink-muted)]">
-                Re-enter the same password to confirm the change.
-              </p>
-            )}
-          </div>
-          {passwordNotice && (
-            <p className={`text-xs ${passwordNotice.toLowerCase().includes("unable") || passwordNotice.toLowerCase().includes("incorrect") ? "text-[var(--color-red)]" : "text-[var(--color-green)]"}`}>
-              {passwordNotice}
-            </p>
-          )}
-          <button
-            type="button"
-            onClick={() => void handlePasswordSave()}
-            disabled={!canReviewPasswordChange || savingPassword}
-            className={`px-4 py-2 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm transition-colors ${!canReviewPasswordChange || savingPassword ? "opacity-60 cursor-not-allowed" : "hover:bg-[var(--color-navy-hover)] cursor-pointer"}`}
-          >
-            {savingPassword ? "Updating..." : "Update password"}
-          </button>
-        </div>
-      </SectionCard>
-
-      <SectionCard title="Danger zone" subtitle="These actions are irreversible.">
-        <div className="space-y-3">
-          <div className="flex items-center justify-between px-4 py-3.5 border border-[var(--color-border)] rounded-sm">
-            <div>
-              <p className="text-sm font-[500] text-[var(--color-ink)]">Deactivate store</p>
-              <p className="text-xs text-[var(--color-ink-muted)]">Your store and listings will be hidden from buyers. You can reactivate at any time.</p>
-            </div>
-            <button disabled className="px-3 py-2 border border-[var(--color-amber-border)] text-xs text-[var(--color-amber)] rounded-sm opacity-60 cursor-not-allowed whitespace-nowrap ml-4">
-              Deactivate
-            </button>
-          </div>
-          <div className="flex items-center justify-between px-4 py-3.5 border border-[var(--color-red-border)] rounded-sm bg-[var(--color-red-light)]">
-            <div>
-              <p className="text-sm font-[500] text-[var(--color-red)]">Delete seller account</p>
-              <p className="text-xs text-[var(--color-red)]/70">Permanently delete your store, products, and transaction history. This cannot be undone.</p>
-            </div>
-            <button disabled className="px-3 py-2 bg-[var(--color-red)] text-white text-xs font-[500] rounded-sm opacity-60 cursor-not-allowed whitespace-nowrap ml-4">
-              Delete account
-            </button>
-          </div>
-        </div>
+        {notice && <p role="status" className="text-xs text-[var(--color-ink-muted)]">{notice}</p>}
       </SectionCard>
     </div>
   );
@@ -702,11 +570,99 @@ function SecurityTab({ profile }: { profile: SellerProfile | null }) {
   );
 }
 
+function SellerSecurityTab({ state, loading, onReload }: { state: SellerSecurityState | null; loading: boolean; onReload: () => Promise<void> }) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordCode, setPasswordCode] = useState("");
+  const [passwordChallenge, setPasswordChallenge] = useState<SellerSecurityChallenge | null>(null);
+  const [isPasswordSubmitting, setIsPasswordSubmitting] = useState(false);
+  const [passwordNotice, setPasswordNotice] = useState<string | null>(null);
+  const [showPasswords, setShowPasswords] = useState(false);
+  const [mfaPassword, setMfaPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaChallenge, setMfaChallenge] = useState<SellerSecurityChallenge | null>(null);
+  const [isMfaEnabling, setIsMfaEnabling] = useState(false);
+  const [isMfaDisabling, setIsMfaDisabling] = useState(false);
+  const [isMfaVerifying, setIsMfaVerifying] = useState(false);
+  const [mfaNotice, setMfaNotice] = useState<string | null>(null);
+  const [revokingId, setRevokingId] = useState<number | null>(null);
+  const passwordValid = newPassword.length >= 8 && newPassword.length <= 16 && /[A-Z]/.test(newPassword) && /\d/.test(newPassword) && /[^A-Za-z0-9]/.test(newPassword) && newPassword === confirmPassword;
+  const mfaAction = state?.mfa.enabled ? "disable" : "enable";
+
+  const submitPassword = async () => {
+    if (!state || !currentPassword || !passwordValid || isPasswordSubmitting) return;
+    setIsPasswordSubmitting(true); setPasswordNotice(null);
+    try {
+      if (state.mfa.enabled && !passwordChallenge) {
+        const response = await requestSellerPasswordChallenge(currentPassword);
+        setPasswordChallenge(response.data); setPasswordNotice(response.message); return;
+      }
+      const response = await changeSellerPassword({ current_password: currentPassword, password: newPassword, password_confirmation: confirmPassword, ...(passwordChallenge ? { challenge_id: passwordChallenge.challenge_id, challenge_token: passwordChallenge.challenge_token, code: passwordCode } : {}) });
+      setPasswordNotice(response.message); setCurrentPassword(""); setNewPassword(""); setConfirmPassword(""); setPasswordCode(""); setPasswordChallenge(null); await onReload();
+    } catch (error) { setPasswordNotice(error instanceof Error ? error.message : "Unable to update the password.") }
+    finally { setIsPasswordSubmitting(false) }
+  };
+
+  const sendMfaCode = async () => {
+    if (!mfaPassword || isMfaEnabling || isMfaDisabling) return;
+    mfaAction === "enable" ? setIsMfaEnabling(true) : setIsMfaDisabling(true); setMfaNotice(null);
+    try { const response = await requestSellerMfaChallenge({ action: mfaAction, current_password: mfaPassword }); setMfaChallenge(response.data); setMfaPassword(""); setMfaNotice(response.message) }
+    catch (error) { setMfaNotice(error instanceof Error ? error.message : "Unable to send the MFA code.") }
+    finally { setIsMfaEnabling(false); setIsMfaDisabling(false) }
+  };
+
+  const verifyMfa = async () => {
+    if (!mfaChallenge || mfaCode.length !== 6 || isMfaVerifying) return;
+    setIsMfaVerifying(true); setMfaNotice(null);
+    try { const response = await verifySellerMfaChallenge({ action: mfaAction, challenge_id: mfaChallenge.challenge_id, challenge_token: mfaChallenge.challenge_token, code: mfaCode }); setMfaNotice(response.message); setMfaCode(""); setMfaChallenge(null); await onReload() }
+    catch (error) { setMfaNotice(error instanceof Error ? error.message : "Unable to verify the MFA code.") }
+    finally { setIsMfaVerifying(false) }
+  };
+
+  const revoke = async (id: number) => {
+    setRevokingId(id);
+    try { await revokeSellerSession(id); await onReload() }
+    catch (error) { setMfaNotice(error instanceof Error ? error.message : "Unable to revoke the session.") }
+    finally { setRevokingId(null) }
+  };
+
+  if (loading) return <div className="py-12 text-sm text-[var(--color-ink-muted)]">Loading security settings...</div>;
+  if (!state) return <SectionFailure label="Security settings" />;
+
+  return <div>
+    <SectionCard title="Change password" subtitle={state.mfa.enabled ? "Email MFA verification is required before your password can change." : "Other access tokens are revoked after a successful change."}>
+      <div className="max-w-md space-y-3">
+        <label className={LABEL}>Current password</label><input type={showPasswords ? "text" : "password"} autoComplete="current-password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} className={INPUT}/>
+        <label className={LABEL}>New password</label><input type={showPasswords ? "text" : "password"} autoComplete="new-password" maxLength={16} value={newPassword} onChange={event => setNewPassword(event.target.value)} className={INPUT}/><PasswordStrength password={newPassword}/>
+        <label className={LABEL}>Confirm new password</label><input type={showPasswords ? "text" : "password"} autoComplete="new-password" maxLength={16} value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} className={INPUT}/>
+        <button type="button" onClick={() => setShowPasswords(current => !current)} className="flex items-center gap-1 text-xs text-[var(--color-ink-muted)]">{showPasswords ? <EyeOff size={14}/> : <Eye size={14}/>} {showPasswords ? "Hide passwords" : "Show passwords"}</button>
+        {passwordChallenge && <><label className={LABEL}>Email verification code</label><input inputMode="numeric" maxLength={6} value={passwordCode} onChange={event => setPasswordCode(event.target.value.replace(/\D/g, "").slice(0, 6))} className={INPUT}/></>}
+        {passwordNotice && <p role="status" className="text-xs text-[var(--color-ink-muted)]">{passwordNotice}</p>}
+        <button type="button" onClick={() => void submitPassword()} disabled={!passwordValid || !currentPassword || isPasswordSubmitting || Boolean(passwordChallenge && passwordCode.length !== 6)} className="bg-[var(--color-navy)] px-4 py-2 text-sm text-white disabled:opacity-50">{isPasswordSubmitting ? "Submitting..." : passwordChallenge ? "Verify and change password" : state.mfa.enabled ? "Send MFA code" : "Change password"}</button>
+      </div>
+    </SectionCard>
+
+    <SectionCard title="Email multi-factor authentication" subtitle="Uses the existing one-time email verification challenge at sign-in.">
+      <div className="flex flex-wrap items-center justify-between gap-4"><div><span className={`text-xs font-[600] ${state.mfa.enabled ? "text-[var(--color-green)]" : "text-[var(--color-ink-muted)]"}`}>{state.mfa.enabled ? "Enabled" : "Disabled"}</span>{state.mfa.confirmed_at && <p className="text-xs text-[var(--color-ink-muted)] mt-1">Confirmed {new Date(state.mfa.confirmed_at).toLocaleString()}</p>}</div></div>
+      <div className="mt-4 max-w-md space-y-3">{!mfaChallenge ? <><label className={LABEL}>Current password</label><input type="password" autoComplete="current-password" value={mfaPassword} onChange={event => setMfaPassword(event.target.value)} className={INPUT}/><button type="button" onClick={() => void sendMfaCode()} disabled={!mfaPassword || isMfaEnabling || isMfaDisabling} className={`${state.mfa.enabled ? "bg-[var(--color-red)]" : "bg-[var(--color-navy)]"} px-4 py-2 text-sm text-white disabled:opacity-50`}>{isMfaEnabling || isMfaDisabling ? "Sending..." : `${state.mfa.enabled ? "Disable" : "Enable"} MFA`}</button></> : <><label className={LABEL}>Email verification code</label><input inputMode="numeric" maxLength={6} value={mfaCode} onChange={event => setMfaCode(event.target.value.replace(/\D/g, "").slice(0, 6))} className={INPUT}/><div className="flex gap-2"><button type="button" onClick={() => void verifyMfa()} disabled={mfaCode.length !== 6 || isMfaVerifying} className="bg-[var(--color-navy)] px-4 py-2 text-sm text-white disabled:opacity-50">{isMfaVerifying ? "Verifying..." : `Verify and ${mfaAction}`}</button><button type="button" onClick={() => { setMfaChallenge(null); setMfaCode(""); setMfaNotice(null) }} className="border border-[var(--color-border)] px-4 py-2 text-sm">Cancel</button></div></>}{mfaNotice && <p role="status" className="text-xs text-[var(--color-ink-muted)]">{mfaNotice}</p>}</div>
+    </SectionCard>
+
+    <SectionCard title="Sessions and access tokens" subtitle="Only server-recorded Sanctum access tokens are shown.">
+      <div className="space-y-2">{state.sessions.map(session => <div key={session.id} className="flex items-center justify-between gap-4 border border-[var(--color-border)] p-3"><div><p className="text-sm font-[500]">{session.name} {session.is_current && <span className="text-xs text-[var(--color-green)]">Current</span>}</p><p className="text-xs text-[var(--color-ink-muted)]">Last used {session.last_used_at ? new Date(session.last_used_at).toLocaleString() : "not recorded"} · Created {session.created_at ? new Date(session.created_at).toLocaleDateString() : "unknown"}</p></div>{!session.is_current && <button type="button" onClick={() => void revoke(session.id)} disabled={revokingId === session.id} className="text-xs text-[var(--color-red)] disabled:opacity-50">{revokingId === session.id ? "Revoking..." : "Revoke"}</button>}</div>)}{state.sessions.length === 0 && <p className="text-sm text-[var(--color-ink-muted)]">No persistent access tokens are recorded for this session.</p>}</div>
+      <p className="mt-4 text-xs text-[var(--color-ink-muted)]">Last password change: {state.last_password_changed_at ? new Date(state.last_password_changed_at).toLocaleString() : "Not recorded"}</p>
+    </SectionCard>
+  </div>;
+}
+
 export default function SellerSettingsPage() {
-  const { activeTab: tab, setActiveTab: setTab } = useUrlTab(SETTINGS_TABS, "account");
-  const [profile, setProfile] = useState<SellerProfile | null>(null);
+  const { activeTab: tab, setActiveTab: setTab } = useUrlTab(SETTINGS_TABS, "profile");
+  const [profile, setProfile] = useState<SellerProfile | null | undefined>(undefined);
+  const [security, setSecurity] = useState<SellerSecurityState | null>(null);
+  const [isSecurityLoading, setIsSecurityLoading] = useState(false);
 
   useEffect(() => {
+    if (tab !== "payouts" || profile !== undefined) return;
     let active = true;
 
     void (async () => {
@@ -722,13 +678,24 @@ export default function SellerSettingsPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [profile, tab]);
+
+  const loadSecurity = async () => {
+    setIsSecurityLoading(true);
+    try { const response = await fetchSellerSecurity(); setSecurity(response.data) }
+    catch { setSecurity(null) }
+    finally { setIsSecurityLoading(false) }
+  };
+
+  useEffect(() => {
+    if (tab === "security" && !security && !isSecurityLoading) void loadSecurity();
+  }, [tab]);
 
   const tabs: { id: SettingsTab; label: string; icon: React.ComponentType<{ size?: number; className?: string }> }[] = [
-    { id: "account", label: "Account", icon: UserRound },
+    { id: "profile", label: "Profile", icon: UserRound },
     { id: "payouts", label: "Payouts", icon: Banknote },
-    { id: "notifications", label: "Notifications", icon: Bell },
     { id: "security", label: "Security", icon: LockKeyhole },
+    { id: "danger-zone", label: "Danger Zone", icon: TriangleAlert },
   ];
 
   return (
@@ -759,10 +726,10 @@ export default function SellerSettingsPage() {
         })}
       </div>
 
-      {tab === "account" && <AccountTab />}
-      {tab === "payouts" && <PayoutsTab profile={profile} />}
-      {tab === "notifications" && <NotificationsTab />}
-      {tab === "security" && <SecurityTab profile={profile} />}
+      {tab === "profile" && <AccountTab />}
+      {tab === "payouts" && (profile === undefined ? <div className="py-12 text-sm text-[var(--color-ink-muted)]">Loading payout settings...</div> : <PayoutsTab profile={profile} />)}
+      {tab === "security" && <SellerSecurityTab state={security} loading={isSecurityLoading} onReload={loadSecurity} />}
+      {tab === "danger-zone" && <DangerZone />}
     </div>
   );
 }

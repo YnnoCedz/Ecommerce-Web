@@ -38,7 +38,8 @@ class AuthPerformanceTest extends TestCase
             ->assertJsonMissingPath('user.wishlist_count');
 
         $loginQueries = $queries;
-        $this->assertCount(3, $loginQueries);
+        $this->assertCount(4, $loginQueries);
+        $this->assertSingleActivityInsert($loginQueries);
         $this->assertAuthQueriesExcludeMarketplaceData($loginQueries);
 
         $queries = [];
@@ -85,7 +86,8 @@ class AuthPerformanceTest extends TestCase
             fn (string $sql): bool => str_contains(strtolower($sql), 'from "sellers"'),
         ));
 
-        $this->assertCount(4, $queries);
+        $this->assertCount(5, $queries);
+        $this->assertSingleActivityInsert($queries);
         $this->assertCount(1, $sellerQueries);
         $this->assertStringNotContainsString('select *', strtolower($sellerQueries[0]));
         $this->assertAuthQueriesExcludeMarketplaceData($queries, ['sellers']);
@@ -102,5 +104,16 @@ class AuthPerformanceTest extends TestCase
 
             $this->assertStringNotContainsString($table, $sql);
         }
+    }
+
+    private function assertSingleActivityInsert(array $queries): void
+    {
+        $activityQueries = array_values(array_filter(
+            $queries,
+            fn (string $sql): bool => str_contains(strtolower($sql), 'activity_logs'),
+        ));
+
+        $this->assertCount(1, $activityQueries);
+        $this->assertStringStartsWith('insert', strtolower(trim($activityQueries[0])));
     }
 }

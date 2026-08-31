@@ -21,12 +21,13 @@ class AdminBackendIntegrationTest extends TestCase
         [$admin, $buyer, $seller, $category, $product, $order] = $this->marketplaceFixture();
 
         $this->actingAs($admin)->getJson('/api/admin/dashboard')->assertOk()
-            ->assertJsonPath('data.metrics.total_users', 3)
+            ->assertJsonPath('data.metrics.total_users', 2)
             ->assertJsonPath('data.metrics.total_products', 1)
             ->assertJsonPath('data.metrics.total_orders', 1);
 
         $this->actingAs($admin)->getJson('/api/admin/users')->assertOk()
-            ->assertJsonFragment(['email' => $buyer->email]);
+            ->assertJsonFragment(['email' => $buyer->email])
+            ->assertJsonMissing(['email' => $admin->email]);
         $this->actingAs($admin)->getJson('/api/admin/sellers')->assertOk()
             ->assertJsonFragment(['business_name' => $seller->business_name]);
         $this->actingAs($admin)->getJson('/api/admin/products')->assertOk()

@@ -17,6 +17,7 @@ const NAV_ROUTES: Record<string, string> = {
 
 function getActiveNav(pathname: string): string {
   const seg = pathname.replace(/^\/admin\/?/, "").split("/")[0];
+  if (seg === "activity") return "analytics";
   return seg || "dashboard";
 }
 

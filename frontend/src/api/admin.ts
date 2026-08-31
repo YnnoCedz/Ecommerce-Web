@@ -18,6 +18,52 @@ export type AdminCategory = { id: number; parent_id: number | null; name: string
 export type AdminSeriesPoint = { date: string; gmv: number; orders: number; users: number; sellers: number };
 export type AdminDashboardData = { range_days: number; generated_at: string; metrics: Record<string, number>; series: AdminSeriesPoint[]; recent_users: AdminUser[]; recent_orders: Array<Pick<AdminOrder, "id" | "order_number" | "status" | "payment_status" | "grand_total" | "currency" | "buyer_name" | "created_at">>; recent_reports: Array<{ id: number; reference: string; reason: string; status: string; created_at: string | null }> };
 export type AdminAnalyticsData = { range_days: number; series: AdminSeriesPoint[]; totals: { gmv: number; orders: number; users: number; sellers: number }; categories: Array<{ id: number; name: string; gmv: number; units: number }>; top_sellers: Array<{ id: number; name: string; gmv: number; orders: number; rating: number }>; order_statuses: Record<string, number> };
+export type AdminPlatformAnalytics = {
+  range_days: number; range: "7d" | "30d" | "90d" | "12m"; generated_at: string;
+  period: { from: string; to: string; previous_from: string; previous_to: string };
+  kpis: Record<string, { value: number; previous: number | null; change_percent: number | null }>;
+  users: { buyers: number; sellers: number; active: number; suspended: number; verified: number; unverified: number; new_registrations: number; growth: Array<{ date: string; buyers: number; sellers: number }> };
+  sellers: { approved: number; active_stores: number; pending_applications: number; rejected_applications: number; due_for_renewal: number; expired: number; pending: number };
+  products: { active: number; inactive: number; out_of_stock: number; new: number; by_category: Array<{ name: string; total: number }> };
+  orders: { total: number; today: number; completed: number; cancelled: number; returned: number; disputed: number; gross_sales: number; average_order_value: number; trend: Array<{ date: string; total: number; gross_sales: number; completed: number; cancelled: number }> };
+  promotions: { active: number; scheduled: number; expired: number };
+  authentication: { successful_today: number; failed_today: number; unique_users_today: number; buyer_logins_today: number; seller_logins_today: number; admin_logins_today: number; tracking_started_at: string | null; trend: Array<{ date: string; successful: number; failed: number }>; by_role: Array<{ role: string; total: number }>; mfa_failures: number; password_changes: number; definition: string };
+  seller_performance: { top_sellers: Array<{ id: number; name: string; orders: number; gmv: number }>; application_trend: Array<{ date: string; approved: number; rejected: number }>; document_compliance: { valid: number; expiring_soon: number; expired: number; renewal_pending: number }; deactivated: number };
+  catalog: { growth: Array<{ date: string; total: number }>; top_products: Array<{ id: number; name: string; units: number; sales: number }>; status: { active: number; inactive: number }; inventory: { in_stock: number; out_of_stock: number } };
+  operations: { average_fulfillment_hours: number; average_delivery_hours: number; awaiting_shipment: number; in_transit: number };
+  experience: { return_rate: number; cancellation_rate: number; dispute_rate: number; refund_volume: number; rating_distribution: Array<{ rating: number; total: number }>; moderation: Array<{ status: string; total: number }> };
+  activity: { volume: number; trend: Array<{ date: string; total: number }>; definition: string };
+};
+export type AdminAnalyticsTab = "overview" | "commerce" | "users-sellers" | "catalog" | "operations" | "security";
+export type AdminAnalyticsRange = "7d" | "30d" | "90d" | "12m";
+export type AdminAnalyticsMetric = { value: number; previous: number | null; change_percent: number | null };
+export type AdminAnalyticsSectionData = {
+  section: AdminAnalyticsTab; range: AdminAnalyticsRange; range_days: number; generated_at: string;
+  kpis: Record<string, AdminAnalyticsMetric>;
+  revenue_orders_trend?: Array<{ date: string; total: number; gross_sales: number; completed: number; cancelled: number }>;
+  order_status?: Record<string, number>;
+  marketplace_growth?: Array<{ date: string; buyers: number; sellers: number }>;
+  top_sellers?: Array<{ id: number; name: string; orders: number; gmv: number }>;
+  top_products?: Array<{ id: number; name: string; units: number; sales: number }>;
+  definitions?: Record<string, string>;
+  user_growth?: Array<{ date: string; buyers: number; sellers: number }>;
+  application_trend?: Array<{ date: string; approved: number; rejected: number }>;
+  document_compliance?: Record<string, number>;
+  product_growth?: Array<{ date: string; total: number }>;
+  categories?: Array<{ name: string; total: number }>;
+  inventory?: Record<string, number>;
+  fulfillment_trend?: Array<{ date: string; total: number; ready: number; delivered: number }>;
+  delivery_status?: Record<string, number>;
+  exceptions?: Array<{ id: number; order_number: string; seller: string; status: string; created_at: string }>;
+  login_trend?: Array<{ date: string; successful: number; failed: number }>;
+  logins_by_role?: Array<{ role: string; total: number }>;
+  activity_by_category?: Array<{ category: string; total: number }>;
+  tracking_started_at?: string | null;
+  definition?: string;
+};
+export type AdminActivity = { id: string; event_type: string; category: string; description: string; role: string | null; ip_address: string | null; user_agent: string | null; metadata: Record<string, unknown>; occurred_at: string; source: "audit_log" | "historical_record"; source_label: string; source_table: string; target: { type: string; id: number } | null; user: { id: number; name: string; email: string } | null };
+export type AdminPlatformSettings = { platform_name: string; support_email: string; seller_document_expiry_warning_days: number };
+export type AdminDocumentRenewal = { id: number; document_type: string; status: string; original_filename: string | null; uploaded_at: string | null; submitted_at: string | null; expires_at: string | null; reviewed_at: string | null; review_notes: string | null; renewal_of_document_id: number; seller: { id: number; name: string; email: string | null } | null };
 
 function queryString(params: Record<string, string | number | undefined>) {
   const query = new URLSearchParams();
@@ -41,3 +87,11 @@ export const fetchAdminCategories = () => apiFetch<{ data: AdminCategory[] }>("/
 export const createAdminCategory = (payload: Omit<AdminCategory, "id" | "product_count" | "children">) => apiFetch<{ message: string; data: AdminCategory }>("/admin/categories", { method: "POST", body: JSON.stringify(payload) });
 export const updateAdminCategory = (id: number, payload: Omit<AdminCategory, "id" | "product_count" | "children">) => apiFetch<{ message: string; data: AdminCategory }>(`/admin/categories/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
 export const fetchAdminAnalytics = (days: 7 | 30 | 90) => apiFetch<{ data: AdminAnalyticsData }>(`/admin/analytics?days=${days}`);
+export const fetchAdminPlatformAnalytics = (section: AdminAnalyticsTab, range: AdminAnalyticsRange) => apiFetch<{ data: AdminAnalyticsSectionData }>(`/admin/analytics/platform${queryString({ section, range })}`);
+export const fetchAdminActivity = (params: Record<string, string | number | undefined> = {}) => apiFetch<{ data: AdminActivity[]; meta: PaginationMeta }>(`/admin/activity${queryString(params)}`);
+export const fetchAdminSettings = () => apiFetch<{ data: AdminPlatformSettings }>("/admin/settings");
+export const updateAdminSettings = (settings: Partial<AdminPlatformSettings>) => apiFetch<{ message: string; data: AdminPlatformSettings }>("/admin/settings", { method: "PATCH", body: JSON.stringify({ settings }) });
+export const requestAdminPasswordChallenge = (currentPassword: string) => apiFetch<{ message: string; data: { challenge_id: number; challenge_token: string; expires_at: string } }>("/admin/security/password/mfa-challenge", { method: "POST", body: JSON.stringify({ current_password: currentPassword }) });
+export const changeAdminPassword = (payload: { current_password: string; password: string; password_confirmation: string; challenge_id?: number; challenge_token?: string; code?: string }) => apiFetch<{ message: string }>("/admin/security/password", { method: "POST", body: JSON.stringify(payload) });
+export const fetchAdminDocumentRenewals = (status?: string) => apiFetch<{ data: AdminDocumentRenewal[]; meta: { total: number; current_page: number; last_page: number } }>(`/admin/document-renewals${status ? `?status=${encodeURIComponent(status)}` : ""}`);
+export const reviewAdminDocumentRenewal = (id: number, decision: "approve" | "reject", review_notes?: string, expires_at?: string) => apiFetch<{ message: string; data: AdminDocumentRenewal }>(`/admin/document-renewals/${id}`, { method: "PATCH", body: JSON.stringify({ decision, review_notes, expires_at }) });

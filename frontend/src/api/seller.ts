@@ -703,3 +703,63 @@ export async function updateSellerInventory(
     body: JSON.stringify(payload),
   })
 }
+
+export type SellerDocument = {
+  id: number
+  document_type: string
+  status: string
+  display_status: "valid" | "expiring_soon" | "expired" | "renewal_pending" | "renewal_rejected"
+  uploaded_at: string | null
+  expires_at: string | null
+  original_filename: string | null
+  renewal: { id: number; status: string; submitted_at: string | null; expires_at: string | null; review_notes: string | null } | null
+}
+
+export const fetchSellerDocuments = () => apiFetch<{ data: SellerDocument[] }>("/seller/documents")
+
+export function renewSellerDocument(documentId: number, file: File, expiresAt?: string) {
+  const body = new FormData()
+  body.set("document", file)
+  if (expiresAt) body.set("expires_at", expiresAt)
+  return apiFetch<{ message: string; data: SellerDocument }>(`/seller/documents/${documentId}/renew`, { method: "POST", body })
+}
+
+export function requestSellerDangerChallenge(payload: { action: "deactivate" | "close"; confirmation: string; password: string }) {
+  return apiFetch<{ message: string; data: { challenge_id: number; challenge_token: string; expires_at: string; action: "deactivate" | "close" } }>("/seller/settings/danger-zone/challenge", { method: "POST", body: JSON.stringify(payload) })
+}
+
+export function verifySellerDangerChallenge(payload: { action: "deactivate" | "close"; challenge_id: number; challenge_token: string; code: string }) {
+  return apiFetch<{ message: string; data: { status: string } }>("/seller/settings/danger-zone/verify", { method: "POST", body: JSON.stringify(payload) })
+}
+
+export type SellerSecurityState = {
+  mfa: { enabled: boolean; method: string | null; confirmed_at: string | null }
+  last_password_changed_at: string | null
+  sessions: Array<{ id: number; name: string; is_current: boolean; created_at: string | null; last_used_at: string | null; expires_at: string | null }>
+}
+
+export type SellerSecurityChallenge = { challenge_id: number; challenge_token: string; expires_at: string; action: string }
+
+export function fetchSellerSecurity() {
+  return singleFlight("seller:settings:security", () => apiFetch<{ data: SellerSecurityState }>("/seller/settings/security"))
+}
+
+export function requestSellerPasswordChallenge(currentPassword: string) {
+  return apiFetch<{ message: string; data: SellerSecurityChallenge }>("/seller/settings/security/password/challenge", { method: "POST", body: JSON.stringify({ current_password: currentPassword }) })
+}
+
+export function changeSellerPassword(payload: { current_password: string; password: string; password_confirmation: string; challenge_id?: number; challenge_token?: string; code?: string }) {
+  return apiFetch<{ message: string }>("/seller/settings/security/password", { method: "PATCH", body: JSON.stringify(payload) })
+}
+
+export function requestSellerMfaChallenge(payload: { action: "enable" | "disable"; current_password: string }) {
+  return apiFetch<{ message: string; data: SellerSecurityChallenge }>("/seller/settings/security/mfa/challenge", { method: "POST", body: JSON.stringify(payload) })
+}
+
+export function verifySellerMfaChallenge(payload: { action: "enable" | "disable"; challenge_id: number; challenge_token: string; code: string }) {
+  return apiFetch<{ message: string; data: { enabled: boolean; method: string | null } }>("/seller/settings/security/mfa/verify", { method: "POST", body: JSON.stringify(payload) })
+}
+
+export function revokeSellerSession(tokenId: number) {
+  return apiFetch<{ message: string }>(`/seller/settings/security/sessions/${tokenId}`, { method: "DELETE" })
+}

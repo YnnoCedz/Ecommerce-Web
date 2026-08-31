@@ -10,6 +10,7 @@ use App\Models\SellerApplication;
 use App\Models\SellerDocument;
 use App\Models\User;
 use App\Notifications\SellerApplicationReviewedNotification;
+use App\Services\ActivityLogger;
 use App\Services\MediaStorageService;
 use App\Services\PsgcService;
 use Illuminate\Http\JsonResponse;
@@ -203,6 +204,8 @@ class SellerApplicationController extends Controller
             ], 500);
         }
 
+        app(ActivityLogger::class)->log('seller.application.submitted', 'seller', 'Seller application submitted.', $user, $request, $application);
+
         return response()->json([
             'message' => 'Seller application submitted successfully.',
             'application' => $this->applicationPayload($application),
@@ -328,6 +331,8 @@ class SellerApplicationController extends Controller
             $sellerApplication->documents()->update([
                 'seller_id' => $seller->id,
                 'status' => 'approved',
+                'approved_at' => now(),
+                'reviewed_at' => now(),
             ]);
 
             $sellerApplication->forceFill([
@@ -354,6 +359,7 @@ class SellerApplicationController extends Controller
         }
 
         $this->notifyApplicant($sellerApplication->applicant, 'approved', $sellerApplication);
+        app(ActivityLogger::class)->log('seller.application.approved', 'seller', 'Seller application approved.', $admin, $request, $sellerApplication);
 
         return response()->json([
             'message' => 'Seller application approved.',
@@ -384,6 +390,7 @@ class SellerApplicationController extends Controller
         ])->save();
 
         $this->notifyApplicant($sellerApplication->applicant, 'rejected', $sellerApplication, $sellerApplication->rejection_reason);
+        app(ActivityLogger::class)->log('seller.application.rejected', 'seller', 'Seller application rejected.', $admin, $request, $sellerApplication, ['reason_provided' => true]);
 
         return response()->json([
             'message' => 'Seller application rejected.',

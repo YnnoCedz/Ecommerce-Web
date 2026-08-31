@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Address;
 use App\Models\UserPreference;
+use App\Services\ActivityLogger;
 use App\Services\MediaStorageService;
 use App\Services\PsgcService;
 use Illuminate\Http\JsonResponse;
@@ -74,6 +75,10 @@ class AccountController extends Controller
                 $storage->delete($oldAvatarPath, 'r2');
             } catch (\Throwable) {
             }
+        }
+
+        if ($user->isSeller()) {
+            app(ActivityLogger::class)->log('seller.profile.updated', 'seller', 'Seller personal information updated.', $user, $request, $user);
         }
 
         return response()->json([
@@ -263,6 +268,8 @@ class AccountController extends Controller
             $otherTokens->whereKeyNot($currentTokenId);
         }
         $otherTokens->delete();
+
+        app(ActivityLogger::class)->log('auth.password.changed', 'authentication', 'Account password changed.', $user, $request, $user);
 
         return response()->json([
             'message' => 'Password updated.',

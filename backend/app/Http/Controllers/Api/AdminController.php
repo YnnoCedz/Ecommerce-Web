@@ -11,6 +11,7 @@ use App\Models\Report;
 use App\Models\Seller;
 use App\Models\SellerOrder;
 use App\Models\User;
+use App\Services\ActivityLogger;
 use App\Services\MediaStorageService;
 use App\Services\NotificationService;
 use App\Services\OrderLifecycleService;
@@ -35,9 +36,9 @@ class AdminController extends Controller
         $from = now()->subDays($days - 1)->startOfDay();
         $summary = DB::selectOne(<<<'SQL'
             SELECT
-                (SELECT COUNT(*) FROM users) AS users_total,
+                (SELECT COUNT(*) FROM users WHERE role != 'admin') AS users_total,
                 (SELECT COUNT(*) FROM users WHERE role = 'buyer') AS buyers_total,
-                (SELECT COUNT(*) FROM users WHERE status = 'active') AS active_users,
+                (SELECT COUNT(*) FROM users WHERE role != 'admin' AND status = 'active') AS active_users,
                 (SELECT COUNT(*) FROM sellers WHERE deleted_at IS NULL) AS sellers_total,
                 (SELECT COUNT(*) FROM sellers WHERE status = 'approved' AND deleted_at IS NULL) AS approved_sellers,
                 (SELECT COUNT(*) FROM products WHERE deleted_at IS NULL) AS products_total,
@@ -81,7 +82,7 @@ class AdminController extends Controller
                 'open_disputes' => (int) $summary->open_disputes,
             ],
             'series' => $this->timeSeries($from, $days),
-            'recent_users' => User::query()->latest()->limit(5)->get()->map(fn (User $user) => $this->userPayload($user))->values(),
+            'recent_users' => User::query()->where('role', '!=', 'admin')->latest()->limit(5)->get()->map(fn (User $user) => $this->userPayload($user))->values(),
             'recent_orders' => Order::query()->with('buyer:id,name,first_name,last_name,email')->latest()->limit(5)->get()->map(fn (Order $order) => $this->orderSummary($order))->values(),
             'recent_reports' => Report::query()->latest()->limit(5)->get()->map(fn (Report $report) => [
                 'id' => $report->id,
@@ -97,11 +98,11 @@ class AdminController extends Controller
     {
         $data = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
-            'role' => ['nullable', Rule::in(['buyer', 'seller', 'admin'])],
+            'role' => ['nullable', Rule::in(['buyer', 'seller'])],
             'status' => ['nullable', 'string', 'max:40'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
-        $query = User::query()->withCount('orders')->withSum('orders', 'grand_total');
+        $query = User::query()->where('role', '!=', 'admin')->withCount('orders')->withSum('orders', 'grand_total');
         $query->when($data['role'] ?? null, fn (Builder $query, string $role) => $query->where('role', $role));
         $query->when($data['status'] ?? null, fn (Builder $query, string $status) => $query->where('status', $status));
         $query->when(trim((string) ($data['search'] ?? '')), function (Builder $query, string $search) {
@@ -114,6 +115,7 @@ class AdminController extends Controller
 
     public function updateUserStatus(Request $request, User $user): JsonResponse
     {
+        abort_if($user->isAdmin(), 404);
         $data = $request->validate(['status' => ['required', Rule::in(['active', 'suspended', 'restricted'])], 'reason' => ['required_unless:status,active', 'nullable', 'string', 'min:5', 'max:500']]);
         abort_if($request->user()->is($user) && $data['status'] !== 'active', 422, 'You cannot restrict your own administrator account.');
 
@@ -124,6 +126,7 @@ class AdminController extends Controller
             }
             $this->notifications->publishToUser($user, ['category' => 'account', 'title' => 'Account status updated', 'body' => $data['status'] === 'active' ? 'Your Maketo account is active.' : (string) $data['reason']]);
         });
+        app(ActivityLogger::class)->log('admin.user.status_changed', 'moderation', 'Marketplace user status changed.', $request->user(), $request, $user, ['status' => $data['status']]);
 
         return response()->json(['message' => 'User status updated.', 'data' => $this->userPayload($user->fresh())]);
     }
@@ -152,6 +155,7 @@ class AdminController extends Controller
         });
 
         $fresh = $seller->fresh()->load(['user', 'categories'])->loadCount(['products', 'sellerOrders'])->loadSum('sellerOrders', 'grand_total')->loadAvg('reviews', 'rating');
+        app(ActivityLogger::class)->log('admin.seller.status_changed', 'moderation', 'Seller status changed.', $request->user(), $request, $seller, ['status' => $data['status']]);
 
         return response()->json(['message' => 'Seller status updated.', 'data' => $this->sellerPayload($fresh)]);
     }
@@ -174,6 +178,7 @@ class AdminController extends Controller
         $product->update(['status' => $data['status'], 'published_at' => $data['status'] === 'active' ? ($product->published_at ?? now()) : $product->published_at]);
         $this->notifications->publishToUser($product->seller->user, ['category' => 'product', 'title' => 'Product status updated', 'body' => $data['status'] === 'active' ? "{$product->name} is active." : (string) $data['note'], 'product_id' => $product->id]);
         $fresh = $product->fresh()->load(['seller', 'category', 'images'])->loadSum('orderItems', 'quantity');
+        app(ActivityLogger::class)->log('admin.product.status_changed', 'moderation', 'Product moderation status changed.', $request->user(), $request, $product, ['status' => $data['status']]);
 
         return response()->json(['message' => 'Product status updated.', 'data' => $this->productPayload($fresh)]);
     }
@@ -247,7 +252,7 @@ class AdminController extends Controller
         return response()->json(['data' => [
             'range_days' => $days,
             'series' => $this->timeSeries($from, $days),
-            'totals' => ['gmv' => (float) Order::where('created_at', '>=', $from)->whereIn('payment_status', ['paid', 'partially_refunded'])->sum('grand_total'), 'orders' => Order::where('created_at', '>=', $from)->count(), 'users' => User::where('created_at', '>=', $from)->count(), 'sellers' => Seller::where('created_at', '>=', $from)->count()],
+            'totals' => ['gmv' => (float) Order::where('created_at', '>=', $from)->whereIn('payment_status', ['paid', 'partially_refunded'])->sum('grand_total'), 'orders' => Order::where('created_at', '>=', $from)->count(), 'users' => User::where('role', '!=', 'admin')->where('created_at', '>=', $from)->count(), 'sellers' => Seller::where('created_at', '>=', $from)->count()],
             'categories' => $categoryRows->map(fn ($row) => ['id' => (int) $row->id, 'name' => $row->name, 'gmv' => (float) $row->gmv, 'units' => (int) $row->units])->values(),
             'top_sellers' => $sellerRows->map(fn (Seller $seller) => ['id' => $seller->id, 'name' => $seller->trade_name ?: $seller->business_name, 'gmv' => (float) ($seller->seller_orders_sum_grand_total ?? 0), 'orders' => (int) $seller->seller_orders_count, 'rating' => round((float) ($seller->reviews_avg_rating ?? 0), 1)])->values(),
             'order_statuses' => Order::query()->select('status', DB::raw('COUNT(*) as total'))->groupBy('status')->pluck('total', 'status'),

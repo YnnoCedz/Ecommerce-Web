@@ -9,6 +9,7 @@ use App\Models\PendingRegistrationChallenge;
 use App\Models\User;
 use App\Notifications\AuthChallengeNotification;
 use App\Notifications\EmailVerificationCodeNotification;
+use App\Services\ActivityLogger;
 use App\Services\MediaStorageService;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\JsonResponse;
@@ -146,6 +147,7 @@ class AuthController extends Controller
         $this->recordTiming($timings, 'password_verification_ms', $operationStartedAt);
 
         if (! $passwordMatches) {
+            app(ActivityLogger::class)->log('auth.login.failed', 'authentication', 'Login failed.', $user, $request, $user, ['reason' => 'invalid_credentials']);
             $this->logLoginTimings($timings, 'invalid_credentials');
 
             return response()->json([
@@ -158,6 +160,7 @@ class AuthController extends Controller
         }
 
         if (! $user->email_verified_at) {
+            app(ActivityLogger::class)->log('auth.login.failed', 'authentication', 'Login failed.', $user, $request, $user, ['reason' => 'email_unverified']);
             $this->logLoginTimings($timings, 'email_unverified');
 
             return response()->json([
@@ -167,6 +170,7 @@ class AuthController extends Controller
         }
 
         if (in_array($user->status, ['suspended', 'restricted', 'pending'], true)) {
+            app(ActivityLogger::class)->log('auth.login.failed', 'authentication', 'Login failed.', $user, $request, $user, ['reason' => 'account_inactive']);
             $this->logLoginTimings($timings, 'account_inactive');
 
             return response()->json([
@@ -223,6 +227,8 @@ class AuthController extends Controller
             'redirect_to' => $redirectTo,
         ]);
 
+        app(ActivityLogger::class)->log('auth.login.success', 'authentication', 'Login successful.', $user, $request, $user);
+
         $this->logLoginTimings($timings, 'authenticated');
 
         return $response;
@@ -265,6 +271,7 @@ class AuthController extends Controller
         }
 
         if (! Hash::check($data['code'], $challenge->code_hash)) {
+            app(ActivityLogger::class)->log('auth.mfa.failed', 'authentication', 'MFA verification failed.', $challenge->user, $request, $challenge->user, ['purpose' => $challenge->purpose]);
             $challenge->increment('attempts');
             $challenge->refresh();
 
@@ -302,6 +309,8 @@ class AuthController extends Controller
 
         $challenge->forceFill(['consumed_at' => now()])->save();
         $user->forceFill(['last_active_at' => now()])->save();
+        app(ActivityLogger::class)->log('auth.mfa.success', 'authentication', 'MFA verification successful.', $user, $request, $user, ['purpose' => $challenge->purpose]);
+        app(ActivityLogger::class)->log('auth.login.success', 'authentication', 'Login successful.', $user, $request, $user, ['mfa' => true]);
 
         return response()->json([
             'message' => 'Authenticated successfully.',
@@ -639,6 +648,10 @@ class AuthController extends Controller
 
     public function logout(Request $request): JsonResponse
     {
+        $user = $request->user();
+        if ($user) {
+            app(ActivityLogger::class)->log('auth.logout', 'authentication', 'User logged out.', $user, $request, $user);
+        }
         $request->user()?->currentAccessToken()?->delete();
         Auth::guard('sanctum')->forgetUser();
 

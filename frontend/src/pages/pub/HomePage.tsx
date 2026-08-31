@@ -7,6 +7,46 @@ import { usePersistedWishlist } from "../../hooks/usePersistedWishlist";
 
 type NavFn = (page: string, params?: Record<string, string>) => void;
 
+type HomeSection = "categories" | "products" | "sellers" | "deals";
+type HomeLoadState = Record<HomeSection, "loading" | "ready" | "error">;
+type HomeDataResult = {
+  categories: PromiseSettledResult<Awaited<ReturnType<typeof fetchCatalogCategories>>>;
+  products: PromiseSettledResult<Awaited<ReturnType<typeof fetchCatalogProducts>>>;
+  sellers: PromiseSettledResult<Awaited<ReturnType<typeof fetchCatalogSellers>>>;
+  deals: PromiseSettledResult<Awaited<ReturnType<typeof fetchActiveDeals>>>;
+};
+
+let homepageRequest: Promise<HomeDataResult> | null = null;
+
+function loadHomepageData() {
+  if (!homepageRequest) {
+    homepageRequest = Promise.allSettled([
+      fetchCatalogCategories(),
+      fetchCatalogProducts({ limit: 24 }),
+      fetchCatalogSellers(),
+      fetchActiveDeals(),
+    ]).then(([categories, products, sellers, deals]) => ({ categories, products, sellers, deals }));
+  }
+  return homepageRequest;
+}
+
+function SectionSkeleton({ cards = 5, square = false }: { cards?: number; square?: boolean }) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4" aria-label="Loading marketplace content">
+      {Array.from({ length: cards }, (_, index) => (
+        <div key={index} className="animate-pulse border border-[var(--color-border)] bg-white rounded-sm overflow-hidden">
+          <div className={`${square ? "aspect-square" : "h-28"} bg-[var(--color-surface)]`} />
+          <div className="p-3 space-y-2"><div className="h-3 w-2/3 bg-[var(--color-border)] rounded" /><div className="h-3 w-full bg-[var(--color-border)] rounded" /></div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SectionFailure({ label }: { label: string }) {
+  return <p role="status" className="py-8 text-sm text-[var(--color-ink-muted)]">{label} is temporarily unavailable. Please try again later.</p>;
+}
+
 function remainingLabel(milliseconds: number) {
   const total = Math.max(0, Math.floor(milliseconds / 1000));
   const days = Math.floor(total / 86400);
@@ -113,27 +153,31 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
   const [products, setProducts] = useState<CatalogProduct[]>([]);
   const [sellers, setSellers] = useState<CatalogSeller[]>([]);
   const [deals, setDeals] = useState<CatalogProduct[]>([]);
+  const [loadState, setLoadState] = useState<HomeLoadState>({ categories: "loading", products: "loading", sellers: "loading", deals: "loading" });
   const [clockOffset, setClockOffset] = useState(0);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
-    void Promise.all([
-      fetchCatalogCategories(),
-      fetchCatalogProducts({ limit: 24 }),
-      fetchCatalogSellers(),
-      fetchActiveDeals(),
-    ]).then(([cats, prods, sellersResponse, dealsResponse]) => {
-      setCategories(cats.data);
-      setProducts(prods.data);
-      setSellers(sellersResponse.data);
-      setDeals(dealsResponse.data);
-      setClockOffset(new Date(dealsResponse.server_time).getTime() - Date.now());
-    }).catch(() => {
-      setCategories([]);
-      setProducts([]);
-      setSellers([]);
-      setDeals([]);
+    let active = true;
+    void loadHomepageData().then((result) => {
+      if (!active) return;
+      const nextState: HomeLoadState = { categories: "error", products: "error", sellers: "error", deals: "error" };
+      if (result.categories.status === "fulfilled") { setCategories(result.categories.value.data); nextState.categories = "ready"; }
+      if (result.products.status === "fulfilled") { setProducts(result.products.value.data); nextState.products = "ready"; }
+      if (result.sellers.status === "fulfilled") { setSellers(result.sellers.value.data); nextState.sellers = "ready"; }
+      if (result.deals.status === "fulfilled") {
+        setDeals(result.deals.value.data);
+        setClockOffset(new Date(result.deals.value.server_time).getTime() - Date.now());
+        nextState.deals = "ready";
+      }
+      setLoadState(nextState);
+      if (import.meta.env.DEV) {
+        Object.entries(result).forEach(([section, outcome]) => {
+          if (outcome.status === "rejected") console.error(`Homepage ${section} request failed`, outcome.reason);
+        });
+      }
     });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -159,7 +203,7 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
         />
         <div className="relative flex flex-col items-center justify-center text-center px-6 py-20 md:py-28">
           <p className="font-[var(--font-mono)] text-[11px] text-white/50 tracking-widest uppercase mb-4">
-            {sellers.length.toLocaleString()} Independent Sellers · {products.length.toLocaleString()} Products
+            {loadState.products === "loading" || loadState.sellers === "loading" ? "Loading marketplace..." : `${sellers.length.toLocaleString()} Independent Sellers · ${products.length.toLocaleString()} Products`}
           </p>
           <h1 className="font-[var(--font-display)] text-4xl md:text-6xl font-[300] text-white leading-[1.05] mb-3 max-w-2xl">
             Discover something
@@ -176,7 +220,7 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
       <section className="bg-[var(--color-ground)] px-4 md:px-8 lg:px-12 py-10">
         <div className="max-w-screen-xl mx-auto">
           <SectionHeader label="Browse" title="Shop by Category" cta="All Categories" onCta={() => onNavigate("category", { cat: "all" })} />
-          <div className="grid grid-cols-4 sm:grid-cols-8 gap-3">
+          {loadState.categories === "loading" ? <SectionSkeleton cards={8} square /> : loadState.categories === "error" ? <SectionFailure label="Categories" /> : <div className="grid grid-cols-4 sm:grid-cols-8 gap-3">
             {categories.map(cat => (
               <button
                 key={cat.slug}
@@ -193,7 +237,7 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
                 <p className="font-[var(--font-mono)] text-[9px] text-[var(--color-ink-muted)]">{(cat.count / 1000).toFixed(1)}k</p>
               </button>
             ))}
-          </div>
+          </div>}
         </div>
       </section>
 
@@ -209,7 +253,7 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
               <span className="font-[var(--font-mono)] text-[11px] text-[var(--color-red)] font-[500]">{nearestEnd ? `Next ends in ${remainingLabel(nearestEnd - now)}` : "No active deals"}</span>
             </div>
           </div>
-          <div className="flex gap-3 overflow-x-auto pb-3">
+          {loadState.deals === "loading" ? <SectionSkeleton cards={5} square /> : loadState.deals === "error" ? <SectionFailure label="Today's deals" /> : <div className="flex gap-3 overflow-x-auto pb-3">
             {activeDeals.map(p => <DealCard key={p.id} product={p} onNavigate={onNavigate} now={now} />)}
             {activeDeals.length === 0 && <p className="py-8 text-sm text-[var(--color-ink-muted)]">No deals available right now.</p>}
             {activeDeals.length > 0 && <button
@@ -219,23 +263,24 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
               <span className="text-xs text-white/70">active deals</span>
               <span className="flex items-center gap-1 text-xs font-[500]">View All <IconChevronRight size={11} /></span>
             </button>}
-          </div>
+          </div>}
         </div>
       </section>
 
       <section className="bg-[var(--color-ground)] px-4 md:px-8 lg:px-12 py-10">
         <div className="max-w-screen-xl mx-auto">
           <SectionHeader label="Handpicked" title="Featured Products" cta="Browse all" onCta={() => onNavigate("category", { cat: "all" })} />
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          {loadState.products === "loading" ? <SectionSkeleton cards={10} square /> : loadState.products === "error" ? <SectionFailure label="Featured products" /> : <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {products.map(p => <HomeProductCard key={p.id} product={p} onNavigate={onNavigate} />)}
-          </div>
+            {products.length === 0 && <p className="col-span-full py-8 text-sm text-[var(--color-ink-muted)]">No products are available right now.</p>}
+          </div>}
         </div>
       </section>
 
       <section className="bg-white border-y border-[var(--color-border)] px-4 md:px-8 lg:px-12 py-10">
         <div className="max-w-screen-xl mx-auto">
           <SectionHeader label="Community" title="Top Sellers" cta="All sellers" onCta={() => onNavigate("search", { q: "" })} />
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+          {loadState.sellers === "loading" ? <SectionSkeleton cards={5} /> : loadState.sellers === "error" ? <SectionFailure label="Top sellers" /> : <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
             {sellers.map(seller => (
               <button
                 key={seller.slug}
@@ -276,7 +321,8 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
                 </div>
               </button>
             ))}
-          </div>
+            {sellers.length === 0 && <p className="col-span-full py-8 text-sm text-[var(--color-ink-muted)]">No featured sellers are available right now.</p>}
+          </div>}
         </div>
       </section>
 

@@ -82,13 +82,13 @@ export function updateAccountProfile(payload: {
     if (payload.avatar_file) form.set("avatar_file", payload.avatar_file);
     if (payload.remove_avatar) form.set("remove_avatar", "1");
 
-    return apiFetch<{ message: string }>("/account/profile", {
+    return apiFetch<{ message: string; data: { first_name: string; last_name: string; display_name: string; email: string; phone: string; mobile: string } }>("/account/profile", {
       method: "POST",
       body: form,
     });
   }
 
-  return apiFetch<{ message: string }>("/account/profile", {
+  return apiFetch<{ message: string; data: { first_name: string; last_name: string; display_name: string; email: string; phone: string; mobile: string } }>("/account/profile", {
     method: "PATCH",
     body: JSON.stringify(payload),
   });

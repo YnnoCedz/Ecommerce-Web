@@ -1,10 +1,16 @@
 <?php
 
+use App\Models\ActivityLog;
+use App\Models\MarketplaceNotification;
+use App\Models\SellerDocument;
+use App\Notifications\SellerDocumentExpiryNotification;
+use App\Services\ActivityLogger;
 use App\Services\MediaStorageService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Notification;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -90,3 +96,32 @@ Artisan::command('auth:pending-registrations:prune', function () {
 
     return self::SUCCESS;
 })->purpose('Delete expired temporary registration records');
+
+Artisan::command('seller-documents:notify-expiry', function () {
+    $sent = 0;
+    foreach ([30, 14, 7, 0] as $threshold) {
+        SellerDocument::query()
+            ->where('status', 'approved')
+            ->whereDate('expires_at', now()->addDays($threshold)->toDateString())
+            ->with('seller.user')
+            ->each(function (SellerDocument $document) use ($threshold, &$sent) {
+                $user = $document->seller?->user;
+                if (! $user || ActivityLog::query()->where('event_type', 'seller.document.expiry_notified')
+                    ->where('subject_type', $document->getMorphClass())->where('subject_id', $document->id)
+                    ->where('metadata->threshold_days', $threshold)->exists()) {
+                    return;
+                }
+                Notification::send($user, new SellerDocumentExpiryNotification($document, $threshold));
+                MarketplaceNotification::create([
+                    'user_id' => $user->id, 'category' => 'account', 'title' => 'Seller document renewal reminder',
+                    'body' => $threshold === 0 ? 'A seller document has expired.' : "A seller document expires in {$threshold} days.",
+                    'action_type' => 'seller-document-renewal', 'action_label' => 'Open Renewal',
+                ]);
+                app(ActivityLogger::class)->log('seller.document.expiry_notified', 'seller', 'Seller document expiry notification sent.', $user, null, $document, ['threshold_days' => $threshold]);
+                $sent++;
+            });
+    }
+    $this->info("Sent {$sent} seller document expiry notification".($sent === 1 ? '' : 's').'.');
+
+    return self::SUCCESS;
+})->purpose('Send idempotent 30, 14, 7, and expiry-day seller document reminders');
