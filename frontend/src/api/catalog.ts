@@ -1,5 +1,5 @@
 import { apiFetch } from "./client";
-import { cachedSingleFlight, singleFlight } from "./requestCache";
+import { cachedSingleFlight, getCachedResponse, singleFlight } from "./requestCache";
 
 export type CatalogCategory = {
   id: number;
@@ -194,6 +194,10 @@ export type SearchSuggestion = {
 
 export async function fetchCatalogCategories() {
   return cachedSingleFlight("catalog:categories", 60_000, (signal) => apiFetch<{ data: CatalogCategory[] }>("/categories", { signal }));
+}
+
+export function getCachedCatalogCategories() {
+  return getCachedResponse<{ data: CatalogCategory[] }>("catalog:categories");
 }
 
 export async function fetchCatalogProducts(params?: { search?: string; category?: string; seller?: string; limit?: number }) {

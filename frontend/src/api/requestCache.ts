@@ -1,6 +1,18 @@
 const inFlightRequests = new Map<string, { promise: Promise<unknown>; controller: AbortController }>();
 const responseCache = new Map<string, { expiresAt: number; value: unknown }>();
 
+export function getCachedResponse<T>(key: string): T | undefined {
+  const cached = responseCache.get(key);
+
+  if (!cached) return undefined;
+  if (cached.expiresAt <= Date.now()) {
+    responseCache.delete(key);
+    return undefined;
+  }
+
+  return cached.value as T;
+}
+
 export function singleFlight<T>(key: string, factory: (signal: AbortSignal) => Promise<T>): Promise<T> {
   const existing = inFlightRequests.get(key);
   if (existing) {
@@ -17,14 +29,8 @@ export function singleFlight<T>(key: string, factory: (signal: AbortSignal) => P
 }
 
 export function cachedSingleFlight<T>(key: string, ttlMs: number, factory: (signal: AbortSignal) => Promise<T>): Promise<T> {
-  const cached = responseCache.get(key);
-  if (cached && cached.expiresAt > Date.now()) {
-    return Promise.resolve(cached.value as T);
-  }
-
-  if (cached) {
-    responseCache.delete(key);
-  }
+  const cached = getCachedResponse<T>(key);
+  if (cached !== undefined) return Promise.resolve(cached);
 
   return singleFlight(key, async (signal) => {
     const value = await factory(signal);

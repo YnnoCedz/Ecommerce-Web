@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { Link } from "react-router"
-import { CATEGORY_LABELS } from "../../pub/data"
+import { Check, CheckCircle2, LoaderCircle, RefreshCw } from "lucide-react"
 import {
   fetchCurrentSellerApplication,
   submitSellerApplication,
   type SellerApplicationSummary,
 } from "../../../api/sellerApplications"
-import { fetchCatalogCategories } from "../../../api/catalog"
+import {
+  fetchCatalogCategories,
+  getCachedCatalogCategories,
+  type CatalogCategory,
+} from "../../../api/catalog"
 import { ApiError } from "../../../api/client"
 import PhilippineAddressSelector, {
   EMPTY_PHILIPPINE_ADDRESS,
@@ -53,7 +57,6 @@ type SellerApplicationForm = {
   mobileNumber: string
 }
 
-const CATEGORIES = CATEGORY_LABELS
 const DOCUMENT_ACCEPT = "image/jpeg,image/png,application/pdf"
 const FILE_MAX_BYTES = 10 * 1024 * 1024
 
@@ -147,6 +150,25 @@ function formFromApplication(
   }
 }
 
+function SuccessCheck({
+  label = "Valid",
+  size = 16,
+}: {
+  label?: string
+  size?: number
+}) {
+  return (
+    <span
+      className="inline-flex shrink-0 items-center justify-center text-[var(--color-green)]"
+      role="img"
+      aria-label={label}
+      title={label}
+    >
+      <Check size={size} strokeWidth={2.5} aria-hidden="true" />
+    </span>
+  )
+}
+
 function StepProgress({ current }: { current: Step }) {
   return (
     <div className="flex items-center gap-0 mb-8">
@@ -166,7 +188,15 @@ function StepProgress({ current }: { current: Step }) {
                       : "bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-ink-disabled)]"
                 }`}
               >
-                {done ? "OK" : step.n}
+                {done ? (
+                  <Check
+                    size={16}
+                    strokeWidth={2.5}
+                    aria-label={`${step.label} complete`}
+                  />
+                ) : (
+                  step.n
+                )}
               </div>
               <span
                 className={`text-[10px] font-[var(--font-mono)] whitespace-nowrap hidden sm:block ${
@@ -197,17 +227,24 @@ function StepProgress({ current }: { current: Step }) {
 function FormSection({
   title,
   desc,
+  complete = false,
   children,
 }: {
   title: string
   desc?: string
+  complete?: boolean
   children: ReactNode
 }) {
   return (
     <div className="mb-6">
-      <h3 className="text-base font-[600] text-[var(--color-ink)] mb-0.5">
-        {title}
-      </h3>
+      <div className="mb-0.5 flex min-h-6 items-center justify-between gap-3">
+        <h3 className="text-base font-[600] text-[var(--color-ink)]">
+          {title}
+        </h3>
+        <span className="inline-flex min-w-5 justify-end">
+          {complete && <SuccessCheck label={`${title} complete`} size={18} />}
+        </span>
+      </div>
       {desc && (
         <p className="text-sm text-[var(--color-ink-muted)] mb-4">{desc}</p>
       )}
@@ -334,6 +371,7 @@ export default function SellerOnboarding({
   initialApplication = null,
   existingApplication = null,
 }: SellerOnboardingProps) {
+  const [initialCategoryResponse] = useState(() => getCachedCatalogCategories())
   const [step, setStep] = useState<Step>(1)
   const [form, setForm] = useState<SellerApplicationForm>(() =>
     formFromApplication(existingApplication),
@@ -342,10 +380,26 @@ export default function SellerOnboarding({
     () =>
       existingApplication?.categories.map((category) => category.name) ?? [],
   )
-  const [categoryIds, setCategoryIds] = useState<Record<string, number>>({})
+  const [categoryOptions, setCategoryOptions] = useState<CatalogCategory[]>(
+    () => initialCategoryResponse?.data ?? [],
+  )
+  const [categoryIds, setCategoryIds] = useState<Record<string, number>>(() =>
+    Object.fromEntries(
+      (initialCategoryResponse?.data ?? []).map((category) => [
+        category.label,
+        category.id,
+      ]),
+    ),
+  )
+  const [categoryStatus, setCategoryStatus] =
+    useState<"loading" | "success" | "error">(() =>
+      initialCategoryResponse ? "success" : "loading",
+    )
   const [categoryLoadError, setCategoryLoadError] = useState<string | null>(
     null,
   )
+  const [touchedFields, setTouchedFields] =
+    useState<Partial<Record<"tin" | "registrationNumber", boolean>>>({})
   const [ownerIdFile, setOwnerIdFile] = useState<File | null>(null)
   const [businessDocumentFile, setBusinessDocumentFile] = useState<File | null>(
     null,
@@ -363,28 +417,37 @@ export default function SellerOnboarding({
   const businessDocRef = useRef<HTMLInputElement>(null)
   const certRef = useRef<HTMLInputElement>(null)
   const submissionInFlightRef = useRef(false)
+  const categoryRequestRef = useRef(0)
 
-  useEffect(() => {
-    let active = true
+  const loadCategories = () => {
+    const requestId = ++categoryRequestRef.current
+    setCategoryStatus("loading")
+    setCategoryLoadError(null)
 
-    fetchCatalogCategories()
+    void fetchCatalogCategories()
       .then((response) => {
-        if (!active) return
+        if (categoryRequestRef.current !== requestId) return
         const nextIds: Record<string, number> = {}
         response.data.forEach((category) => {
           nextIds[category.label] = category.id
         })
+        setCategoryOptions(response.data)
         setCategoryIds(nextIds)
+        setCategoryStatus("success")
         setCategoryLoadError(null)
       })
       .catch(() => {
-        setCategoryLoadError(
-          "Unable to load current marketplace categories. Refresh before submitting.",
-        )
+        if (categoryRequestRef.current !== requestId) return
+        setCategoryStatus("error")
+        setCategoryLoadError("Unable to load marketplace categories.")
       })
+  }
+
+  useEffect(() => {
+    if (!initialCategoryResponse) loadCategories()
 
     return () => {
-      active = false
+      categoryRequestRef.current += 1
     }
   }, [])
 
@@ -452,6 +515,44 @@ export default function SellerOnboarding({
     setCertificateFile(file)
   }
 
+  const tinValid =
+    /^\d{3}-\d{3}-\d{3}-\d{3}$/.test(form.tin) && !fieldErrors.tin?.length
+  const registrationNumberValid =
+    /^BN-\d{4}-[A-Z0-9]{6}$/.test(form.registrationNumber) &&
+    !fieldErrors.registration_number?.length
+  const tinValidationError =
+    fieldErrors.tin?.[0] ??
+    (touchedFields.tin && form.tin.length > 0 && !tinValid
+      ? "TIN must use the format 000-000-000-000."
+      : undefined)
+  const registrationValidationError =
+    fieldErrors.registration_number?.[0] ??
+    (touchedFields.registrationNumber &&
+    form.registrationNumber.length > 0 &&
+    !registrationNumberValid
+      ? "DTI / SEC registration number must use the format BN-YYYY-XXXXXX."
+      : undefined)
+  const addressErrorKeys = [
+    "address_line1",
+    "region_code",
+    "province_code",
+    "city_code",
+    "barangay_code",
+    "postal_code",
+  ]
+  const addressValid =
+    Boolean(
+      form.addressLine1.trim() &&
+        form.regionCode &&
+        form.cityCode &&
+        form.barangayCode &&
+        /^\d{4}$/.test(form.postalCode),
+    ) && !addressErrorKeys.some((key) => fieldErrors[key]?.length)
+  const categoriesComplete =
+    categoryStatus === "success" &&
+    selectedCategories.length > 0 &&
+    selectedCategories.every((category) => Boolean(categoryIds[category]))
+
   const validationError = (currentStep: Step): string | null => {
     switch (currentStep) {
       case 1:
@@ -481,6 +582,8 @@ export default function SellerOnboarding({
           return "DTI / SEC registration number must use the format BN-YYYY-XXXXXX."
         return null
       case 2:
+        if (categoryStatus === "loading")
+          return "Wait for marketplace categories to finish loading."
         if (categoryLoadError) return categoryLoadError
         if (selectedCategories.some((category) => !categoryIds[category]))
           return "Wait for marketplace categories to finish loading."
@@ -755,40 +858,76 @@ export default function SellerOnboarding({
                   label="BIR TIN"
                   required
                   hint="Format: 000-000-000-000"
-                  error={fieldErrors.tin?.[0]}
+                  error={tinValidationError}
                 >
-                  <input
-                    type="text"
-                    name="tin"
-                    placeholder="000-000-000-000"
-                    className={INPUT_CLS}
-                    value={form.tin}
-                    onChange={(e) =>
-                      updateForm("tin", formatTin(e.target.value))
-                    }
-                    maxLength={15}
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      name="tin"
+                      placeholder="000-000-000-000"
+                      className={`${INPUT_CLS} pr-10 ${
+                        tinValidationError
+                          ? "border-[var(--color-red)]"
+                          : tinValid
+                            ? "border-[var(--color-green-border)] bg-[var(--color-green-light)]/30"
+                            : ""
+                      }`}
+                      value={form.tin}
+                      onChange={(e) =>
+                        updateForm("tin", formatTin(e.target.value))
+                      }
+                      onBlur={() =>
+                        setTouchedFields((previous) => ({
+                          ...previous,
+                          tin: true,
+                        }))
+                      }
+                      aria-invalid={Boolean(tinValidationError)}
+                      maxLength={15}
+                    />
+                    <span className="pointer-events-none absolute inset-y-0 right-3 flex w-4 items-center justify-center">
+                      {tinValid && <SuccessCheck />}
+                    </span>
+                  </div>
                 </Field>
                 <Field
                   label="DTI / SEC registration no."
                   required
                   hint="Format: BN-YYYY-XXXXXX"
-                  error={fieldErrors.registration_number?.[0]}
+                  error={registrationValidationError}
                 >
-                  <input
-                    type="text"
-                    name="registration_number"
-                    placeholder="BN-2026-A1B2C3"
-                    className={INPUT_CLS}
-                    value={form.registrationNumber}
-                    onChange={(e) =>
-                      updateForm(
-                        "registrationNumber",
-                        formatRegistrationNumber(e.target.value),
-                      )
-                    }
-                    maxLength={14}
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      name="registration_number"
+                      placeholder="BN-2026-A1B2C3"
+                      className={`${INPUT_CLS} pr-10 ${
+                        registrationValidationError
+                          ? "border-[var(--color-red)]"
+                          : registrationNumberValid
+                            ? "border-[var(--color-green-border)] bg-[var(--color-green-light)]/30"
+                            : ""
+                      }`}
+                      value={form.registrationNumber}
+                      onChange={(e) =>
+                        updateForm(
+                          "registrationNumber",
+                          formatRegistrationNumber(e.target.value),
+                        )
+                      }
+                      onBlur={() =>
+                        setTouchedFields((previous) => ({
+                          ...previous,
+                          registrationNumber: true,
+                        }))
+                      }
+                      aria-invalid={Boolean(registrationValidationError)}
+                      maxLength={14}
+                    />
+                    <span className="pointer-events-none absolute inset-y-0 right-3 flex w-4 items-center justify-center">
+                      {registrationNumberValid && <SuccessCheck />}
+                    </span>
+                  </div>
                 </Field>
               </div>
 
@@ -806,10 +945,23 @@ export default function SellerOnboarding({
                 />
               </Field>
 
-              <div className="mt-6">
-                <h4 className="text-sm font-[600] text-[var(--color-ink)] mb-1.5">
-                  Business address
-                </h4>
+              <div
+                className={`mt-6 rounded-sm border p-4 transition-colors ${
+                  addressValid
+                    ? "border-[var(--color-green-border)] bg-[var(--color-green-light)]/20"
+                    : "border-transparent"
+                }`}
+              >
+                <div className="mb-1.5 flex min-h-5 items-center justify-between gap-3">
+                  <h4 className="text-sm font-[600] text-[var(--color-ink)]">
+                    Business address
+                  </h4>
+                  <span className="inline-flex min-w-4 justify-end">
+                    {addressValid && (
+                      <SuccessCheck label="Business address valid" />
+                    )}
+                  </span>
+                </div>
                 <p className="text-xs text-[var(--color-ink-muted)] mb-4">
                   Use the same structured address format as your saved
                   addresses.
@@ -904,64 +1056,141 @@ export default function SellerOnboarding({
 
           {step === 2 && (
             <FormSection
-              title="Select your product categories"
+              title="Marketplace Categories"
               desc="Choose up to 5 categories that best describe what you sell. You can update these later."
+              complete={categoriesComplete}
             >
               <div
                 data-field="categories"
                 tabIndex={-1}
-                className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4"
+                className="min-h-40"
+                aria-busy={categoryStatus === "loading"}
               >
-                {CATEGORIES.map((category) => {
-                  const categoryLabel =
-                    typeof category === "string" ? category : category.label
-                  const selected = selectedCategories.includes(categoryLabel)
-                  const disabled = !selected && selectedCategories.length >= 5
-
-                  return (
-                    <button
-                      key={categoryLabel}
-                      onClick={() =>
-                        setSelectedCategories((prev) =>
-                          prev.includes(categoryLabel)
-                            ? prev.filter((value) => value !== categoryLabel)
-                            : prev.length < 5
-                              ? [...prev, categoryLabel]
-                              : prev,
-                        )
-                      }
-                      disabled={disabled}
-                      className={`px-3 py-2.5 text-xs font-[500] rounded-sm border text-left transition-all cursor-pointer ${
-                        selected
-                          ? "border-[var(--color-navy)] bg-[var(--color-navy-surface)] text-[var(--color-navy)]"
-                          : disabled
-                            ? "border-[var(--color-border)] text-[var(--color-ink-disabled)] bg-[var(--color-surface)] cursor-not-allowed opacity-50"
-                            : "border-[var(--color-border)] text-[var(--color-ink-muted)] hover:border-[var(--color-navy)]/50 hover:text-[var(--color-ink)]"
-                      }`}
+                {categoryStatus === "loading" && (
+                  <div role="status" aria-live="polite">
+                    <div
+                      className="grid grid-cols-2 gap-2 sm:grid-cols-3"
+                      aria-hidden="true"
                     >
-                      {selected && <span className="mr-1">OK</span>}
-                      {categoryLabel}
+                      {Array.from({ length: 6 }, (_, index) => (
+                        <div
+                          key={index}
+                          className="h-10 animate-pulse rounded-sm border border-[var(--color-border)] bg-[var(--color-surface)]"
+                        />
+                      ))}
+                    </div>
+                    <p className="mt-3 flex items-center gap-2 text-xs text-[var(--color-ink-muted)]">
+                      <LoaderCircle
+                        size={14}
+                        className="animate-spin"
+                        aria-hidden="true"
+                      />
+                      Loading marketplace categories...
+                    </p>
+                  </div>
+                )}
+
+                {categoryStatus === "error" && (
+                  <div
+                    className="rounded-sm border border-[var(--color-red-border)] bg-[var(--color-red-light)] p-4"
+                    role="alert"
+                  >
+                    <p className="text-sm text-[var(--color-red)]">
+                      Unable to load marketplace categories.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={loadCategories}
+                      className="mt-3 inline-flex items-center gap-1.5 rounded-sm border border-[var(--color-red-border)] bg-white px-3 py-2 text-xs font-[600] text-[var(--color-red)] transition-colors hover:bg-[var(--color-red-light)]"
+                    >
+                      <RefreshCw size={13} aria-hidden="true" />
+                      Retry
                     </button>
-                  )
-                })}
+                  </div>
+                )}
+
+                {categoryStatus === "success" &&
+                  categoryOptions.length === 0 && (
+                    <p className="rounded-sm border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm text-[var(--color-ink-muted)]">
+                      No marketplace categories are currently available.
+                    </p>
+                  )}
+
+                {categoryStatus === "success" && categoryOptions.length > 0 && (
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {categoryOptions.map((category) => {
+                      const categoryLabel = category.label
+                      const selected =
+                        selectedCategories.includes(categoryLabel)
+                      const disabled =
+                        !selected && selectedCategories.length >= 5
+
+                      return (
+                        <button
+                          key={category.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedCategories((previous) =>
+                              previous.includes(categoryLabel)
+                                ? previous.filter(
+                                    (value) => value !== categoryLabel,
+                                  )
+                                : previous.length < 5
+                                  ? [...previous, categoryLabel]
+                                  : previous,
+                            )
+                            setFieldErrors((previous) => {
+                              if (!previous.categories) return previous
+                              const next = { ...previous }
+                              delete next.categories
+                              return next
+                            })
+                          }}
+                          disabled={disabled}
+                          aria-pressed={selected}
+                          className={`flex min-h-10 items-center gap-2 rounded-sm border px-3 py-2.5 text-left text-xs font-[500] transition-all ${
+                            selected
+                              ? "border-[var(--color-green-border)] bg-[var(--color-green-light)]/40 text-[var(--color-green)]"
+                              : disabled
+                                ? "cursor-not-allowed border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-ink-disabled)] opacity-50"
+                                : "cursor-pointer border-[var(--color-border)] text-[var(--color-ink-muted)] hover:border-[var(--color-navy)]/50 hover:text-[var(--color-ink)]"
+                          }`}
+                        >
+                          <span className="inline-flex min-w-4 justify-center">
+                            {selected && (
+                              <SuccessCheck
+                                label={`${categoryLabel} selected`}
+                              />
+                            )}
+                          </span>
+                          <span>{categoryLabel}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
-              {(fieldErrors.categories?.[0] || categoryLoadError) && (
+              {fieldErrors.categories?.[0] && categoryStatus === "success" && (
                 <p
                   className="mb-3 text-xs text-[var(--color-red)]"
                   role="alert"
                 >
-                  {fieldErrors.categories?.[0] || categoryLoadError}
+                  {fieldErrors.categories[0]}
                 </p>
               )}
-              <div className="flex items-center gap-2 px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-sm">
+              <div className="mt-4 flex min-h-10 items-center gap-2 rounded-sm border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
                 <span className="text-xs text-[var(--color-ink-muted)]">
                   {selectedCategories.length}/5 categories selected
                 </span>
-                {selectedCategories.length > 0 && (
-                  <span className="ml-2 text-xs text-[var(--color-navy)]">
-                    {selectedCategories.join(" | ")}
-                  </span>
+                {categoriesComplete && (
+                  <SuccessCheck label="Marketplace Categories complete" />
                 )}
+                {selectedCategories.length > 0 &&
+                  categoryStatus === "success" && (
+                    <span className="ml-2 text-xs text-[var(--color-navy)]">
+                      {selectedCategories.join(" | ")}
+                    </span>
+                  )}
               </div>
             </FormSection>
           )}
@@ -1436,15 +1665,16 @@ export default function SellerOnboarding({
             {step < 6 ? (
               <button
                 onClick={goNext}
-                className="px-5 py-2.5 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] cursor-pointer transition-colors"
+                disabled={step === 2 && categoryStatus !== "success"}
+                className="px-5 py-2.5 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] cursor-pointer transition-colors disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Continue {"->"}
               </button>
             ) : (
               <button
                 onClick={handleSubmit}
-                disabled={isSubmitting}
-                className="px-5 py-2.5 bg-[var(--color-amber)] text-white text-sm font-[500] rounded-sm hover:opacity-90 cursor-pointer transition-all disabled:opacity-70"
+                disabled={isSubmitting || categoryStatus !== "success"}
+                className="px-5 py-2.5 bg-[var(--color-amber)] text-white text-sm font-[500] rounded-sm hover:opacity-90 cursor-pointer transition-all disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {isSubmitting ? "Submitting..." : "Submit Seller Application"}
               </button>
@@ -1597,14 +1827,25 @@ function ApplicationStatus({
                           : "bg-[var(--color-amber-light)] border-[var(--color-amber-border)]"
                     }`}
                   >
-                    <span className="text-2xl">
-                      {isApproved
-                        ? "OK"
-                        : isRejected
-                          ? "!"
-                          : needsRevision
-                            ? "✎"
-                            : "~"}
+                    <span
+                      className="text-2xl"
+                      aria-label={
+                        isApproved ? "Application approved" : undefined
+                      }
+                    >
+                      {isApproved ? (
+                        <CheckCircle2
+                          size={28}
+                          className="text-[var(--color-green)]"
+                          aria-hidden="true"
+                        />
+                      ) : isRejected ? (
+                        "!"
+                      ) : needsRevision ? (
+                        "✎"
+                      ) : (
+                        "~"
+                      )}
                     </span>
                   </div>
 
@@ -1697,11 +1938,17 @@ function ApplicationStatus({
                                   : "bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-ink-disabled)]"
                             }`}
                           >
-                            {index < 2
-                              ? "OK"
-                              : index === 2
-                                ? "..."
-                                : String(index + 1)}
+                            {index < 2 ? (
+                              <Check
+                                size={12}
+                                strokeWidth={2.5}
+                                aria-label={`${label} complete`}
+                              />
+                            ) : index === 2 ? (
+                              "..."
+                            ) : (
+                              String(index + 1)
+                            )}
                           </div>
                           <span
                             className={`text-sm ${
