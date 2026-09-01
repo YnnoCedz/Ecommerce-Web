@@ -27,7 +27,10 @@ class OrderLifecycleService
         'out-for-delivery' => 'delivered',
     ];
 
-    public function __construct(private readonly NotificationService $notifications) {}
+    public function __construct(
+        private readonly NotificationService $notifications,
+        private readonly CommissionService $commissions,
+    ) {}
 
     public function transitionBySeller(SellerOrder $sellerOrder, int $sellerId, string $status, ?string $trackingNumber = null): SellerOrder
     {
@@ -109,6 +112,9 @@ class OrderLifecycleService
             };
             $locked->forceFill(['status' => $status, ...$timestamps])->save();
             $shipment = $this->updateShipment($locked, $status, null, 'admin_logistics', $actor->id);
+            if ($status === 'delivered') {
+                $this->commissions->courier($shipment);
+            }
             $locked->forceFill(['tracking_number' => $shipment->tracking_number])->save();
             $order = $this->synchronizeOrder($locked->order_id);
 
@@ -167,6 +173,7 @@ class OrderLifecycleService
             }
 
             $locked->forceFill(['status' => 'completed', 'completed_at' => now()])->save();
+            $this->commissions->marketplace($locked);
             $order = $this->synchronizeOrder($order->id);
 
             if ($locked->seller?->user) {
@@ -194,6 +201,7 @@ class OrderLifecycleService
         $shipment = Shipment::query()->where('seller_order_id', $sellerOrder->id)->lockForUpdate()->first()
             ?? new Shipment(['seller_order_id' => $sellerOrder->id]);
         $shipment->tracking_number = trim((string) $trackingNumber) ?: $shipment->tracking_number ?: 'MKT-'.Str::upper(Str::random(12));
+        $shipment->courier_id ??= $sellerOrder->courier_id;
         $shipment->status = $status;
 
         if ($status === 'picked-up') {

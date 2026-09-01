@@ -1,189 +1,232 @@
-import { lazy } from "react";
-import { createBrowserRouter, Navigate, Outlet, useParams, useSearchParams } from "react-router";
+import { lazy, useEffect, useState } from "react"
+import {
+  createBrowserRouter,
+  Navigate,
+  Outlet,
+  useParams,
+  useSearchParams,
+} from "react-router"
 
-import { useAuth } from "./auth/AuthContext";
-import type { AccountUser } from "./pages/account/AccountLayout";
-import PublicLayout, { useNav } from "./layouts/PublicLayout";
-import SpecLayout from "./layouts/SpecLayout";
-import RouteErrorPage from "./pages/errors/RouteErrorPage";
-import HomePage from "./pages/pub/HomePage";
+import { useAuth } from "./auth/AuthContext"
+import { ApiError } from "./api/client"
+import {
+  fetchCurrentSellerApplication,
+  type SellerApplicationSummary,
+} from "./api/sellerApplications"
+import type { AccountUser } from "./pages/account/AccountLayout"
+import PublicLayout, { useNav } from "./layouts/PublicLayout"
+import SpecLayout from "./layouts/SpecLayout"
+import RouteErrorPage from "./pages/errors/RouteErrorPage"
+import HomePage from "./pages/pub/HomePage"
 
-const SellerLayout = lazy(() => import("./layouts/SellerLayout"));
-const AdminLayout = lazy(() => import("./layouts/AdminLayout"));
+const SellerLayout = lazy(() => import("./layouts/SellerLayout"))
+const AdminLayout = lazy(() => import("./layouts/AdminLayout"))
 
-const CategoryPage = lazy(() => import("./pages/pub/CategoryPage"));
-const SearchPage = lazy(() => import("./pages/pub/SearchPage"));
-const DealsPage = lazy(() => import("./pages/pub/DealsPage"));
-const ProductPage = lazy(() => import("./pages/pub/ProductPage"));
-const SellerStorePage = lazy(() => import("./pages/pub/SellerStorePage"));
+const CategoryPage = lazy(() => import("./pages/pub/CategoryPage"))
+const SearchPage = lazy(() => import("./pages/pub/SearchPage"))
+const DealsPage = lazy(() => import("./pages/pub/DealsPage"))
+const ProductPage = lazy(() => import("./pages/pub/ProductPage"))
+const SellerStorePage = lazy(() => import("./pages/pub/SellerStorePage"))
 
-const LoginPage = lazy(() => import("./pages/auth/LoginPage"));
-const RegisterPage = lazy(() => import("./pages/auth/RegisterPage"));
-const ForgotPasswordPage = lazy(() => import("./pages/auth/ForgotPasswordPage"));
-const VerifyEmailPage = lazy(() => import("./pages/auth/VerifyEmailPage"));
-const EmailVerifiedPage = lazy(() => import("./pages/auth/EmailVerifiedPage"));
-const ResetPasswordPage = lazy(() => import("./pages/auth/ResetPasswordPage"));
-const TwoFactorPage = lazy(() => import("./pages/auth/TwoFactorPage"));
+const LoginPage = lazy(() => import("./pages/auth/LoginPage"))
+const RegisterPage = lazy(() => import("./pages/auth/RegisterPage"))
+const ForgotPasswordPage = lazy(() => import("./pages/auth/ForgotPasswordPage"))
+const VerifyEmailPage = lazy(() => import("./pages/auth/VerifyEmailPage"))
+const EmailVerifiedPage = lazy(() => import("./pages/auth/EmailVerifiedPage"))
+const ResetPasswordPage = lazy(() => import("./pages/auth/ResetPasswordPage"))
+const TwoFactorPage = lazy(() => import("./pages/auth/TwoFactorPage"))
 
-const CartPage = lazy(() => import("./pages/buyer/CartPage"));
-const WishlistPage = lazy(() => import("./pages/buyer/WishlistPage"));
-const CheckoutFlow = lazy(() => import("./pages/checkout/CheckoutFlow"));
-const OrderHistoryPage = lazy(() => import("./pages/orders/OrderHistoryPage"));
-const OrderDetailPage = lazy(() => import("./pages/orders/OrderDetailPage"));
-const MessagingPage = lazy(() => import("./pages/messaging/MessagingPage"));
-const NotificationCenter = lazy(() => import("./pages/notifications/NotificationCenter"));
-const ProfilePage = lazy(() => import("./pages/account/ProfilePage"));
-const SecurityPage = lazy(() => import("./pages/account/SecurityPage"));
-const AddressesPage = lazy(() => import("./pages/account/AddressesPage"));
-const PreferencesPage = lazy(() => import("./pages/account/PreferencesPage"));
-const PersonalInfoPage = lazy(() => import("./pages/account/PersonalInfoPage"));
-const ReviewsPage = lazy(() => import("./pages/buyer/ReviewsPage"));
-const AccountRouteLayout = lazy(() => import("./layouts/AccountRouteLayout"));
+const CartPage = lazy(() => import("./pages/buyer/CartPage"))
+const WishlistPage = lazy(() => import("./pages/buyer/WishlistPage"))
+const CheckoutFlow = lazy(() => import("./pages/checkout/CheckoutFlow"))
+const OrderHistoryPage = lazy(() => import("./pages/orders/OrderHistoryPage"))
+const OrderDetailPage = lazy(() => import("./pages/orders/OrderDetailPage"))
+const MessagingPage = lazy(() => import("./pages/messaging/MessagingPage"))
+const NotificationCenter = lazy(
+  () => import("./pages/notifications/NotificationCenter"),
+)
+const ProfilePage = lazy(() => import("./pages/account/ProfilePage"))
+const SecurityPage = lazy(() => import("./pages/account/SecurityPage"))
+const AddressesPage = lazy(() => import("./pages/account/AddressesPage"))
+const PreferencesPage = lazy(() => import("./pages/account/PreferencesPage"))
+const PersonalInfoPage = lazy(() => import("./pages/account/PersonalInfoPage"))
+const ReviewsPage = lazy(() => import("./pages/buyer/ReviewsPage"))
+const AccountRouteLayout = lazy(() => import("./layouts/AccountRouteLayout"))
 
-const SellerDashboard = lazy(() => import("./pages/seller/SellerDashboard"));
-const ProductListPage = lazy(() => import("./pages/seller/ProductListPage"));
-const ProductCreationPage = lazy(() => import("./pages/seller/ProductCreationPage"));
-const InventoryPage = lazy(() => import("./pages/seller/InventoryPage"));
-const SellerOrdersPage = lazy(() => import("./pages/seller/SellerOrdersPage"));
-const CustomersPage = lazy(() => import("./pages/seller/CustomersPage"));
-const PromotionsPage = lazy(() => import("./pages/seller/PromotionsPage"));
-const AnalyticsPage = lazy(() => import("./pages/seller/AnalyticsPage"));
-const StoreManagementPage = lazy(() => import("./pages/seller/StoreManagementPage"));
-const SellerSettingsPage = lazy(() => import("./pages/seller/SellerSettingsPage"));
-const SellerReviewsPage = lazy(() => import("./pages/seller/SellerReviewsPage"));
-const SellerReturnsPage = lazy(() => import("./pages/seller/SellerReturnsPage"));
-const SellerOnboarding = lazy(() => import("./pages/seller/onboarding/SellerOnboarding"));
+const SellerDashboard = lazy(() => import("./pages/seller/SellerDashboard"))
+const ProductListPage = lazy(() => import("./pages/seller/ProductListPage"))
+const ProductCreationPage = lazy(
+  () => import("./pages/seller/ProductCreationPage"),
+)
+const InventoryPage = lazy(() => import("./pages/seller/InventoryPage"))
+const SellerOrdersPage = lazy(() => import("./pages/seller/SellerOrdersPage"))
+const CustomersPage = lazy(() => import("./pages/seller/CustomersPage"))
+const PromotionsPage = lazy(() => import("./pages/seller/PromotionsPage"))
+const AnalyticsPage = lazy(() => import("./pages/seller/AnalyticsPage"))
+const StoreManagementPage = lazy(
+  () => import("./pages/seller/StoreManagementPage"),
+)
+const SellerSettingsPage = lazy(
+  () => import("./pages/seller/SellerSettingsPage"),
+)
+const SellerReviewsPage = lazy(() => import("./pages/seller/SellerReviewsPage"))
+const SellerReturnsPage = lazy(() => import("./pages/seller/SellerReturnsPage"))
+const SellerOnboarding = lazy(
+  () => import("./pages/seller/onboarding/SellerOnboarding"),
+)
 
-const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
-const UserManagementPage = lazy(() => import("./pages/admin/UserManagementPage"));
-const SellerManagementPage = lazy(() => import("./pages/admin/SellerManagementPage"));
-const AdminProductsPage = lazy(() => import("./pages/admin/AdminProductsPage"));
-const AdminOrdersPage = lazy(() => import("./pages/admin/AdminOrdersPage"));
-const CategoryManagementPage = lazy(() => import("./pages/admin/CategoryManagementPage"));
-const ReportsModerationPage = lazy(() => import("./pages/admin/ReportsModerationPage"));
-const AdminDisputesPage = lazy(() => import("./pages/admin/AdminDisputesPage"));
-const AdminAnalyticsPage = lazy(() => import("./pages/admin/AdminAnalyticsPage"));
-const AdminActivityPage = lazy(() => import("./pages/admin/AdminActivityPage"));
-const AdminSettingsPage = lazy(() => import("./pages/admin/AdminSettingsPage"));
-const AdminProfilePage = lazy(() => import("./pages/admin/AdminProfilePage"));
+const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"))
+const UserManagementPage = lazy(
+  () => import("./pages/admin/UserManagementPage"),
+)
+const SellerManagementPage = lazy(
+  () => import("./pages/admin/SellerManagementPage"),
+)
+const AdminProductsPage = lazy(() => import("./pages/admin/AdminProductsPage"))
+const AdminOrdersPage = lazy(() => import("./pages/admin/AdminOrdersPage"))
+const CategoryManagementPage = lazy(
+  () => import("./pages/admin/CategoryManagementPage"),
+)
+const ReportsModerationPage = lazy(
+  () => import("./pages/admin/ReportsModerationPage"),
+)
+const AdminDisputesPage = lazy(() => import("./pages/admin/AdminDisputesPage"))
+const AdminAnalyticsPage = lazy(
+  () => import("./pages/admin/AdminAnalyticsPage"),
+)
+const AdminActivityPage = lazy(() => import("./pages/admin/AdminActivityPage"))
+const AdminSettingsPage = lazy(() => import("./pages/admin/AdminSettingsPage"))
+const AdminPayoutsPage = lazy(() => import("./pages/admin/AdminPayoutsPage"))
+const AdminProfilePage = lazy(() => import("./pages/admin/AdminProfilePage"))
 
-const ForbiddenPage = lazy(() => import("./pages/errors/ForbiddenPage"));
+const ForbiddenPage = lazy(() => import("./pages/errors/ForbiddenPage"))
 
 function HomeRoute() {
-  const nav = useNav();
-  return <HomePage onNavigate={nav} />;
+  const nav = useNav()
+  return <HomePage onNavigate={nav} />
 }
 
 function CategoryRoute() {
-  const nav = useNav();
-  const { slug } = useParams<{ slug: string }>();
-  return <CategoryPage catSlug={slug ?? "all"} onNavigate={nav} />;
+  const nav = useNav()
+  const { slug } = useParams<{ slug: string }>()
+  return <CategoryPage catSlug={slug ?? "all"} onNavigate={nav} />
 }
 
 function SearchRoute() {
-  const nav = useNav();
-  const [searchParams] = useSearchParams();
-  return <SearchPage query={searchParams.get("q") ?? ""} onNavigate={nav} />;
+  const nav = useNav()
+  const [searchParams] = useSearchParams()
+  return <SearchPage query={searchParams.get("q") ?? ""} onNavigate={nav} />
 }
 
 function ProductRoute() {
-  const nav = useNav();
-  const { id } = useParams<{ id: string }>();
-  return <ProductPage slug={id ?? ""} onNavigate={nav} />;
+  const nav = useNav()
+  const { id } = useParams<{ id: string }>()
+  return <ProductPage slug={id ?? ""} onNavigate={nav} />
 }
 
 function SellerStoreRoute() {
-  const nav = useNav();
-  const { id } = useParams<{ id: string }>();
-  return <SellerStorePage sellerSlug={id ?? ""} onNavigate={nav} />;
+  const nav = useNav()
+  const { id } = useParams<{ id: string }>()
+  return <SellerStorePage sellerSlug={id ?? ""} onNavigate={nav} />
 }
 
 function LoginRoute() {
-  const nav = useNav();
-  return <LoginPage onNavigate={nav} />;
+  const nav = useNav()
+  return <LoginPage onNavigate={nav} />
 }
 
 function RegisterRoute() {
-  const nav = useNav();
-  return <RegisterPage onNavigate={nav} />;
+  const nav = useNav()
+  return <RegisterPage onNavigate={nav} />
 }
 
 function ForgotPasswordRoute() {
-  const nav = useNav();
-  return <ForgotPasswordPage onNavigate={nav} />;
+  const nav = useNav()
+  return <ForgotPasswordPage onNavigate={nav} />
 }
 
 function VerifyEmailRoute() {
-  const nav = useNav();
-  return <VerifyEmailPage onNavigate={nav} />;
+  const nav = useNav()
+  return <VerifyEmailPage onNavigate={nav} />
 }
 
 function EmailVerifiedRoute() {
-  return <EmailVerifiedPage />;
+  return <EmailVerifiedPage />
 }
 
 function ResetPasswordRoute() {
-  const nav = useNav();
-  return <ResetPasswordPage onNavigate={nav} />;
+  const nav = useNav()
+  return <ResetPasswordPage onNavigate={nav} />
 }
 
 function TwoFactorRoute() {
-  return <TwoFactorPage />;
+  return <TwoFactorPage />
 }
 
 function OrderDetailRoute() {
-  const { id } = useParams<{ id: string }>();
-  return <OrderDetailPage orderNumber={id ?? ""} />;
+  const { id } = useParams<{ id: string }>()
+  return <OrderDetailPage orderNumber={id ?? ""} />
 }
 
 function OrderHistoryRoute() {
-  const nav = useNav();
-  return <OrderHistoryPage onViewDetail={(id) => nav("order-detail", { id })} />;
+  const nav = useNav()
+  return <OrderHistoryPage onViewDetail={(id) => nav("order-detail", { id })} />
 }
 
 function ProfileRoute() {
-  const nav = useNav();
-  const { user, loading } = useAuth();
+  const nav = useNav()
+  const { user, loading } = useAuth()
 
   if (loading) {
     return (
       <div className="px-4 md:px-8 lg:px-12 max-w-screen-xl mx-auto py-10 text-sm text-[var(--color-ink-muted)]">
         Loading your account...
       </div>
-    );
+    )
   }
 
   if (!user) {
-    return <Navigate to="/auth/login" replace />;
+    return <Navigate to="/auth/login" replace />
   }
 
   const accountUser: AccountUser = {
     firstName: user.first_name ?? user.display_name.split(" ")[0] ?? "User",
-    lastName: user.last_name ?? user.display_name.split(" ").slice(1).join(" ") ?? "",
+    lastName:
+      user.last_name ?? user.display_name.split(" ").slice(1).join(" ") ?? "",
     email: user.email,
     phone: user.phone ?? user.mobile ?? "",
     avatar: user.avatar_url,
-    status:
-      user.email_verified_at
-        ? user.status === "active"
-          ? "verified"
-          : user.status === "pending"
-            ? "pending"
-            : user.status === "restricted"
-              ? "restricted"
-              : user.status === "suspended"
-                ? "suspended"
-                : "unverified"
-        : "unverified",
-    joinedDate: user.joined_at ? new Date(user.joined_at).toLocaleString("en-US", { month: "long", year: "numeric" }) : "New member",
+    status: user.email_verified_at
+      ? user.status === "active"
+        ? "verified"
+        : user.status === "pending"
+          ? "pending"
+          : user.status === "restricted"
+            ? "restricted"
+            : user.status === "suspended"
+              ? "suspended"
+              : "unverified"
+      : "unverified",
+    joinedDate: user.joined_at
+      ? new Date(user.joined_at).toLocaleString("en-US", {
+          month: "long",
+          year: "numeric",
+        })
+      : "New member",
     orderCount: user.order_count ?? 0,
     wishlistCount: user.wishlist_count ?? 0,
     emailVerifiedAt: user.email_verified_at,
     twoFactorEnabled: user.two_factor_enabled,
     lastActiveAt: user.last_active_at,
-  };
+  }
 
-  return <ProfilePage user={accountUser} onNavigate={nav} onPageChange={(page) => nav(page)} />;
+  return (
+    <ProfilePage
+      user={accountUser}
+      onNavigate={nav}
+      onPageChange={(page) => nav(page)}
+    />
+  )
 }
 
 function LoadingState({ label }: { label: string }) {
@@ -191,11 +234,11 @@ function LoadingState({ label }: { label: string }) {
     <div className="px-4 md:px-8 lg:px-12 max-w-screen-xl mx-auto py-10 text-sm text-[var(--color-ink-muted)]">
       {label}
     </div>
-  );
+  )
 }
 
 function SessionVerificationFailure() {
-  const { error, refreshUser } = useAuth();
+  const { error, refreshUser } = useAuth()
 
   return (
     <div className="px-4 md:px-8 lg:px-12 max-w-screen-xl mx-auto py-10 text-sm text-[var(--color-ink-muted)]">
@@ -208,93 +251,195 @@ function SessionVerificationFailure() {
         Try again
       </button>
     </div>
-  );
+  )
 }
 
 function RequireVerifiedAccount() {
-  const { user, loading, error } = useAuth();
+  const { user, loading, error } = useAuth()
 
   if (loading) {
-    return <LoadingState label="Loading your account..." />;
+    return <LoadingState label="Loading your account..." />
   }
 
   if (error && !user) {
-    return <SessionVerificationFailure />;
+    return <SessionVerificationFailure />
   }
 
   if (!user) {
-    return <Navigate to="/auth/login" replace />;
+    return <Navigate to="/auth/login" replace />
   }
 
   if (!user.email_verified_at) {
-    return <Navigate to={`/auth/verify-email?email=${encodeURIComponent(user.email)}`} replace />;
+    return (
+      <Navigate
+        to={`/auth/verify-email?email=${encodeURIComponent(user.email)}`}
+        replace
+      />
+    )
   }
 
-  return <Outlet />;
+  return <Outlet />
 }
 
 function RequireSellerAccess() {
-  const { user, loading, error } = useAuth();
+  const { user, loading, error } = useAuth()
 
   if (loading) {
-    return <LoadingState label="Loading seller access..." />;
+    return <LoadingState label="Loading seller access..." />
   }
 
   if (error && !user) {
-    return <SessionVerificationFailure />;
+    return <SessionVerificationFailure />
   }
 
   if (!user) {
-    return <Navigate to="/auth/login" replace />;
+    return <Navigate to="/auth/login" replace />
   }
 
   if (!user.email_verified_at) {
-    return <Navigate to={`/auth/verify-email?email=${encodeURIComponent(user.email)}`} replace />;
+    return (
+      <Navigate
+        to={`/auth/verify-email?email=${encodeURIComponent(user.email)}`}
+        replace
+      />
+    )
   }
 
   if (user.status !== "active") {
-    return <Navigate to="/403" replace />;
+    return <Navigate to="/403" replace />
   }
 
   if (user.role !== "seller") {
-    return <Navigate to="/403" replace />;
+    return <Navigate to="/403" replace />
   }
 
   if (!user.seller_approved) {
-    return <Navigate to="/seller-center/onboarding/status" replace />;
+    return <Navigate to="/seller-center/onboarding/status" replace />
   }
 
-  return <Outlet />;
+  return <Outlet />
+}
+
+function SellerOnboardingRoute({
+  view = "form",
+}: {
+  view?: "form" | "status"
+}) {
+  const { user, loading: authLoading, error: authError } = useAuth()
+  const [application, setApplication] =
+    useState<SellerApplicationSummary | null>(null)
+  const [eligibilityLoading, setEligibilityLoading] = useState(true)
+  const [eligibilityError, setEligibilityError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (authLoading) return
+    if (
+      !user ||
+      !user.email_verified_at ||
+      user.status !== "active" ||
+      !["buyer", "seller"].includes(user.role) ||
+      user.seller_approved
+    ) {
+      setEligibilityLoading(false)
+      return
+    }
+
+    let active = true
+    setEligibilityLoading(true)
+    fetchCurrentSellerApplication()
+      .then((response) => {
+        if (active) setApplication(response.data)
+      })
+      .catch((error) => {
+        if (active)
+          setEligibilityError(
+            error instanceof ApiError
+              ? error.message
+              : "Unable to check seller eligibility.",
+          )
+      })
+      .finally(() => {
+        if (active) setEligibilityLoading(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [authLoading, user])
+
+  if (authLoading || eligibilityLoading)
+    return <LoadingState label="Checking seller eligibility..." />
+  if (authError && !user) return <SessionVerificationFailure />
+  if (!user) return <Navigate to="/auth/login" replace />
+  if (!user.email_verified_at)
+    return (
+      <Navigate
+        to={`/auth/verify-email?email=${encodeURIComponent(user.email)}`}
+        replace
+      />
+    )
+  if (user.status !== "active" || !["buyer", "seller"].includes(user.role))
+    return <Navigate to="/403" replace />
+  if (user.seller_approved || application?.status === "approved")
+    return <Navigate to="/seller-center" replace />
+  if (eligibilityError)
+    return (
+      <div className="px-4 md:px-8 lg:px-12 max-w-screen-xl mx-auto py-10 text-sm text-[var(--color-red)]">
+        {eligibilityError}
+      </div>
+    )
+
+  const underReview =
+    application &&
+    ["pending", "reviewing", "flagged"].includes(application.status)
+  if (underReview || view === "status")
+    return <SellerOnboarding view="status" initialApplication={application} />
+
+  return (
+    <SellerOnboarding
+      existingApplication={
+        application?.status === "rejected" ||
+        application?.status === "needs_revision"
+          ? application
+          : null
+      }
+    />
+  )
 }
 
 function RequireAdminAccess() {
-  const { user, loading, error } = useAuth();
+  const { user, loading, error } = useAuth()
 
   if (loading) {
-    return <LoadingState label="Loading admin access..." />;
+    return <LoadingState label="Loading admin access..." />
   }
 
   if (error && !user) {
-    return <SessionVerificationFailure />;
+    return <SessionVerificationFailure />
   }
 
   if (!user) {
-    return <Navigate to="/auth/login" replace />;
+    return <Navigate to="/auth/login" replace />
   }
 
   if (!user.email_verified_at) {
-    return <Navigate to={`/auth/verify-email?email=${encodeURIComponent(user.email)}`} replace />;
+    return (
+      <Navigate
+        to={`/auth/verify-email?email=${encodeURIComponent(user.email)}`}
+        replace
+      />
+    )
   }
 
   if (user.status !== "active") {
-    return <Navigate to="/403" replace />;
+    return <Navigate to="/403" replace />
   }
 
   if (user.role !== "admin") {
-    return <Navigate to="/403" replace />;
+    return <Navigate to="/403" replace />
   }
 
-  return <Outlet />;
+  return <Outlet />
 }
 
 function NotFoundRoute() {
@@ -309,11 +454,14 @@ function NotFoundRoute() {
       <p className="text-sm text-[var(--color-ink-muted)] mb-8 max-w-sm">
         The URL may have been mistyped or the page may have been moved.
       </p>
-      <a href="/" className="bg-[var(--color-navy)] text-white text-sm font-[500] px-6 py-3 rounded-sm hover:opacity-90 transition-opacity">
+      <a
+        href="/"
+        className="bg-[var(--color-navy)] text-white text-sm font-[500] px-6 py-3 rounded-sm hover:opacity-90 transition-opacity"
+      >
         Back to Home
       </a>
     </div>
-  );
+  )
 }
 
 export const router = createBrowserRouter([
@@ -325,8 +473,16 @@ export const router = createBrowserRouter([
       { path: ":partId", Component: SpecLayout },
     ],
   },
-  { path: "/seller-center/onboarding", Component: SellerOnboarding, errorElement: <RouteErrorPage /> },
-  { path: "/seller-center/onboarding/status", element: <SellerOnboarding view="status" />, errorElement: <RouteErrorPage /> },
+  {
+    path: "/seller-center/onboarding",
+    element: <SellerOnboardingRoute />,
+    errorElement: <RouteErrorPage />,
+  },
+  {
+    path: "/seller-center/onboarding/status",
+    element: <SellerOnboardingRoute view="status" />,
+    errorElement: <RouteErrorPage />,
+  },
   {
     path: "/seller-center",
     errorElement: <RouteErrorPage />,
@@ -370,9 +526,13 @@ export const router = createBrowserRouter([
           { path: "categories", Component: CategoryManagementPage },
           { path: "reports", Component: ReportsModerationPage },
           { path: "disputes", Component: AdminDisputesPage },
-          { path: "moderation", element: <Navigate to="/admin/reports" replace /> },
+          {
+            path: "moderation",
+            element: <Navigate to="/admin/reports" replace />,
+          },
           { path: "notifications", Component: NotificationCenter },
           { path: "analytics", Component: AdminAnalyticsPage },
+          { path: "payouts", Component: AdminPayoutsPage },
           { path: "activity", Component: AdminActivityPage },
           { path: "settings", Component: AdminSettingsPage },
           { path: "profile", Component: AdminProfilePage },
@@ -397,7 +557,10 @@ export const router = createBrowserRouter([
         element: <RequireVerifiedAccount />,
         children: [{ index: true, Component: CheckoutFlow }],
       },
-      { path: "checkout/confirmation", element: <Navigate to="/account/orders" replace /> },
+      {
+        path: "checkout/confirmation",
+        element: <Navigate to="/account/orders" replace />,
+      },
       {
         path: "account",
         element: <RequireVerifiedAccount />,
@@ -405,7 +568,10 @@ export const router = createBrowserRouter([
           {
             element: <AccountRouteLayout />,
             children: [
-              { index: true, element: <Navigate to="/account/profile" replace /> },
+              {
+                index: true,
+                element: <Navigate to="/account/profile" replace />,
+              },
               { path: "orders", Component: OrderHistoryRoute },
               { path: "orders/:id", Component: OrderDetailRoute },
               { path: "wishlist", Component: WishlistPage },
@@ -438,4 +604,4 @@ export const router = createBrowserRouter([
   },
   { path: "/403", Component: ForbiddenPage, errorElement: <RouteErrorPage /> },
   { path: "*", Component: NotFoundRoute, errorElement: <RouteErrorPage /> },
-]);
+])

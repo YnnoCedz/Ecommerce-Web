@@ -10,7 +10,7 @@ class PsgcService
 {
     private const CACHE_TTL = 86400;
 
-    private const CACHE_VERSION = 'v2';
+    private const CACHE_VERSION = 'v3';
 
     public function regions(): array
     {
@@ -132,10 +132,17 @@ class PsgcService
 
     private function normalizeName(string $name): string
     {
+        $decoded = preg_match('/%(?:[0-9A-Fa-f]{2})/', $name) ? rawurldecode($name) : $name;
+        $decoded = str_replace(['ÃƒÂ±', 'ÃƒÂ‘', 'Ã±', 'Ã‘'], ['ñ', 'Ñ', 'ñ', 'Ñ'], $decoded);
+
+        if (class_exists(\Normalizer::class)) {
+            $decoded = \Normalizer::normalize($decoded, \Normalizer::FORM_C) ?: $decoded;
+        }
+
         return str_ireplace(
-            ['Santo Nino', 'Santo-Nino', 'Santo NiÃ±o', 'Santo-NiÃ±o'],
-            ['Santo Niño', 'Santo-Niño', 'Santo Niño', 'Santo-Niño'],
-            $name
+            ['Santo Nino', 'Santo-Nino'],
+            ['Santo Niño', 'Santo-Niño'],
+            $decoded
         );
     }
 

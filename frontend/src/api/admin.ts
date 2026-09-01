@@ -1,4 +1,4 @@
-import { apiFetch } from "./client";
+import { apiDownload, apiFetch } from "./client";
 import { singleFlight } from "./requestCache";
 import type { AuthUser } from "./auth";
 
@@ -64,6 +64,9 @@ export type AdminAnalyticsSectionData = {
 export type AdminActivity = { id: string; event_type: string; category: string; description: string; role: string | null; ip_address: string | null; user_agent: string | null; metadata: Record<string, unknown>; occurred_at: string; source: "audit_log" | "historical_record"; source_label: string; source_table: string; target: { type: string; id: number } | null; user: { id: number; name: string; email: string } | null };
 export type AdminPlatformSettings = { platform_name: string; support_email: string; seller_document_expiry_warning_days: number };
 export type AdminDocumentRenewal = { id: number; document_type: string; status: string; original_filename: string | null; uploaded_at: string | null; submitted_at: string | null; expires_at: string | null; reviewed_at: string | null; review_notes: string | null; renewal_of_document_id: number; seller: { id: number; name: string; email: string | null } | null };
+export type AdminPayout = { id: number; payout_number: string; recipient_type: "seller" | "courier"; recipient_id: number; recipient_name: string; period_start: string; period_end: string; currency: string; gross_amount: string; commission_amount: string; adjustment_amount: string; net_amount: string; status: string; payment_method: string | null; payment_reference: string | null; notes: string | null; paid_at: string | null; created_at: string | null; items_count: number; items?: Array<{ id: number; description: string; gross_amount: string; commission_amount: string; adjustment_amount: string; net_amount: string }> | null };
+export type CommissionRate = { id: number; commission_type: "marketplace" | "courier_delivery"; calculation_type: "percentage" | "fixed" | "hybrid"; percentage_rate: string | null; fixed_amount: string; effective_from: string; effective_until: string | null; is_active: boolean };
+export type CommissionEntry = { id: number; reference: string; commission_type: string; recipient_type: string; recipient_id: number; gross_amount: string; percentage_rate: string | null; fixed_amount: string; commission_amount: string; net_amount: string; status: string; commission_taken: boolean; created_at: string };
 
 function queryString(params: Record<string, string | number | undefined>) {
   const query = new URLSearchParams();
@@ -95,3 +98,13 @@ export const requestAdminPasswordChallenge = (currentPassword: string) => apiFet
 export const changeAdminPassword = (payload: { current_password: string; password: string; password_confirmation: string; challenge_id?: number; challenge_token?: string; code?: string }) => apiFetch<{ message: string }>("/admin/security/password", { method: "POST", body: JSON.stringify(payload) });
 export const fetchAdminDocumentRenewals = (status?: string) => apiFetch<{ data: AdminDocumentRenewal[]; meta: { total: number; current_page: number; last_page: number } }>(`/admin/document-renewals${status ? `?status=${encodeURIComponent(status)}` : ""}`);
 export const reviewAdminDocumentRenewal = (id: number, decision: "approve" | "reject", review_notes?: string, expires_at?: string) => apiFetch<{ message: string; data: AdminDocumentRenewal }>(`/admin/document-renewals/${id}`, { method: "PATCH", body: JSON.stringify({ decision, review_notes, expires_at }) });
+export const fetchAdminPayouts = (params: Record<string, string | number | undefined> = {}) => apiFetch<{ data: AdminPayout[]; summary: { total: number; paid: string; outstanding: string; pending_seller: string; pending_courier: string; failed_count: number; commission_taken: string; commission_pending: string }; meta: PaginationMeta }>(`/admin/payouts${queryString(params)}`);
+export const fetchAdminPayout = (id: number) => apiFetch<{ data: AdminPayout }>(`/admin/payouts/${id}`);
+export const generateAdminPayout = (payload: { recipient_type: "seller" | "courier"; recipient_id: number; period_start: string; period_end: string }) => apiFetch<{ message: string; data: AdminPayout }>("/admin/payouts/generate", { method: "POST", body: JSON.stringify(payload) });
+export const transitionAdminPayout = (id: number, payload: { status: string; payment_method?: string; payment_reference?: string; notes?: string }) => apiFetch<{ message: string; data: AdminPayout }>(`/admin/payouts/${id}/transition`, { method: "POST", body: JSON.stringify(payload) });
+export const fetchAdminCommissions = (params: Record<string, string | number | undefined> = {}) => apiFetch<{ data: CommissionEntry[]; meta: PaginationMeta }>(`/admin/commissions${queryString(params)}`);
+export const fetchCommissionRates = () => apiFetch<{ data: CommissionRate[] }>("/admin/commission-rates");
+export const requestCommissionRateChallenge = (currentPassword: string) => apiFetch<{ message: string; data: { challenge_id: number; challenge_token: string; expires_at: string } }>("/admin/commission-rates/challenge", { method: "POST", body: JSON.stringify({ current_password: currentPassword }) });
+export const createCommissionRate = (payload: { commission_type: string; calculation_type: string; percentage_rate?: string; fixed_amount?: string; effective_from: string; current_password: string; challenge_id?: number; challenge_token?: string; code?: string }) => apiFetch<{ message: string; data: CommissionRate }>("/admin/commission-rates", { method: "POST", body: JSON.stringify(payload) });
+export const downloadAdminPayoutPdf = (id: number) => apiDownload(`/admin/payouts/${id}/pdf`);
+export const downloadCommissionLedgerCsv = () => apiDownload("/admin/commissions/export");

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Rating, Price } from "../../Part03";
 import { IconChevronRight, IconTrendUp, IconBox, IconOrders } from "../../shells/icons";
 import { fetchActiveDeals, fetchCatalogCategories, fetchCatalogProducts, fetchCatalogSellers, type CatalogCategory, type CatalogProduct, type CatalogSeller } from "../../api/catalog";
@@ -9,26 +9,6 @@ type NavFn = (page: string, params?: Record<string, string>) => void;
 
 type HomeSection = "categories" | "products" | "sellers" | "deals";
 type HomeLoadState = Record<HomeSection, "loading" | "ready" | "error">;
-type HomeDataResult = {
-  categories: PromiseSettledResult<Awaited<ReturnType<typeof fetchCatalogCategories>>>;
-  products: PromiseSettledResult<Awaited<ReturnType<typeof fetchCatalogProducts>>>;
-  sellers: PromiseSettledResult<Awaited<ReturnType<typeof fetchCatalogSellers>>>;
-  deals: PromiseSettledResult<Awaited<ReturnType<typeof fetchActiveDeals>>>;
-};
-
-let homepageRequest: Promise<HomeDataResult> | null = null;
-
-function loadHomepageData() {
-  if (!homepageRequest) {
-    homepageRequest = Promise.allSettled([
-      fetchCatalogCategories(),
-      fetchCatalogProducts({ limit: 24 }),
-      fetchCatalogSellers(),
-      fetchActiveDeals(),
-    ]).then(([categories, products, sellers, deals]) => ({ categories, products, sellers, deals }));
-  }
-  return homepageRequest;
-}
 
 function SectionSkeleton({ cards = 5, square = false }: { cards?: number; square?: boolean }) {
   return (
@@ -55,6 +35,10 @@ function remainingLabel(milliseconds: number) {
   const seconds = total % 60;
   const clock = [hours, minutes, seconds].map(value => String(value).padStart(2, "0")).join(":");
   return days ? `${days}d ${clock}` : clock;
+}
+
+function categoryCountLabel(count: number) {
+  return count >= 1000 ? `${(count / 1000).toFixed(1)}k` : count.toLocaleString();
 }
 
 function TrustBadge({ icon, title, sub }: { icon: React.ReactNode; title: string; sub: string }) {
@@ -156,28 +140,89 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
   const [loadState, setLoadState] = useState<HomeLoadState>({ categories: "loading", products: "loading", sellers: "loading", deals: "loading" });
   const [clockOffset, setClockOffset] = useState(0);
   const [now, setNow] = useState(Date.now());
+  const sellersSectionRef = useRef<HTMLElement | null>(null);
+  const sellerLoadStarted = useRef(false);
 
   useEffect(() => {
     let active = true;
-    void loadHomepageData().then((result) => {
+
+    const categoriesRequest = fetchCatalogCategories()
+      .then(response => {
+        if (!active) return;
+        setCategories(response.data);
+        setLoadState(previous => ({ ...previous, categories: "ready" }));
+      })
+      .catch(error => {
+        if (!active) return;
+        setLoadState(previous => ({ ...previous, categories: "error" }));
+        if (import.meta.env.DEV) console.error("Homepage categories request failed", error);
+      });
+
+    const productsRequest = fetchCatalogProducts({ limit: 12 })
+      .then(response => {
+        if (!active) return;
+        setProducts(response.data);
+        setLoadState(previous => ({ ...previous, products: "ready" }));
+      })
+      .catch(error => {
+        if (!active) return;
+        setLoadState(previous => ({ ...previous, products: "error" }));
+        if (import.meta.env.DEV) console.error("Homepage products request failed", error);
+      });
+
+    void Promise.allSettled([categoriesRequest, productsRequest]).then(() => {
       if (!active) return;
-      const nextState: HomeLoadState = { categories: "error", products: "error", sellers: "error", deals: "error" };
-      if (result.categories.status === "fulfilled") { setCategories(result.categories.value.data); nextState.categories = "ready"; }
-      if (result.products.status === "fulfilled") { setProducts(result.products.value.data); nextState.products = "ready"; }
-      if (result.sellers.status === "fulfilled") { setSellers(result.sellers.value.data); nextState.sellers = "ready"; }
-      if (result.deals.status === "fulfilled") {
-        setDeals(result.deals.value.data);
-        setClockOffset(new Date(result.deals.value.server_time).getTime() - Date.now());
-        nextState.deals = "ready";
-      }
-      setLoadState(nextState);
-      if (import.meta.env.DEV) {
-        Object.entries(result).forEach(([section, outcome]) => {
-          if (outcome.status === "rejected") console.error(`Homepage ${section} request failed`, outcome.reason);
+      void fetchActiveDeals()
+        .then(response => {
+          if (!active) return;
+          setDeals(response.data);
+          setClockOffset(new Date(response.server_time).getTime() - Date.now());
+          setLoadState(previous => ({ ...previous, deals: "ready" }));
+        })
+        .catch(error => {
+          if (!active) return;
+          setLoadState(previous => ({ ...previous, deals: "error" }));
+          if (import.meta.env.DEV) console.error("Homepage deals request failed", error);
         });
-      }
     });
+
     return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    const section = sellersSectionRef.current;
+    if (!section || sellerLoadStarted.current) return;
+
+    const loadSellers = () => {
+      if (sellerLoadStarted.current) return;
+      sellerLoadStarted.current = true;
+      void fetchCatalogSellers()
+        .then(response => {
+          setSellers(response.data);
+          setLoadState(previous => ({ ...previous, sellers: "ready" }));
+        })
+        .catch(error => {
+          setLoadState(previous => ({ ...previous, sellers: "error" }));
+          if (import.meta.env.DEV) console.error("Homepage sellers request failed", error);
+        });
+    };
+
+    if (!("IntersectionObserver" in window)) {
+      loadSellers();
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries.some(entry => entry.isIntersecting)) {
+          observer.disconnect();
+          loadSellers();
+        }
+      },
+      { rootMargin: "500px 0px" },
+    );
+    observer.observe(section);
+    return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
@@ -203,7 +248,7 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
         />
         <div className="relative flex flex-col items-center justify-center text-center px-6 py-20 md:py-28">
           <p className="font-[var(--font-mono)] text-[11px] text-white/50 tracking-widest uppercase mb-4">
-            {loadState.products === "loading" || loadState.sellers === "loading" ? "Loading marketplace..." : `${sellers.length.toLocaleString()} Independent Sellers · ${products.length.toLocaleString()} Products`}
+            {loadState.products === "loading" ? "Loading marketplace..." : `${products.length.toLocaleString()} Featured Products`}
           </p>
           <h1 className="font-[var(--font-display)] text-4xl md:text-6xl font-[300] text-white leading-[1.05] mb-3 max-w-2xl">
             Discover something
@@ -234,7 +279,7 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
                   />
                 </div>
                 <p className="text-xs font-[500] text-[var(--color-ink)] text-center leading-tight group-hover:text-[var(--color-navy)] transition-colors">{cat.label}</p>
-                <p className="font-[var(--font-mono)] text-[9px] text-[var(--color-ink-muted)]">{(cat.count / 1000).toFixed(1)}k</p>
+                <p className="font-[var(--font-mono)] text-[9px] text-[var(--color-ink-muted)]">{categoryCountLabel(cat.count)}</p>
               </button>
             ))}
           </div>}
@@ -277,7 +322,7 @@ export default function HomePage({ onNavigate }: { onNavigate: NavFn }) {
         </div>
       </section>
 
-      <section className="bg-white border-y border-[var(--color-border)] px-4 md:px-8 lg:px-12 py-10">
+      <section ref={sellersSectionRef} className="bg-white border-y border-[var(--color-border)] px-4 md:px-8 lg:px-12 py-10">
         <div className="max-w-screen-xl mx-auto">
           <SectionHeader label="Community" title="Top Sellers" cta="All sellers" onCta={() => onNavigate("search", { q: "" })} />
           {loadState.sellers === "loading" ? <SectionSkeleton cards={5} /> : loadState.sellers === "error" ? <SectionFailure label="Top sellers" /> : <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">

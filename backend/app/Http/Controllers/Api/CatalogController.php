@@ -13,6 +13,7 @@ use App\Services\ProductSearchService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
@@ -26,7 +27,7 @@ class CatalogController extends Controller
 
     public function categories(): JsonResponse
     {
-        $categories = Category::query()
+        $categories = Cache::remember('catalog.categories.v1', 120, fn () => Category::query()
             ->withCount(['products as product_count' => function ($query) {
                 $query->where('status', 'active')->whereNull('deleted_at');
             }])
@@ -38,7 +39,9 @@ class CatalogController extends Controller
             ->orderBy('sort_order')
             ->orderBy('name')
             ->get()
-            ->map(fn (Category $category) => $this->categoryPayload($category));
+            ->map(fn (Category $category) => $this->categoryPayload($category))
+            ->values()
+            ->all());
 
         return response()->json(['data' => $categories]);
     }
@@ -54,10 +57,7 @@ class CatalogController extends Controller
                 'activePromotion:id,product_id,name,type,value,deal_price,starts_at,ends_at',
                 'seller:id,user_id,slug,business_name,trade_name',
                 'category:id,slug,name',
-                'images' => fn ($images) => $images
-                    ->select(['id', 'product_id', 'file_path', 'storage_disk', 'sort_order'])
-                    ->orderBy('sort_order')
-                    ->orderBy('id'),
+                'primaryImage:id,product_id,file_path,storage_disk',
             ])
             ->withExists(['variants as has_active_variants' => fn ($variants) => $variants->where('active', true)])
             ->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
@@ -112,7 +112,7 @@ class CatalogController extends Controller
                 'activePromotion:id,product_id,name,type,value,deal_price,starts_at,ends_at',
                 'seller:id,user_id,slug,business_name,trade_name',
                 'category:id,slug,name',
-                'images' => fn ($images) => $images->select(['id', 'product_id', 'file_path', 'storage_disk', 'sort_order'])->orderBy('sort_order')->orderBy('id'),
+                'primaryImage:id,product_id,file_path,storage_disk',
             ])
             ->withExists(['variants as has_active_variants' => fn ($variants) => $variants->where('active', true)])
             ->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
@@ -312,7 +312,7 @@ class CatalogController extends Controller
 
     public function sellers(): JsonResponse
     {
-        $sellers = Seller::query()
+        $sellers = Cache::remember('catalog.sellers.v1', 120, fn () => Seller::query()
             ->select([
                 'id', 'user_id', 'slug', 'business_name', 'trade_name', 'description',
                 'logo_path', 'banner_path', 'verified', 'city', 'province', 'joined_year',
@@ -334,7 +334,9 @@ class CatalogController extends Controller
             ->orderByDesc('verified')
             ->orderBy('business_name')
             ->get()
-            ->map(fn (Seller $seller) => $this->sellerPayload($seller));
+            ->map(fn (Seller $seller) => $this->sellerPayload($seller))
+            ->values()
+            ->all());
 
         return response()->json(['data' => $sellers]);
     }
@@ -394,7 +396,9 @@ class CatalogController extends Controller
 
     protected function productPayload(Product $product): array
     {
-        $primaryImage = $product->images->first();
+        $primaryImage = $product->relationLoaded('primaryImage')
+            ? $product->primaryImage
+            : $product->images->first();
         $pricing = $this->pricing->for($product);
         $promotion = $pricing['promotion'];
 

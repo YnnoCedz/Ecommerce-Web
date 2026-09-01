@@ -231,7 +231,7 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
 
         {/* Announcement bar */}
         <div className="bg-[var(--color-navy)] text-white text-center py-1.5 text-xs font-[var(--font-mono)] tracking-wide hidden sm:block">
-          Free shipping on orders over ₱1,500 &nbsp;·&nbsp; New sellers: Apply now and get 0% commission for 30 days
+          Free shipping on orders over ₱1,500 &nbsp;·&nbsp; Sellers: Review current commission terms before applying
         </div>
 
         {/* Main header row */}

@@ -12,6 +12,7 @@ const NAV_ROUTES: Record<string, string> = {
   disputes:   "/admin/disputes",
   moderation: "/admin/moderation",
   analytics:  "/admin/analytics",
+  payouts:    "/admin/payouts",
   settings:   "/admin/settings",
 };
 

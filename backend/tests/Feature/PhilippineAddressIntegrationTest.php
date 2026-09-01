@@ -70,12 +70,41 @@ class PhilippineAddressIntegrationTest extends TestCase
         Http::fake([
             '*/regions' => Http::response(['data' => [['code' => '0400000000', 'name' => 'Region IV-A']]]),
             '*/regions/0400000000/provinces' => Http::response(['data' => []]),
-            '*/regions/0400000000/cities-municipalities' => Http::response(['data' => [['code' => '1374040000', 'name' => 'Santo Nino', 'zip_code' => '1000']]]),
+            '*/regions/0400000000/cities-municipalities' => Http::response(['data' => [
+                ['code' => '1374040000', 'name' => 'Santo Nino', 'zip_code' => '1000'],
+                ['code' => '1374040001', 'name' => 'Santo Ni%C3%B1o', 'zip_code' => '1000'],
+            ]]),
         ]);
 
         $this->getJson('/api/locations/regions/0400000000/cities-municipalities')
             ->assertOk()
-            ->assertJsonPath('data.0.name', 'Santo Niño');
+            ->assertJsonPath('data.0.name', 'Santo Niño')
+            ->assertJsonPath('data.1.name', 'Santo Niño');
+    }
+
+    public function test_uppercase_and_lowercase_enye_are_preserved_at_every_psgc_level(): void
+    {
+        Http::fake([
+            '*/regions/9900000000/provinces' => Http::response(['data' => [
+                ['code' => '9900100000', 'name' => 'Peña Province'],
+                ['code' => '9900200000', 'name' => 'Ñandú Province'],
+            ]]),
+            '*/provinces/9900100000/cities-municipalities' => Http::response(['data' => [
+                ['code' => '9900101000', 'name' => 'Las Piñas', 'zip_code' => '1700'],
+                ['code' => '9900102000', 'name' => 'Ñueva City', 'zip_code' => '1701'],
+            ]]),
+            '*/cities-municipalities/9900101000/barangays' => Http::response(['data' => [
+                ['code' => '9900101001', 'name' => 'Santo Niño', 'zip_code' => '1700'],
+                ['code' => '9900101002', 'name' => 'Ñarra', 'zip_code' => '1700'],
+            ]]),
+        ]);
+
+        $this->getJson('/api/locations/regions/9900000000/provinces')->assertOk()
+            ->assertJsonPath('data.0.name', 'Peña Province')->assertJsonPath('data.1.name', 'Ñandú Province');
+        $this->getJson('/api/locations/provinces/9900100000/cities-municipalities')->assertOk()
+            ->assertJsonPath('data.0.name', 'Las Piñas')->assertJsonPath('data.1.name', 'Ñueva City');
+        $this->getJson('/api/locations/cities-municipalities/9900101000/barangays')->assertOk()
+            ->assertJsonPath('data.0.name', 'Santo Niño')->assertJsonPath('data.1.name', 'Ñarra');
     }
 
     public function test_valid_hierarchy_is_canonicalized_and_invalid_hierarchy_is_rejected(): void

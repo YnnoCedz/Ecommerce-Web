@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Eye, EyeOff, LockKeyhole, Banknote, UserRound, TriangleAlert } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useAuth } from "../../auth/AuthContext";
-import { changeSellerPassword, fetchSellerProfile, fetchSellerSecurity, requestSellerDangerChallenge, requestSellerMfaChallenge, requestSellerPasswordChallenge, revokeSellerSession, updateSellerProfile, verifySellerDangerChallenge, verifySellerMfaChallenge, type SellerProfile, type SellerSecurityChallenge, type SellerSecurityState } from "../../api/seller";
+import { changeSellerPassword, fetchSellerPayouts, fetchSellerProfile, fetchSellerSecurity, requestSellerDangerChallenge, requestSellerMfaChallenge, requestSellerPasswordChallenge, revokeSellerSession, updateSellerProfile, verifySellerDangerChallenge, verifySellerMfaChallenge, type SellerPayout, type SellerProfile, type SellerSecurityChallenge, type SellerSecurityState } from "../../api/seller";
 import { updateAccountProfile } from "../../api/account";
 import { PasswordStrength } from "../auth/AuthLayout";
 import { useUrlTab } from "../../hooks/useUrlTab";
@@ -136,6 +136,9 @@ function PayoutsTab({ profile }: { profile: SellerProfile | null }) {
   const [savingPayout, setSavingPayout] = useState(false);
   const [payoutNotice, setPayoutNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [history, setHistory] = useState<SellerPayout[]>([]);
+  const [historyError, setHistoryError] = useState("");
+  useEffect(() => { fetchSellerPayouts().then((response) => setHistory(response.data)).catch((error: Error) => setHistoryError(error.message)) }, []);
   const normalizeDigits = (value: string, maxLength: number) =>
     value.replace(/\D/g, "").slice(0, maxLength);
   const formatAccountNumber = (value: string) =>
@@ -445,6 +448,11 @@ function PayoutsTab({ profile }: { profile: SellerProfile | null }) {
             Request now
           </button>
         </div>
+      </SectionCard>
+      <SectionCard title="Payout history" subtitle="Authoritative settlements created by Maketo administration.">
+        {historyError && <p className="text-sm text-[var(--color-red)]">{historyError}</p>}
+        {!historyError && history.length === 0 && <p className="text-sm text-[var(--color-ink-muted)]">No payout records yet.</p>}
+        <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr>{["Reference","Period","Gross","Commission","Net","Status"].map((heading) => <th key={heading} className="border-b p-3">{heading}</th>)}</tr></thead><tbody>{history.map((payout) => <tr key={payout.id} className="border-b"><td className="p-3 font-medium">{payout.payout_number}</td><td className="p-3">{payout.period_start} – {payout.period_end}</td><td className="p-3">₱{Number(payout.gross_amount).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</td><td className="p-3">₱{Number(payout.commission_amount).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</td><td className="p-3 font-semibold">₱{Number(payout.net_amount).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</td><td className="p-3 uppercase">{payout.status}</td></tr>)}</tbody></table></div>
       </SectionCard>
     </div>
   );

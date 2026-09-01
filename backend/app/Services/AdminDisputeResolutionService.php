@@ -13,8 +13,8 @@ class AdminDisputeResolutionService
     public function __construct(
         private readonly PaymentService $payments,
         private readonly NotificationService $notifications,
-    ) {
-    }
+        private readonly CommissionService $commissions,
+    ) {}
 
     public function resolve(Dispute $dispute, User $admin, string $resolutionType, string $notes, ?float $partialAmount = null): Dispute
     {
@@ -70,6 +70,9 @@ class AdminDisputeResolutionService
                 'refunded_amount' => round((float) $return->refunded_amount + $refundAmount, 2),
                 'resolved_at' => now(),
             ])->save();
+            if ($refundAmount > 0) {
+                $this->commissions->refund($return->fresh());
+            }
 
             $locked->forceFill([
                 'status' => $disputeStatus,

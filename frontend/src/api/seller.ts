@@ -763,3 +763,6 @@ export function verifySellerMfaChallenge(payload: { action: "enable" | "disable"
 export function revokeSellerSession(tokenId: number) {
   return apiFetch<{ message: string }>(`/seller/settings/security/sessions/${tokenId}`, { method: "DELETE" })
 }
+
+export type SellerPayout = { id: number; payout_number: string; period_start: string; period_end: string; currency: string; gross_amount: string; commission_amount: string; adjustment_amount: string; net_amount: string; status: string; payment_reference: string | null; paid_at: string | null; created_at: string | null }
+export const fetchSellerPayouts = () => apiFetch<{ data: SellerPayout[]; meta: { current_page: number; last_page: number; total: number } }>("/seller/payouts")

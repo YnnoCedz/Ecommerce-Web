@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AdminDisputeController;
+use App\Http\Controllers\Api\AdminPayoutController;
 use App\Http\Controllers\Api\AdminPlatformController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CatalogController;
@@ -14,6 +15,7 @@ use App\Http\Controllers\Api\ModerationController;
 use App\Http\Controllers\Api\OrderResolutionController;
 use App\Http\Controllers\Api\SellerApplicationController;
 use App\Http\Controllers\Api\SellerController;
+use App\Http\Controllers\Api\SellerPayoutController;
 use App\Http\Controllers\Api\SellerSalesReportController;
 use App\Http\Controllers\Api\SellerSecurityController;
 use Illuminate\Support\Facades\Route;
@@ -109,6 +111,8 @@ Route::prefix('seller')
     ->group(function () {
         Route::get('/dashboard', [SellerController::class, 'dashboard']);
         Route::get('/reports/sales/export', SellerSalesReportController::class);
+        Route::get('/payouts', [SellerPayoutController::class, 'index']);
+        Route::get('/payouts/{payout}', [SellerPayoutController::class, 'show']);
         Route::get('/me', [SellerController::class, 'me']);
         Route::patch('/me', [SellerController::class, 'updateMe']);
         Route::get('/orders', [SellerController::class, 'orders']);
@@ -161,6 +165,16 @@ Route::prefix('admin')
         Route::post('/categories', [AdminController::class, 'storeCategory']);
         Route::patch('/categories/{category}', [AdminController::class, 'updateCategory']);
         Route::get('/analytics', [AdminController::class, 'analytics']);
+        Route::get('/payouts', [AdminPayoutController::class, 'index']);
+        Route::post('/payouts/generate', [AdminPayoutController::class, 'generate']);
+        Route::get('/payouts/{payout}', [AdminPayoutController::class, 'show']);
+        Route::post('/payouts/{payout}/transition', [AdminPayoutController::class, 'transition']);
+        Route::get('/payouts/{payout}/pdf', [AdminPayoutController::class, 'pdf']);
+        Route::get('/commissions', [AdminPayoutController::class, 'commissions']);
+        Route::get('/commissions/export', [AdminPayoutController::class, 'exportCommissions']);
+        Route::get('/commission-rates', [AdminPayoutController::class, 'rates']);
+        Route::post('/commission-rates/challenge', [AdminPayoutController::class, 'rateChallenge'])->middleware('throttle:3,10');
+        Route::post('/commission-rates', [AdminPayoutController::class, 'storeRate'])->middleware('throttle:5,10');
         Route::get('/analytics/platform', [AdminPlatformController::class, 'analytics']);
         Route::get('/activity', [AdminPlatformController::class, 'activity']);
         Route::get('/settings', [AdminPlatformController::class, 'settings']);
@@ -174,6 +188,7 @@ Route::prefix('admin')
         Route::get('/seller-applications/{sellerApplication}', [SellerApplicationController::class, 'show']);
         Route::post('/seller-applications/{sellerApplication}/approve', [SellerApplicationController::class, 'approve']);
         Route::post('/seller-applications/{sellerApplication}/reject', [SellerApplicationController::class, 'reject']);
+        Route::post('/seller-applications/{sellerApplication}/request-revision', [SellerApplicationController::class, 'requestRevision']);
         Route::get('/seller-documents/{sellerDocument}/view', [SellerApplicationController::class, 'viewDocument']);
         Route::get('/reports', [ModerationController::class, 'adminReports']);
         Route::get('/reports/{report}', [ModerationController::class, 'adminReport']);

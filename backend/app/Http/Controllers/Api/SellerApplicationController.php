@@ -40,6 +40,11 @@ class SellerApplicationController extends Controller
     {
         $user = $request->user();
 
+        $request->merge([
+            'tin' => trim((string) $request->input('tin', '')),
+            'registration_number' => strtoupper(trim((string) $request->input('registration_number', ''))),
+        ]);
+
         if (! $user->isBuyer()) {
             return response()->json([
                 'message' => 'Only buyer accounts can submit a seller application.',
@@ -61,7 +66,7 @@ class SellerApplicationController extends Controller
             ], 409);
         }
 
-        if ($user->sellerApplications()->whereIn('status', ['pending', 'reviewing'])->exists()) {
+        if ($user->sellerApplications()->whereIn('status', ['pending', 'reviewing', 'flagged'])->exists()) {
             return response()->json([
                 'message' => 'You already have a seller application under review.',
                 'code' => 'seller_application_pending',
@@ -76,8 +81,8 @@ class SellerApplicationController extends Controller
             'tagline' => ['nullable', 'string', 'max:255'],
             'description' => ['required', 'string', 'max:5000'],
             'owner_id_number' => ['required', 'string', 'max:255'],
-            'tin' => ['required', 'string', 'max:255'],
-            'registration_number' => ['required', 'string', 'max:255'],
+            'tin' => ['required', 'string', 'regex:/^\d{3}-\d{3}-\d{3}-\d{3}$/'],
+            'registration_number' => ['required', 'string', 'regex:/^BN-\d{4}-[A-Z0-9]{6}$/'],
             'established_on' => ['required', 'date'],
             'address_line1' => ['required', 'string', 'max:255'],
             'address_line2' => ['nullable', 'string', 'max:255'],
@@ -88,13 +93,18 @@ class SellerApplicationController extends Controller
             'postal_code' => ['required', 'string', 'max:20'],
             'contact_email' => ['required', 'email:rfc,dns', 'max:255'],
             'public_email' => ['nullable', 'email:rfc,dns', 'max:255'],
-            'contact_phone' => ['required', 'string', 'max:30'],
-            'messaging_phone' => ['nullable', 'string', 'max:30'],
+            'contact_phone' => ['required', 'string', 'regex:/^\+639\d{9}$/'],
+            'messaging_phone' => ['nullable', 'string', 'regex:/^\+639\d{9}$/'],
             'categories' => ['required', 'array', 'min:1', 'max:5'],
             'categories.*' => ['integer', 'distinct', Rule::exists('categories', 'id')],
             'owner_id_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:10240'],
             'seller_certificate_file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:10240'],
             'business_document_file' => ['nullable', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:10240'],
+        ], [
+            'tin.regex' => 'BIR TIN must use the format 000-000-000-000.',
+            'registration_number.regex' => 'The DTI / SEC registration number must use the format BN-YYYY-XXXXXX.',
+            'contact_phone.regex' => 'The mobile number must use the format +639XXXXXXXXX.',
+            'messaging_phone.regex' => 'The messaging number must use the format +639XXXXXXXXX.',
         ]);
 
         $data = array_merge($data, $psgc->validateHierarchy($data));
@@ -102,6 +112,7 @@ class SellerApplicationController extends Controller
         $businessName = trim($data['business_name']);
         $slug = $this->generateUniqueSlug($businessName);
         $uploadedPaths = [];
+        $previousApplication = $user->sellerApplications()->latest('id')->first();
 
         try {
             $ownerDoc = $this->storeDocument($storage, $request->file('owner_id_file'), $user, 'owner-id');
@@ -117,6 +128,12 @@ class SellerApplicationController extends Controller
             }
 
             $application = DB::transaction(function () use ($user, $data, $slug, $ownerDoc, $certificateDoc, $businessDoc) {
+                $lockedUser = User::query()->whereKey($user->id)->lockForUpdate()->firstOrFail();
+                if ($lockedUser->hasApprovedSellerProfile()
+                    || $lockedUser->sellerApplications()->whereIn('status', ['pending', 'reviewing', 'flagged'])->exists()) {
+                    return null;
+                }
+
                 $application = SellerApplication::create([
                     'applicant_user_id' => $user->id,
                     'business_name' => trim($data['business_name']),
@@ -191,6 +208,17 @@ class SellerApplicationController extends Controller
 
                 return $application->load(['categories', 'documents', 'applicant']);
             });
+
+            if (! $application) {
+                foreach (array_reverse($uploadedPaths) as $path) {
+                    $storage->delete($path);
+                }
+
+                return response()->json([
+                    'message' => 'You already have a seller application under review.',
+                    'code' => 'seller_application_pending',
+                ], 409);
+            }
         } catch (\Throwable $e) {
             foreach (array_reverse($uploadedPaths) as $path) {
                 $storage->delete($path);
@@ -204,7 +232,14 @@ class SellerApplicationController extends Controller
             ], 500);
         }
 
+        app(ActivityLogger::class)->log('seller.application.created', 'seller', 'Seller application created.', $user, $request, $application);
+        if ($previousApplication && in_array($previousApplication->status, ['rejected', 'needs_revision'], true)) {
+            app(ActivityLogger::class)->log('seller.application.updated', 'seller', 'Seller application resubmitted with updated information.', $user, $request, $application, [
+                'previous_application_id' => $previousApplication->id,
+            ]);
+        }
         app(ActivityLogger::class)->log('seller.application.submitted', 'seller', 'Seller application submitted.', $user, $request, $application);
+        $this->notifyAdminsOfSubmission($application);
 
         return response()->json([
             'message' => 'Seller application submitted successfully.',
@@ -287,6 +322,16 @@ class SellerApplicationController extends Controller
         $sellerApplication->load(['applicant', 'categories', 'documents']);
 
         $seller = DB::transaction(function () use ($sellerApplication, $admin) {
+            $sellerApplication = SellerApplication::query()
+                ->with(['applicant', 'categories', 'documents'])
+                ->whereKey($sellerApplication->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if (! in_array($sellerApplication->status, ['pending', 'reviewing', 'flagged'], true)) {
+                return null;
+            }
+
             $seller = Seller::firstOrNew(['user_id' => $sellerApplication->applicant_user_id]);
 
             if ($seller->exists && $seller->status === 'approved') {
@@ -382,18 +427,75 @@ class SellerApplicationController extends Controller
             'rejection_reason' => ['required', 'string', 'max:2000'],
         ]);
 
-        $sellerApplication->forceFill([
-            'status' => 'rejected',
-            'reviewed_by' => $admin?->id,
-            'reviewed_at' => now(),
-            'rejection_reason' => trim($data['rejection_reason']),
-        ])->save();
+        $updated = DB::transaction(function () use ($sellerApplication, $admin, $data): bool {
+            $locked = SellerApplication::query()->whereKey($sellerApplication->id)->lockForUpdate()->firstOrFail();
+            if (! in_array($locked->status, ['pending', 'reviewing', 'flagged'], true)) {
+                return false;
+            }
+
+            $locked->forceFill([
+                'status' => 'rejected',
+                'reviewed_by' => $admin?->id,
+                'reviewed_at' => now(),
+                'rejection_reason' => trim($data['rejection_reason']),
+            ])->save();
+            $locked->documents()->where('status', 'pending')->update(['status' => 'rejected', 'reviewed_at' => now(), 'rejected_at' => now()]);
+
+            return true;
+        });
+
+        if (! $updated) {
+            return response()->json([
+                'message' => 'This seller application has already been reviewed.',
+                'code' => 'application_state_invalid',
+            ], 409);
+        }
 
         $this->notifyApplicant($sellerApplication->applicant, 'rejected', $sellerApplication, $sellerApplication->rejection_reason);
         app(ActivityLogger::class)->log('seller.application.rejected', 'seller', 'Seller application rejected.', $admin, $request, $sellerApplication, ['reason_provided' => true]);
 
         return response()->json([
             'message' => 'Seller application rejected.',
+            'data' => $this->applicationPayload($sellerApplication->fresh(['applicant', 'categories', 'documents', 'reviewer', 'approvedSeller']), true),
+        ]);
+    }
+
+    public function requestRevision(Request $request, SellerApplication $sellerApplication): JsonResponse
+    {
+        $admin = $request->user();
+        $data = $request->validate([
+            'review_notes' => ['required', 'string', 'min:5', 'max:2000'],
+        ]);
+
+        $updated = DB::transaction(function () use ($sellerApplication, $admin, $data): bool {
+            $locked = SellerApplication::query()->whereKey($sellerApplication->id)->lockForUpdate()->firstOrFail();
+            if (! in_array($locked->status, ['pending', 'reviewing', 'flagged'], true)) {
+                return false;
+            }
+
+            $locked->forceFill([
+                'status' => 'needs_revision',
+                'reviewed_by' => $admin?->id,
+                'reviewed_at' => now(),
+                'rejection_reason' => trim($data['review_notes']),
+            ])->save();
+            $locked->documents()->where('status', 'pending')->update(['status' => 'needs_revision', 'reviewed_at' => now()]);
+
+            return true;
+        });
+
+        if (! $updated) {
+            return response()->json([
+                'message' => 'This seller application has already been reviewed.',
+                'code' => 'application_state_invalid',
+            ], 409);
+        }
+
+        $this->notifyApplicant($sellerApplication->applicant, 'revision', $sellerApplication, trim($data['review_notes']));
+        app(ActivityLogger::class)->log('seller.application.revision_requested', 'seller', 'Seller application revision requested.', $admin, $request, $sellerApplication, ['notes_provided' => true]);
+
+        return response()->json([
+            'message' => 'Seller application revision requested.',
             'data' => $this->applicationPayload($sellerApplication->fresh(['applicant', 'categories', 'documents', 'reviewer', 'approvedSeller']), true),
         ]);
     }
@@ -438,17 +540,25 @@ class SellerApplicationController extends Controller
 
         try {
             Notification::send($user, new SellerApplicationReviewedNotification($application, $decision, $reason));
+        } catch (\Throwable $e) {
+            report($e);
+        }
 
-            $title = $decision === 'approved'
-                ? 'Seller application approved'
-                : 'Seller application reviewed';
+        $title = match ($decision) {
+            'approved' => 'Seller application approved',
+            'revision' => 'Seller application needs revision',
+            default => 'Seller application reviewed',
+        };
 
-            $body = $decision === 'approved'
-                ? 'Your seller application has been approved. You can now access your seller dashboard.'
-                : ($reason
-                    ? 'Your seller application was not approved. Reason: '.$reason
-                    : 'Your seller application was not approved. Please review the details and try again.');
+        $body = match ($decision) {
+            'approved' => 'Your seller application has been approved. You can now access your seller dashboard.',
+            'revision' => 'Your seller application needs changes before it can be approved. Review note: '.$reason,
+            default => $reason
+                ? 'Your seller application was not approved. Reason: '.$reason
+                : 'Your seller application was not approved. Please review the details and try again.',
+        };
 
+        try {
             MarketplaceNotification::create([
                 'user_id' => $user->id,
                 'category' => 'account',
@@ -458,6 +568,25 @@ class SellerApplicationController extends Controller
                 'action_label' => $decision === 'approved' ? 'Open seller dashboard' : 'Review application',
                 'read_at' => null,
             ]);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
+    private function notifyAdminsOfSubmission(SellerApplication $application): void
+    {
+        try {
+            User::query()->where('role', 'admin')->where('status', 'active')->pluck('id')->each(
+                fn (int $adminId) => MarketplaceNotification::create([
+                    'user_id' => $adminId,
+                    'category' => 'account',
+                    'title' => 'New seller application',
+                    'body' => $application->business_name.' submitted a seller application for review.',
+                    'action_type' => 'seller-application',
+                    'action_label' => 'Review application',
+                    'read_at' => null,
+                ])
+            );
         } catch (\Throwable $e) {
             report($e);
         }
@@ -478,8 +607,14 @@ class SellerApplicationController extends Controller
             'established_on' => optional($application->established_on)->toDateString(),
             'address_line1' => $application->address_line1,
             'address_line2' => $application->address_line2,
+            'region' => $application->region,
+            'region_code' => $application->region_code,
             'province' => $application->province,
+            'province_code' => $application->province_code,
             'city' => $application->city,
+            'city_code' => $application->city_code,
+            'barangay' => $application->barangay,
+            'barangay_code' => $application->barangay_code,
             'postal_code' => $application->postal_code,
             'contact_name' => $application->contact_name,
             'contact_email' => $application->contact_email,

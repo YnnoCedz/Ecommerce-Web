@@ -83,6 +83,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "reports",     label: "Reports",      icon: IconReports,    badgeKey: "reports", badgeColor: "red" },
   { id: "disputes",    label: "Disputes",     icon: IconModeration, badgeKey: "disputes", badgeColor: "red" },
   { id: "analytics",   label: "Analytics",    icon: IconAnalytics },
+  { id: "payouts",     label: "Payouts",      icon: IconOrders },
   { id: "settings",    label: "Settings",     icon: IconSettings },
 ];
 

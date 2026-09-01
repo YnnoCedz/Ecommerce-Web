@@ -207,7 +207,9 @@ export async function fetchCatalogProducts(params?: { search?: string; category?
 }
 
 export async function fetchActiveDeals() {
-  return apiFetch<{ data: CatalogProduct[]; server_time: string }>("/deals");
+  return singleFlight("catalog:deals", signal =>
+    apiFetch<{ data: CatalogProduct[]; server_time: string }>("/deals", { signal }),
+  );
 }
 
 export async function searchMarketplace(params: MarketplaceSearchParams) {
@@ -236,7 +238,9 @@ export async function fetchProductReviews(slug: string, page = 1, perPage = 10) 
 }
 
 export async function fetchCatalogSellers() {
-  return singleFlight("catalog:sellers", (signal) => apiFetch<{ data: CatalogSeller[] }>("/sellers", { signal }));
+  return cachedSingleFlight("catalog:sellers", 120_000, signal =>
+    apiFetch<{ data: CatalogSeller[] }>("/sellers", { signal }),
+  );
 }
 
 export async function fetchCatalogSeller(slug: string) {
