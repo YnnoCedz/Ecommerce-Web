@@ -31,6 +31,10 @@ function Toggle({ checked }: { checked: boolean }) {
   return <span className={`inline-block h-5 w-9 rounded-full ${checked ? "bg-[var(--color-navy)]" : "bg-[var(--color-border)]"}`} />;
 }
 
+function SectionFailure({ label }: { label: string }) {
+  return <div className="py-12 text-sm text-[var(--color-ink-muted)]">Unable to load {label.toLowerCase()} right now. Please refresh and try again.</div>;
+}
+
 function DangerZone() {
   const [action, setAction] = useState<"deactivate" | "close" | null>(null)
   const [confirmation, setConfirmation] = useState("")
