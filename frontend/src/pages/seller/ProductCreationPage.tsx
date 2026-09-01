@@ -603,26 +603,6 @@ export default function ProductCreationPage() {
             <p className="text-sm text-[var(--color-ink-muted)]">{isEditing ? "Update the details below and save your listing changes." : "Fill in the details below to create your listing."}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {!isEditing && (
-            <>
-              <button
-                onClick={() => void handleSave("draft")}
-                disabled={!canSubmit || savingStatus !== null}
-                className={`px-4 py-2.5 border border-[var(--color-border)] text-sm text-[var(--color-ink-muted)] rounded-sm transition-colors ${!canSubmit || savingStatus !== null ? "opacity-60 cursor-not-allowed" : "hover:bg-[var(--color-surface)] cursor-pointer"}`}
-              >
-                {savingStatus === "draft" ? PRODUCT_STATUS_ACTION_LABELS.draft.loading : PRODUCT_STATUS_ACTION_LABELS.draft.idle}
-              </button>
-              <button
-                onClick={() => void handleSave("active")}
-                disabled={!canSubmit || savingStatus !== null}
-                className={`px-4 py-2.5 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm transition-colors ${!canSubmit || savingStatus !== null ? "opacity-60 cursor-not-allowed" : "hover:bg-[var(--color-navy-hover)] cursor-pointer"}`}
-              >
-                {savingStatus === "active" ? PRODUCT_STATUS_ACTION_LABELS.active.loading : PRODUCT_STATUS_ACTION_LABELS.active.idle}
-              </button>
-            </>
-          )}
-        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -1061,6 +1041,25 @@ export default function ProductCreationPage() {
               ))}
             </div>
           </div>
+
+          {!isEditing && (
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => void handleSave("draft")}
+                disabled={!canSubmit || savingStatus !== null}
+                className={`px-4 py-2.5 border border-[var(--color-border)] text-sm text-[var(--color-ink-muted)] rounded-sm transition-colors ${!canSubmit || savingStatus !== null ? "opacity-60 cursor-not-allowed" : "hover:bg-[var(--color-surface)] cursor-pointer"}`}
+              >
+                {savingStatus === "draft" ? PRODUCT_STATUS_ACTION_LABELS.draft.loading : PRODUCT_STATUS_ACTION_LABELS.draft.idle}
+              </button>
+              <button
+                onClick={() => void handleSave("active")}
+                disabled={!canSubmit || savingStatus !== null}
+                className={`px-4 py-2.5 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm transition-colors ${!canSubmit || savingStatus !== null ? "opacity-60 cursor-not-allowed" : "hover:bg-[var(--color-navy-hover)] cursor-pointer"}`}
+              >
+                {savingStatus === "active" ? PRODUCT_STATUS_ACTION_LABELS.active.loading : PRODUCT_STATUS_ACTION_LABELS.active.idle}
+              </button>
+            </div>
+          )}
 
           {isEditing && (
             <button
