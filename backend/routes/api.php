@@ -134,6 +134,7 @@ Route::prefix('seller')
         Route::post('/promotions', [SellerController::class, 'storePromotion']);
         Route::put('/promotions/{promotion}', [SellerController::class, 'updatePromotion']);
         Route::patch('/promotions/{promotion}/cancel', [SellerController::class, 'cancelPromotion']);
+        Route::patch('/promotions/{promotion}/reactivate', [SellerController::class, 'reactivatePromotion']);
         Route::get('/documents', [SellerSecurityController::class, 'documents']);
         Route::post('/documents/{sellerDocument}/renew', [SellerSecurityController::class, 'renew'])->middleware('throttle:5,60');
         Route::get('/settings/security', [SellerSecurityController::class, 'security']);

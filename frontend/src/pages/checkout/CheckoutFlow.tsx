@@ -47,6 +47,9 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
   const [selectedPayment, setSelectedPayment] = useState<PaymentMethod>("cod");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [applyingVoucher, setApplyingVoucher] = useState(false);
+  const [voucherInput, setVoucherInput] = useState("");
+  const [voucherError, setVoucherError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [addingAddress, setAddingAddress] = useState(false);
@@ -85,6 +88,7 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
         if (!active) return;
 
         setPreview(previewResponse.data);
+        setVoucherInput(previewResponse.data.promo_code ?? "");
         setAddresses(addressResponse.data);
         setSelectedAddressId(addressResponse.data.find((address) => address.is_default)?.id ?? addressResponse.data[0]?.id ?? null);
         setError(null);
@@ -108,12 +112,28 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
 
   const lineItems = preview?.sellers ?? [];
   const totals = {
-    subtotal: preview?.subtotal ?? 0,
+    merchandise: preview?.merchandise_total ?? preview?.subtotal ?? 0,
+    productPromotionDiscount: preview?.product_promotion_discount_total ?? 0,
+    voucherDiscount: preview?.voucher_discount_total ?? preview?.discount_total ?? 0,
     shipping: preview?.shipping_total ?? 0,
-    discount: preview?.discount_total ?? 0,
     grandTotal: preview?.grand_total ?? 0,
   };
   const itemCount = preview?.item_count ?? 0;
+
+  const recalculateVoucher = async (voucherCode: string | null) => {
+    if (applyingVoucher || selectedItemIds.length === 0) return;
+    setApplyingVoucher(true);
+    setVoucherError(null);
+    try {
+      const response = await fetchCheckoutPreview(selectedItemIds, voucherCode);
+      setPreview(response.data);
+      setVoucherInput(response.data.promo_code ?? "");
+    } catch (cause) {
+      setVoucherError(cause instanceof Error ? cause.message : "Unable to apply this voucher.");
+    } finally {
+      setApplyingVoucher(false);
+    }
+  };
 
   const saveAddress = async () => {
     setSubmitting(true);
@@ -162,6 +182,7 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
         address_id: selectedAddressId,
         payment_method: selectedPayment,
         cart_item_ids: preview?.cart_item_ids ?? [],
+        voucher_code: preview?.promo_code ?? null,
         payment_details: selectedPayment === "card" ? {
           cardholder_name: cardholderName.trim(),
           card_last4: cardDigits.slice(-4),
@@ -180,7 +201,7 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
       setError(err instanceof Error ? err.message : "Unable to submit checkout.");
       try {
         if (selectedItemIds.length > 0) {
-          const refreshed = await fetchCheckoutPreview(selectedItemIds);
+          const refreshed = await fetchCheckoutPreview(selectedItemIds, preview?.promo_code ?? null);
           setPreview(refreshed.data);
         }
       } catch {
@@ -380,12 +401,44 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
             <SectionCard title="Order summary">
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between"><span className="text-[var(--color-ink-muted)]">Items</span><span className="text-[var(--color-ink)]">{itemCount}</span></div>
-                <div className="flex justify-between"><span className="text-[var(--color-ink-muted)]">Merchandise</span><span className="text-[var(--color-ink)]">{currency(totals.subtotal)}</span></div>
+                <div className="flex justify-between"><span className="text-[var(--color-ink-muted)]">Merchandise</span><span className="text-[var(--color-ink)]">{currency(totals.merchandise)}</span></div>
+                {totals.productPromotionDiscount > 0 && <div className="flex justify-between"><span className="text-[var(--color-green)]">Product promotions</span><span className="text-[var(--color-green)]">-{currency(totals.productPromotionDiscount)}</span></div>}
+                {totals.voucherDiscount > 0 && <div className="flex justify-between"><span className="text-[var(--color-green)]">Voucher {preview?.voucher?.code}</span><span className="text-[var(--color-green)]">-{currency(totals.voucherDiscount)}</span></div>}
                 <div className="flex justify-between"><span className="text-[var(--color-ink-muted)]">Shipping</span><span className="text-[var(--color-ink)]">{totals.shipping === 0 ? "Free" : currency(totals.shipping)}</span></div>
-                <div className="flex justify-between"><span className="text-[var(--color-ink-muted)]">Discount</span><span className="text-[var(--color-ink)]">-{currency(totals.discount)}</span></div>
                 <div className="border-t border-[var(--color-border)] pt-3 flex justify-between font-[600]">
                   <span className="text-[var(--color-ink)]">Total</span>
                   <span className="text-[var(--color-ink)]">{currency(totals.grandTotal)}</span>
+                </div>
+              </div>
+            </SectionCard>
+
+            <SectionCard title="Discounts">
+              <div className="space-y-4">
+                {preview?.sellers.some(seller => seller.items.some(item => item.automatic_promotion)) && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-[600] text-[var(--color-ink)]">Automatic promotions</p>
+                    {preview.sellers.flatMap(seller => seller.items).filter(item => item.automatic_promotion).map(item => (
+                      <div key={item.id} className="rounded-sm bg-[var(--color-green-light)] p-3 text-xs">
+                        <div className="flex items-center justify-between gap-3"><span className="font-[600] text-[var(--color-green)]">Timed Deal · {item.automatic_promotion?.name}</span><span className="text-[var(--color-green)]">-{currency(item.automatic_promotion?.discount ?? 0)}</span></div>
+                        <p className="mt-1 text-[var(--color-ink-muted)]">{item.product_name}: {currency(item.regular_unit_price)} → {currency(item.unit_price)}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div>
+                  <label htmlFor="checkout-voucher" className="text-xs font-[600] text-[var(--color-ink)]">Voucher / promo code</label>
+                  {preview?.voucher ? (
+                    <div className="mt-2 flex items-center justify-between rounded-sm border border-[var(--color-green)] bg-[var(--color-green-light)] px-3 py-2.5 text-sm">
+                      <span className="font-[600] text-[var(--color-green)]">✓ {preview.voucher.code} · {currency(preview.voucher.discount)} applied</span>
+                      <button type="button" disabled={applyingVoucher} onClick={() => void recalculateVoucher(null)} className="text-xs text-[var(--color-navy)] underline disabled:opacity-50">{applyingVoucher ? "Removing..." : "Remove"}</button>
+                    </div>
+                  ) : (
+                    <div className="mt-2 flex gap-2">
+                      <input id="checkout-voucher" value={voucherInput} onChange={event => { setVoucherInput(event.target.value.toUpperCase()); setVoucherError(null); }} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); if (voucherInput.trim()) void recalculateVoucher(voucherInput.trim()); } }} maxLength={50} placeholder="Enter voucher code" className="min-w-0 flex-1 rounded-sm border border-[var(--color-border)] px-3 py-2.5 text-sm" />
+                      <button type="button" disabled={applyingVoucher || !voucherInput.trim()} onClick={() => void recalculateVoucher(voucherInput.trim())} className="rounded-sm bg-[var(--color-navy)] px-4 py-2.5 text-sm text-white disabled:opacity-50">{applyingVoucher ? "Applying..." : "Apply"}</button>
+                    </div>
+                  )}
+                  {voucherError && <p role="alert" className="mt-2 text-xs text-[var(--color-red)]">{voucherError}</p>}
                 </div>
               </div>
             </SectionCard>

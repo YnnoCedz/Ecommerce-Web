@@ -273,12 +273,20 @@ export type CheckoutPreviewItem = {
   image: string | null;
   quantity: number;
   unit_price: number;
+  regular_unit_price: number;
   line_total: number;
+  automatic_promotion: {
+    id: number;
+    name: string;
+    discount: number;
+    ends_at: string | null;
+  } | null;
 };
 
 export type CheckoutPreview = {
   cart_item_ids: number[];
   promo_code: string | null;
+  voucher: { id: number; code: string; name: string; discount: number } | null;
   sellers: Array<{
     slug: string | null;
     name: string;
@@ -287,16 +295,19 @@ export type CheckoutPreview = {
     items: CheckoutPreviewItem[];
   }>;
   subtotal: number;
+  merchandise_total: number;
+  product_promotion_discount_total: number;
+  voucher_discount_total: number;
   shipping_total: number;
   discount_total: number;
   grand_total: number;
   item_count: number;
 };
 
-export async function fetchCheckoutPreview(cart_item_ids: number[]) {
+export async function fetchCheckoutPreview(cart_item_ids: number[], voucher_code?: string | null) {
   return apiFetch<{ data: CheckoutPreview }>("/checkout/preview", {
     method: "POST",
-    body: JSON.stringify({ cart_item_ids }),
+    body: JSON.stringify({ cart_item_ids, ...(voucher_code !== undefined ? { voucher_code } : {}) }),
   });
 }
 
@@ -310,6 +321,7 @@ export async function submitCheckout(payload: {
     card_brand?: string;
   };
   cart_item_ids: number[];
+  voucher_code?: string | null;
   buyer_notes?: string | null;
 }) {
   return apiFetch<{ message: string; data: CheckoutResult }>("/checkout", {

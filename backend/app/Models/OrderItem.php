@@ -13,6 +13,7 @@ class OrderItem extends Model
         'product_id',
         'product_variant_id',
         'promotion_id',
+        'promotion_name',
         'product_name',
         'product_slug',
         'variant_name',
@@ -20,12 +21,18 @@ class OrderItem extends Model
         'product_image_storage_disk',
         'product_image_storage_path',
         'unit_price',
+        'regular_unit_price',
+        'promotion_discount',
+        'voucher_discount',
         'quantity',
         'subtotal',
     ];
 
     protected $casts = [
         'unit_price' => 'decimal:2',
+        'regular_unit_price' => 'decimal:2',
+        'promotion_discount' => 'decimal:2',
+        'voucher_discount' => 'decimal:2',
         'quantity' => 'integer',
         'subtotal' => 'decimal:2',
     ];

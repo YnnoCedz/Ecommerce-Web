@@ -12,6 +12,7 @@ use App\Models\Review;
 use App\Models\ReviewReply;
 use App\Models\Seller;
 use App\Models\SellerOrder;
+use App\Services\ActivityLogger;
 use App\Services\MediaStorageService;
 use App\Services\NotificationService;
 use App\Services\OrderLifecycleService;
@@ -35,6 +36,7 @@ class SellerController extends Controller
         private readonly NotificationService $notifications,
         private readonly SellerSalesReportService $salesReports,
         private readonly MediaStorageService $media,
+        private readonly ActivityLogger $activity,
     ) {}
 
     public function dashboard(Request $request): JsonResponse
@@ -875,8 +877,8 @@ class SellerController extends Controller
         $seller = $request->user()->seller;
         abort_unless($promotion->seller_id === $seller?->id && $promotion->kind === 'deal', 404);
 
-        if ($promotion->derivedStatus() !== 'scheduled') {
-            return response()->json(['message' => 'Only scheduled promotions can be edited.'], 422);
+        if (! in_array($promotion->derivedStatus(), ['scheduled', 'cancelled', 'limit_reached'], true)) {
+            return response()->json(['message' => 'Only scheduled, cancelled, or usage-limited promotions can be edited.'], 422);
         }
 
         $data = $this->validateTimedPromotion($request, $seller);
@@ -896,12 +898,62 @@ class SellerController extends Controller
     {
         $seller = $request->user()->seller;
         abort_unless($promotion->seller_id === $seller?->id && $promotion->kind === 'deal', 404);
-        if (! in_array($promotion->derivedStatus(), ['active', 'scheduled'], true)) {
-            return response()->json(['message' => 'Only active or scheduled promotions can be cancelled.'], 422);
-        }
-        $promotion->update(['status' => 'cancelled', 'cancelled_at' => now()]);
+
+        $promotion = DB::transaction(function () use ($promotion, $seller, $request): Promotion {
+            $locked = Promotion::query()->whereKey($promotion->id)->where('seller_id', $seller->id)->lockForUpdate()->firstOrFail();
+            $previousStatus = $locked->derivedStatus();
+            if (! $locked->canBeCancelled()) {
+                abort(409, 'Only active or scheduled promotions can be cancelled.');
+            }
+
+            $locked->update(['status' => 'cancelled', 'cancelled_at' => now()]);
+            $this->activity->log('promotion.cancelled', 'commerce', 'Seller promotion cancelled.', $request->user(), $request, $locked, [
+                'promotion_id' => $locked->id,
+                'seller_id' => $seller->id,
+                'previous_status' => $previousStatus,
+                'new_status' => 'cancelled',
+            ]);
+
+            return $locked;
+        });
 
         return response()->json(['message' => 'Promotion cancelled.', 'data' => $this->promotionPayload($promotion->fresh('product.variants'))]);
+    }
+
+    public function reactivatePromotion(Request $request, Promotion $promotion): JsonResponse
+    {
+        $seller = $request->user()->seller;
+        abort_unless($promotion->seller_id === $seller?->id && $promotion->kind === 'deal', 404);
+
+        $promotion = DB::transaction(function () use ($promotion, $seller, $request): Promotion {
+            $locked = Promotion::query()->whereKey($promotion->id)->where('seller_id', $seller->id)->lockForUpdate()->firstOrFail();
+            $reason = $locked->reactivationBlockReason();
+            if ($reason !== null) {
+                $message = match ($reason) {
+                    'expired_schedule' => 'Promotion schedule has already ended. Set a new schedule before reactivating.',
+                    'usage_limit_reached' => 'Promotion usage limit has been reached. Increase the limit before reactivating.',
+                    'invalid_product' => 'The promotion product is no longer active or available.',
+                    default => 'This promotion cannot be reactivated from its current state.',
+                };
+                abort(409, $message);
+            }
+
+            $product = Product::query()->whereKey($locked->product_id)->where('seller_id', $seller->id)
+                ->where('status', 'active')->whereNull('deleted_at')->lockForUpdate()->firstOrFail();
+            $this->ensureNoPromotionOverlap($product, $locked->starts_at, $locked->ends_at, $locked->id);
+            $locked->update(['status' => 'active', 'cancelled_at' => null]);
+            $newStatus = $locked->fresh()->derivedStatus();
+            $this->activity->log('promotion.reactivated', 'commerce', 'Seller promotion reactivated.', $request->user(), $request, $locked, [
+                'promotion_id' => $locked->id,
+                'seller_id' => $seller->id,
+                'new_status' => $newStatus,
+                'usage_count' => $locked->usage_count,
+            ]);
+
+            return $locked;
+        });
+
+        return response()->json(['message' => 'Promotion reactivated.', 'data' => $this->promotionPayload($promotion->fresh('product.variants'))]);
     }
 
     private function validateTimedPromotion(Request $request, Seller $seller): array
@@ -993,6 +1045,11 @@ class SellerController extends Controller
             'product' => $promotion->product ? ['id' => $promotion->product->id, 'name' => $promotion->product->name, 'slug' => $promotion->product->slug] : null,
             'category' => $promotion->category ? ['id' => $promotion->category->id, 'name' => $promotion->category->name, 'slug' => $promotion->category->slug] : null,
             'new_customers_only' => (bool) $promotion->new_customers_only,
+            'cancelled_at' => $promotion->cancelled_at?->toISOString(),
+            'created_at' => $promotion->created_at?->toISOString(),
+            'can_cancel' => $promotion->canBeCancelled(),
+            'can_reactivate' => $promotion->canBeReactivated(),
+            'reactivation_block_reason' => $promotion->reactivationBlockReason(),
         ];
     }
 

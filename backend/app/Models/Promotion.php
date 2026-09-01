@@ -67,7 +67,7 @@ class Promotion extends Model
 
     public function canBeUsedBy(?User $buyer): bool
     {
-        if (! $this->hasUsageRemaining()) {
+        if ($this->derivedStatus() !== 'active') {
             return false;
         }
 
@@ -95,5 +95,41 @@ class Promotion extends Model
         }
 
         return $this->ends_at && $now->gte($this->ends_at) ? 'expired' : 'active';
+    }
+
+    public function canBeCancelled(): bool
+    {
+        return $this->kind === 'deal'
+            && in_array($this->derivedStatus(), ['active', 'scheduled'], true);
+    }
+
+    public function reactivationBlockReason(): ?string
+    {
+        if ($this->kind !== 'deal' || $this->derivedStatus() !== 'cancelled') {
+            return 'not_cancelled';
+        }
+
+        if (! $this->starts_at || ! $this->ends_at) {
+            return 'invalid_schedule';
+        }
+
+        if (now()->gte($this->ends_at)) {
+            return 'expired_schedule';
+        }
+
+        if (! $this->hasUsageRemaining()) {
+            return 'usage_limit_reached';
+        }
+
+        if (! $this->product()->where('status', 'active')->whereNull('deleted_at')->exists()) {
+            return 'invalid_product';
+        }
+
+        return null;
+    }
+
+    public function canBeReactivated(): bool
+    {
+        return $this->reactivationBlockReason() === null;
     }
 }

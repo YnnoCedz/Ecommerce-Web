@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
-import { fetchSellerPromotions, cancelSellerPromotion, type SellerPromotion } from "../../api/seller";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { fetchSellerPromotions, cancelSellerPromotion, reactivateSellerPromotion, type SellerPromotion } from "../../api/seller";
 import { useUrlTab } from "../../hooks/useUrlTab";
 import PromotionModal from "./PromotionModal";
 
 type PromoStatus = "active" | "scheduled" | "expired" | "cancelled" | "limit_reached" | "draft";
 type PromotionTab = "discounts" | "campaigns";
 type PromotionStatusTab = Exclude<PromoStatus, "draft"> | "all";
+type LifecycleAction = { kind: "cancel" | "reactivate" | "view"; promotion: SellerPromotion };
 
 const PROMOTION_TABS: readonly PromotionTab[] = ["discounts", "campaigns"];
 const PROMOTION_STATUS_TABS: readonly PromotionStatusTab[] = ["all", "active", "scheduled", "expired", "limit_reached", "cancelled"];
@@ -43,6 +44,87 @@ function formatValue(promotion: SellerPromotion) {
   return `PHP ${promotion.value.toLocaleString()}`;
 }
 
+function formatDateTime(value?: string | null) {
+  return value
+    ? new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))
+    : "Not set";
+}
+
+function PromotionLifecycleDialog({ action, processing, error, onClose, onConfirm }: {
+  action: LifecycleAction;
+  processing: boolean;
+  error: string;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const promotion = action.promotion;
+  const status = STATUS_CFG[mapStatus(promotion.status)].label;
+  const isCancel = action.kind === "cancel";
+  const isReactivate = action.kind === "reactivate";
+  const title = isCancel ? "Cancel promotion?" : isReactivate ? "Reactivate promotion?" : "Promotion details";
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const dialog = dialogRef.current;
+    dialog?.querySelector<HTMLElement>("button")?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !processing) {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab" || !dialog) return;
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex="0"]'));
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previouslyFocused?.focus();
+    };
+  }, [onClose, processing]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4" onMouseDown={(event) => {
+      if (event.target === event.currentTarget && !processing) onClose();
+    }}>
+      <div ref={dialogRef} role={action.kind === "view" ? "dialog" : "alertdialog"} aria-modal="true" aria-labelledby="promotion-lifecycle-title" aria-describedby="promotion-lifecycle-description" className="w-full max-w-lg rounded-sm bg-white p-6 shadow-2xl">
+        <h2 id="promotion-lifecycle-title" className="font-[var(--font-display)] text-xl text-[var(--color-ink)]">{title}</h2>
+        <p id="promotion-lifecycle-description" className="mt-2 text-sm text-[var(--color-ink-muted)]">
+          {isCancel
+            ? `“${promotion.name ?? promotion.code}” will stop being applied to new qualifying purchases. Existing completed orders will not be changed.`
+            : isReactivate
+              ? `“${promotion.name ?? promotion.code}” will become eligible again according to its configured schedule and remaining usage limits.`
+              : "Review the promotion schedule, product, status, and redemption history."}
+        </p>
+        <dl className="mt-5 grid grid-cols-[110px_1fr] gap-x-4 gap-y-3 rounded-sm bg-[var(--color-surface)] p-4 text-sm">
+          <dt className="text-[var(--color-ink-muted)]">Promotion</dt><dd className="font-[600]">{promotion.name ?? promotion.code}</dd>
+          <dt className="text-[var(--color-ink-muted)]">Product</dt><dd>{promotion.product?.name ?? promotion.applies_to}</dd>
+          <dt className="text-[var(--color-ink-muted)]">Status</dt><dd>{status}</dd>
+          <dt className="text-[var(--color-ink-muted)]">Ends</dt><dd>{formatDateTime(promotion.ends_at)}</dd>
+          <dt className="text-[var(--color-ink-muted)]">Redemptions</dt><dd>{promotion.usage_count} / {promotion.usage_limit ?? "Unlimited"}</dd>
+        </dl>
+        {(isCancel || isReactivate) && <p className="mt-4 text-xs text-[var(--color-ink-muted)]">The promotion record and completed-order history will remain preserved.</p>}
+        {error && <p role="alert" className="mt-4 rounded-sm bg-[var(--color-red-light)] px-3 py-2 text-sm text-[var(--color-red)]">{error}</p>}
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" disabled={processing} onClick={onClose} className="rounded-sm border border-[var(--color-border)] px-4 py-2 text-sm disabled:opacity-50">{action.kind === "view" ? "Close" : isCancel ? "Keep Promotion" : "Cancel"}</button>
+          {action.kind !== "view" && <button type="button" disabled={processing} onClick={onConfirm} className={`rounded-sm px-4 py-2 text-sm font-[600] text-white disabled:opacity-50 ${isCancel ? "bg-[var(--color-red)]" : "bg-[var(--color-navy)]"}`}>{processing ? (isCancel ? "Cancelling..." : "Reactivating...") : (isCancel ? "Cancel Promotion" : "Reactivate Promotion")}</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PromotionsPage() {
   const { activeTab: tab, setActiveTab: setTab } = useUrlTab(PROMOTION_TABS, "discounts");
   const { activeTab: filter, setActiveTab: setFilter } = useUrlTab(PROMOTION_STATUS_TABS, "all", { parameter: "status" });
@@ -51,9 +133,36 @@ export default function PromotionsPage() {
   const [now, setNow] = useState(Date.now());
   const [serverClockOffset, setServerClockOffset] = useState(0);
   const [promotions, setPromotions] = useState<SellerPromotion[]>([]);
-  const cancel = async (promotion: SellerPromotion) => {
-    const response = await cancelSellerPromotion(promotion.id);
-    setPromotions(current => current.map(item => item.id === promotion.id ? response.data : item));
+  const [lifecycleAction, setLifecycleAction] = useState<LifecycleAction | null>(null);
+  const [processingPromotionId, setProcessingPromotionId] = useState<number | null>(null);
+  const [lifecycleError, setLifecycleError] = useState("");
+
+  const closeLifecycleDialog = useCallback(() => {
+    setLifecycleAction(null);
+    setLifecycleError("");
+  }, []);
+
+  const openLifecycleDialog = (kind: LifecycleAction["kind"], promotion: SellerPromotion) => {
+    setLifecycleError("");
+    setLifecycleAction({ kind, promotion });
+  };
+
+  const confirmLifecycleAction = async () => {
+    if (!lifecycleAction || lifecycleAction.kind === "view" || processingPromotionId !== null) return;
+    const { kind, promotion } = lifecycleAction;
+    setProcessingPromotionId(promotion.id);
+    setLifecycleError("");
+    try {
+      const response = kind === "cancel"
+        ? await cancelSellerPromotion(promotion.id)
+        : await reactivateSellerPromotion(promotion.id);
+      setPromotions(current => current.map(item => item.id === promotion.id ? response.data : item));
+      closeLifecycleDialog();
+    } catch (cause) {
+      setLifecycleError(cause instanceof Error ? cause.message : `Unable to ${kind} this promotion.`);
+    } finally {
+      setProcessingPromotionId(null);
+    }
   };
 
   useEffect(() => {
@@ -181,7 +290,14 @@ export default function PromotionsPage() {
                     <td className="px-4 py-3.5">
                       <span className="font-[var(--font-mono)] text-[9px] px-2 py-1 rounded" style={{ color: cfg.color, background: cfg.bg }}>{cfg.label}</span>
                     </td>
-                    <td className="px-4 py-3.5"><div className="flex gap-2">{promotion.kind === "deal" && promotion.status === "scheduled" && <button onClick={() => setEditing(promotion)} className="text-xs text-[var(--color-navy)] hover:underline">Edit</button>}{promotion.kind === "deal" && ["active", "scheduled"].includes(promotion.status) && <button onClick={() => void cancel(promotion)} className="text-xs text-[var(--color-red)] hover:underline">Cancel</button>}</div></td>
+                    <td className="px-4 py-3.5">
+                      <div className="flex flex-wrap gap-2">
+                        {promotion.kind === "deal" && <button type="button" onClick={() => openLifecycleDialog("view", promotion)} className="text-xs text-[var(--color-ink-muted)] hover:underline">View</button>}
+                        {promotion.kind === "deal" && ["scheduled", "cancelled", "limit_reached"].includes(promotion.status) && <button type="button" onClick={() => setEditing(promotion)} className="text-xs text-[var(--color-navy)] hover:underline">{promotion.status === "cancelled" && promotion.reactivation_block_reason === "expired_schedule" ? "Edit schedule" : "Edit"}</button>}
+                        {promotion.kind === "deal" && (promotion.can_cancel ?? ["active", "scheduled"].includes(promotion.status)) && <button type="button" onClick={() => openLifecycleDialog("cancel", promotion)} className="text-xs text-[var(--color-red)] hover:underline">Cancel</button>}
+                        {promotion.kind === "deal" && promotion.can_reactivate && <button type="button" onClick={() => openLifecycleDialog("reactivate", promotion)} className="text-xs text-[var(--color-green)] hover:underline">Reactivate</button>}
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
@@ -219,6 +335,7 @@ export default function PromotionsPage() {
 
       {showCreate && <PromotionModal onClose={() => setShowCreate(false)} onSaved={promotion => setPromotions(current => [promotion, ...current])} />}
       {editing && <PromotionModal promotion={editing} onClose={() => setEditing(null)} onSaved={saved => setPromotions(current => current.map(promotion => promotion.id === saved.id ? saved : promotion))} />}
+      {lifecycleAction && <PromotionLifecycleDialog action={lifecycleAction} processing={processingPromotionId === lifecycleAction.promotion.id} error={lifecycleError} onClose={closeLifecycleDialog} onConfirm={() => void confirmLifecycleAction()} />}
     </div>
   );
 }

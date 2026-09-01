@@ -25,6 +25,7 @@ class CheckoutService
         private readonly MediaStorageService $media,
         private readonly ProductPricingService $pricing,
         private readonly PromotionRedemptionService $redemptions,
+        private readonly VoucherService $vouchers,
     ) {}
 
     public function checkout(User $buyer, array $data): Order
@@ -85,14 +86,18 @@ class CheckoutService
             $checkoutLines = $this->buildCheckoutLines($cartItems, $buyer);
             $groups = $checkoutLines->groupBy(fn (array $line) => $line['seller']->id);
             $subtotal = round((float) $checkoutLines->sum('subtotal'), 2);
-            $shippingTotal = round((float) $groups->sum(fn (Collection $lines) => $this->shippingForGroup($lines)), 2);
-            $discountTotal = strtoupper((string) $cart->promo_code) === 'WELCOME10'
-                ? round($subtotal * 0.10, 2)
-                : 0.0;
+            $shippingBySeller = $groups->map(fn (Collection $lines) => $this->shippingForGroup($lines));
+            $shippingTotal = round((float) $shippingBySeller->sum(), 2);
+            $voucherCode = array_key_exists('voucher_code', $data) ? $data['voucher_code'] : $cart->promo_code;
+            $voucher = $this->vouchers->quote($voucherCode, $checkoutLines, $buyer, $shippingBySeller, true);
+            $discountTotal = $voucher['discount_total'];
+            $productPromotionDiscountTotal = round((float) $checkoutLines->sum('promotion_discount'), 2);
             $grandTotal = round(max(0, $subtotal + $shippingTotal - $discountTotal), 2);
 
             $order = Order::create([
                 'buyer_id' => $buyer->id,
+                'voucher_promotion_id' => $voucher['promotion']?->id,
+                'voucher_code' => $voucher['code'],
                 'order_number' => $this->nextOrderNumber(),
                 'status' => 'pending',
                 'payment_status' => 'pending',
@@ -108,25 +113,20 @@ class CheckoutService
                 'subtotal' => $subtotal,
                 'shipping_total' => $shippingTotal,
                 'discount_total' => $discountTotal,
+                'product_promotion_discount_total' => $productPromotionDiscountTotal,
+                'voucher_discount_total' => $discountTotal,
                 'tax_total' => 0,
                 'grand_total' => $grandTotal,
                 'buyer_notes' => $data['buyer_notes'] ?? null,
                 'placed_at' => now(),
             ]);
 
-            $allocatedDiscount = 0.0;
-            $groupCount = $groups->count();
-            $groupIndex = 0;
-
             foreach ($groups as $lines) {
-                $groupIndex++;
                 $seller = $lines->first()['seller'];
                 $sellerSubtotal = round((float) $lines->sum('subtotal'), 2);
                 $shippingFee = $this->shippingForGroup($lines);
-                $sellerDiscount = $groupIndex === $groupCount
-                    ? round($discountTotal - $allocatedDiscount, 2)
-                    : round($discountTotal * ($sellerSubtotal / max($subtotal, 0.01)), 2);
-                $allocatedDiscount += $sellerDiscount;
+                $sellerDiscount = round((float) ($voucher['seller_discounts'][$seller->id] ?? 0), 2);
+                $sellerPromotionDiscount = round((float) $lines->sum('promotion_discount'), 2);
 
                 $sellerOrder = SellerOrder::create([
                     'order_id' => $order->id,
@@ -135,6 +135,8 @@ class CheckoutService
                     'subtotal' => $sellerSubtotal,
                     'shipping_fee' => $shippingFee,
                     'discount_total' => $sellerDiscount,
+                    'product_promotion_discount_total' => $sellerPromotionDiscount,
+                    'voucher_discount_total' => $sellerDiscount,
                     'grand_total' => round($sellerSubtotal + $shippingFee - $sellerDiscount, 2),
                 ]);
 
@@ -156,6 +158,7 @@ class CheckoutService
                         'product_id' => $product->id,
                         'product_variant_id' => $variant?->id,
                         'promotion_id' => $line['promotion']?->id,
+                        'promotion_name' => $line['promotion']?->name ?? $line['promotion']?->code,
                         'product_name' => $product->name,
                         'product_slug' => $product->slug,
                         'variant_name' => $variant?->name,
@@ -163,6 +166,9 @@ class CheckoutService
                         'product_image_storage_disk' => $snapshot['storage_disk'] ?? $primaryImage?->storage_disk,
                         'product_image_storage_path' => $snapshot['storage_path'] ?? $primaryImage?->file_path,
                         'unit_price' => $line['unit_price'],
+                        'regular_unit_price' => $line['normal_price'],
+                        'promotion_discount' => $line['promotion_discount'],
+                        'voucher_discount' => round((float) ($voucher['line_discounts'][$line['cart_item']->id] ?? 0), 2),
                         'quantity' => $line['quantity'],
                         'subtotal' => $line['subtotal'],
                     ]);
@@ -194,7 +200,10 @@ class CheckoutService
             $order->forceFill(['payment_status' => $payment->status])->save();
 
             if ($payment->status !== 'failed') {
-                $promotions = $this->redemptions->lockEligible($checkoutLines->pluck('promotion.id'), $buyer);
+                $promotions = $this->redemptions->lockEligible([
+                    ...$checkoutLines->pluck('promotion.id')->filter()->all(),
+                    ...($voucher['promotion'] ? [$voucher['promotion']->id] : []),
+                ], $buyer);
                 $this->redemptions->consumeLocked($promotions, $buyer, $order);
             }
 
@@ -232,12 +241,12 @@ class CheckoutService
      * Return a server-authoritative quote for exactly the cart rows selected by
      * the buyer. No order, payment, inventory, or cart mutation occurs here.
      */
-    public function preview(User $buyer, array $cartItemIds): array
+    public function preview(User $buyer, array $cartItemIds, ?string $voucherCode = null): array
     {
         $data = ['cart_item_ids' => $cartItemIds];
         $this->synchronizeCartPrices($buyer, $data);
 
-        return DB::transaction(function () use ($buyer, $cartItemIds): array {
+        return DB::transaction(function () use ($buyer, $cartItemIds, $voucherCode): array {
             $requestedIds = collect($cartItemIds)->map(fn ($id) => (int) $id)->unique()->values();
             $cart = Cart::query()
                 ->where('user_id', $buyer->id)
@@ -262,12 +271,21 @@ class CheckoutService
             $lines = $this->buildCheckoutLines($cartItems, $buyer);
             $groups = $lines->groupBy(fn (array $line) => $line['seller']->id);
             $subtotal = round((float) $lines->sum('subtotal'), 2);
-            $shipping = round((float) $groups->sum(fn (Collection $sellerLines) => $this->shippingForGroup($sellerLines)), 2);
-            $discount = strtoupper((string) $cart->promo_code) === 'WELCOME10' ? round($subtotal * 0.10, 2) : 0.0;
+            $shippingBySeller = $groups->map(fn (Collection $sellerLines) => $this->shippingForGroup($sellerLines));
+            $shipping = round((float) $shippingBySeller->sum(), 2);
+            $voucher = $this->vouchers->quote($voucherCode, $lines, $buyer, $shippingBySeller);
+            $discount = $voucher['discount_total'];
+            $productPromotionDiscount = round((float) $lines->sum('promotion_discount'), 2);
 
             return [
                 'cart_item_ids' => $requestedIds->all(),
-                'promo_code' => $cart->promo_code,
+                'promo_code' => $voucher['code'],
+                'voucher' => $voucher['promotion'] ? [
+                    'id' => $voucher['promotion']->id,
+                    'code' => $voucher['code'],
+                    'name' => $voucher['promotion']->name ?? $voucher['code'],
+                    'discount' => $discount,
+                ] : null,
                 'sellers' => $groups->map(function (Collection $sellerLines): array {
                     $seller = $sellerLines->first()['seller'];
                     $sellerSubtotal = round((float) $sellerLines->sum('subtotal'), 2);
@@ -299,12 +317,22 @@ class CheckoutService
                                     : null,
                                 'quantity' => $line['quantity'],
                                 'unit_price' => $line['unit_price'],
+                                'regular_unit_price' => $line['normal_price'],
                                 'line_total' => $line['subtotal'],
+                                'automatic_promotion' => $line['promotion'] ? [
+                                    'id' => $line['promotion']->id,
+                                    'name' => $line['promotion']->name ?? $line['promotion']->code,
+                                    'discount' => $line['promotion_discount'],
+                                    'ends_at' => $line['promotion']->ends_at?->toISOString(),
+                                ] : null,
                             ];
                         })->values()->all(),
                     ];
                 })->values()->all(),
                 'subtotal' => $subtotal,
+                'merchandise_total' => round($subtotal + $productPromotionDiscount, 2),
+                'product_promotion_discount_total' => $productPromotionDiscount,
+                'voucher_discount_total' => $discount,
                 'shipping_total' => $shipping,
                 'discount_total' => $discount,
                 'grand_total' => round(max(0, $subtotal + $shipping - $discount), 2),
@@ -425,6 +453,8 @@ class CheckoutService
                 'unit_price' => round($unitPrice, 2),
                 'subtotal' => round($unitPrice * $cartItem->quantity, 2),
                 'promotion' => $pricing['promotion'],
+                'normal_price' => round((float) $pricing['normal_price'], 2),
+                'promotion_discount' => round(max(0, ((float) $pricing['normal_price'] - $unitPrice) * $cartItem->quantity), 2),
             ];
         });
     }
@@ -458,15 +488,12 @@ class CheckoutService
 
             return $sellerSubtotal >= $config['free_shipping_threshold'] ? 0 : $config['shipping_fee'];
         }), 2);
-        $discount = strtoupper((string) $cart->promo_code) === 'WELCOME10'
-            ? round($subtotal * 0.10, 2)
-            : 0.0;
-
         $cart->update([
             'subtotal' => $subtotal,
             'shipping_total' => $shipping,
-            'discount_total' => $discount,
-            'grand_total' => round(max(0, $subtotal + $shipping - $discount), 2),
+            'promo_code' => null,
+            'discount_total' => 0,
+            'grand_total' => round($subtotal + $shipping, 2),
             'last_checked_out_at' => now(),
         ]);
     }

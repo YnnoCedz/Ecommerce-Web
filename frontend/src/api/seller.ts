@@ -283,6 +283,11 @@ export type SellerPromotion = {
   starts_at?: string | null
   ends_at?: string | null
   product?: { id: number; name: string; slug: string } | null
+  cancelled_at?: string | null
+  created_at?: string | null
+  can_cancel?: boolean
+  can_reactivate?: boolean
+  reactivation_block_reason?: "not_cancelled" | "invalid_schedule" | "expired_schedule" | "usage_limit_reached" | "invalid_product" | null
 }
 
 export type SellerReview = {
@@ -528,6 +533,13 @@ export function updateSellerPromotion(
 export function cancelSellerPromotion(id: number) {
   return apiFetch<{ message: string; data: SellerPromotion }>(
     `/seller/promotions/${id}/cancel`,
+    { method: "PATCH" },
+  )
+}
+
+export function reactivateSellerPromotion(id: number) {
+  return apiFetch<{ message: string; data: SellerPromotion }>(
+    `/seller/promotions/${id}/reactivate`,
     { method: "PATCH" },
   )
 }

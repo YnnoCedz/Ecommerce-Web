@@ -2,11 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Models\Order;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Promotion;
 use App\Models\PromotionRedemption;
-use App\Models\Order;
 use App\Models\Seller;
 use App\Models\User;
 use App\Services\ProductPricingService;
@@ -256,6 +256,109 @@ class TimedPromotionsTest extends TestCase
         $promotion->update(['usage_count' => 2]);
         $this->assertSame('limit_reached', $promotion->fresh()->derivedStatus());
         $this->assertSame(1000.0, $pricing->for($product->fresh())['effective_price']);
+    }
+
+    public function test_active_and_scheduled_promotions_can_be_cancelled_once_and_are_audited(): void
+    {
+        [$user, $seller, $activeProduct] = $this->sellerProduct();
+        $active = $this->promotion($seller, $activeProduct, now()->subMinute(), now()->addHour(), 700);
+        [, , $scheduledProduct] = $this->sellerProduct();
+        $scheduledProduct->update(['seller_id' => $seller->id]);
+        $scheduled = $this->promotion($seller, $scheduledProduct, now()->addHour(), now()->addHours(2), 600);
+
+        $this->assertSame(700.0, app(ProductPricingService::class)->for($activeProduct)['effective_price']);
+        $this->actingAs($user)->patchJson("/api/seller/promotions/{$active->id}/cancel")
+            ->assertOk()->assertJsonPath('data.status', 'cancelled')->assertJsonPath('data.can_reactivate', true);
+        $this->actingAs($user)->patchJson("/api/seller/promotions/{$scheduled->id}/cancel")
+            ->assertOk()->assertJsonPath('data.status', 'cancelled');
+
+        $this->assertSame(1000.0, app(ProductPricingService::class)->for($activeProduct->fresh())['effective_price']);
+        $this->assertDatabaseHas('promotions', ['id' => $active->id, 'status' => 'cancelled']);
+        $this->assertDatabaseHas('activity_logs', ['event_type' => 'promotion.cancelled', 'subject_id' => $active->id, 'user_id' => $user->id]);
+        $this->actingAs($user)->patchJson("/api/seller/promotions/{$active->id}/cancel")->assertStatus(409);
+    }
+
+    public function test_reactivation_derives_active_or_scheduled_and_preserves_usage_history(): void
+    {
+        [$user, $seller, $activeProduct] = $this->sellerProduct();
+        $active = $this->promotion($seller, $activeProduct, now()->subMinute(), now()->addHour(), 700);
+        $active->update(['usage_limit' => 20, 'usage_count' => 7]);
+        $this->actingAs($user)->patchJson("/api/seller/promotions/{$active->id}/cancel")->assertOk();
+        $this->actingAs($user)->patchJson("/api/seller/promotions/{$active->id}/reactivate")
+            ->assertOk()->assertJsonPath('data.status', 'active')->assertJsonPath('data.usage_count', 7);
+
+        [, , $futureProduct] = $this->sellerProduct();
+        $futureProduct->update(['seller_id' => $seller->id]);
+        $future = $this->promotion($seller, $futureProduct, now()->addHour(), now()->addHours(2), 600);
+        $this->actingAs($user)->patchJson("/api/seller/promotions/{$future->id}/cancel")->assertOk();
+        $this->actingAs($user)->patchJson("/api/seller/promotions/{$future->id}/reactivate")
+            ->assertOk()->assertJsonPath('data.status', 'scheduled');
+
+        $this->assertDatabaseHas('activity_logs', ['event_type' => 'promotion.reactivated', 'subject_id' => $active->id, 'user_id' => $user->id]);
+        $this->assertSame(7, $active->fresh()->usage_count);
+    }
+
+    public function test_reactivation_rejects_expired_exhausted_and_invalid_product_promotions(): void
+    {
+        [$user, $seller, $expiredProduct] = $this->sellerProduct();
+        $expired = $this->promotion($seller, $expiredProduct, now()->subHours(2), now()->subHour(), 700);
+        $expired->update(['status' => 'cancelled', 'cancelled_at' => now()]);
+
+        [, , $exhaustedProduct] = $this->sellerProduct();
+        $exhaustedProduct->update(['seller_id' => $seller->id]);
+        $exhausted = $this->promotion($seller, $exhaustedProduct, now()->subMinute(), now()->addHour(), 600);
+        $exhausted->update(['status' => 'cancelled', 'cancelled_at' => now(), 'usage_limit' => 20, 'usage_count' => 20]);
+
+        [, , $deletedProduct] = $this->sellerProduct();
+        $deletedProduct->update(['seller_id' => $seller->id]);
+        $invalid = $this->promotion($seller, $deletedProduct, now()->subMinute(), now()->addHour(), 500);
+        $invalid->update(['status' => 'cancelled', 'cancelled_at' => now()]);
+        $deletedProduct->forceDelete();
+
+        $this->actingAs($user)->patchJson("/api/seller/promotions/{$expired->id}/reactivate")
+            ->assertStatus(409)->assertJsonPath('message', 'Promotion schedule has already ended. Set a new schedule before reactivating.');
+        $this->actingAs($user)->patchJson("/api/seller/promotions/{$exhausted->id}/reactivate")
+            ->assertStatus(409)->assertJsonPath('message', 'Promotion usage limit has been reached. Increase the limit before reactivating.');
+        $this->actingAs($user)->patchJson("/api/seller/promotions/{$invalid->id}/reactivate")
+            ->assertStatus(409)->assertJsonPath('message', 'The promotion product is no longer active or available.');
+
+        $this->assertDatabaseCount('activity_logs', 0);
+    }
+
+    public function test_reactivation_preserves_per_buyer_redemption_history(): void
+    {
+        [$user, $seller, $product] = $this->sellerProduct();
+        $buyer = User::factory()->create(['role' => 'buyer']);
+        $promotion = $this->promotion($seller, $product, now()->subMinute(), now()->addHour(), 700);
+        $promotion->update(['usage_limit' => 20, 'usage_count' => 1, 'per_buyer_limit' => 1]);
+        $order = Order::create([
+            'buyer_id' => $buyer->id, 'order_number' => 'REACTIVATE-'.uniqid(), 'status' => 'pending',
+            'payment_status' => 'paid', 'currency' => 'PHP', 'shipping_name' => 'Test Buyer',
+            'shipping_phone' => '+639171234567', 'shipping_line1' => 'Test Address',
+            'shipping_city' => 'Makati', 'shipping_province' => 'Metro Manila',
+            'shipping_postal_code' => '1200', 'subtotal' => 700, 'grand_total' => 700,
+        ]);
+        PromotionRedemption::create(['promotion_id' => $promotion->id, 'order_id' => $order->id, 'buyer_id' => $buyer->id, 'redeemed_at' => now()]);
+
+        $this->actingAs($user)->patchJson("/api/seller/promotions/{$promotion->id}/cancel")->assertOk();
+        $this->actingAs($user)->patchJson("/api/seller/promotions/{$promotion->id}/reactivate")->assertOk();
+
+        $this->assertDatabaseCount('promotion_redemptions', 1);
+        $this->assertSame(1000.0, app(ProductPricingService::class)->for($product->fresh(), null, $buyer)['effective_price']);
+    }
+
+    public function test_promotion_lifecycle_endpoints_enforce_role_and_ownership(): void
+    {
+        [$owner, $seller, $product] = $this->sellerProduct();
+        $promotion = $this->promotion($seller, $product, now()->subMinute(), now()->addHour(), 700);
+        [$otherSellerUser] = $this->sellerProduct();
+        $buyer = User::factory()->create(['role' => 'buyer', 'status' => 'active']);
+
+        $this->patchJson("/api/seller/promotions/{$promotion->id}/cancel")->assertUnauthorized();
+        $this->actingAs($buyer)->patchJson("/api/seller/promotions/{$promotion->id}/cancel")->assertForbidden();
+        $this->actingAs($otherSellerUser)->patchJson("/api/seller/promotions/{$promotion->id}/cancel")->assertNotFound();
+        $this->actingAs($owner)->patchJson("/api/seller/promotions/{$promotion->id}/cancel")->assertOk();
+        $this->actingAs($otherSellerUser)->patchJson("/api/seller/promotions/{$promotion->id}/reactivate")->assertNotFound();
     }
 
     private function sellerProduct(): array

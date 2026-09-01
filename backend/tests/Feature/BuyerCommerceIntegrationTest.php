@@ -80,6 +80,10 @@ class BuyerCommerceIntegrationTest extends TestCase
     {
         $buyer = User::factory()->create();
         $product = $this->product('promo-code-product', 1000, 5);
+        Promotion::create([
+            'seller_id' => $product->seller_id, 'kind' => 'coupon', 'code' => 'WELCOME10',
+            'name' => 'Welcome 10', 'type' => 'percentage', 'value' => 10, 'status' => 'active',
+        ]);
         $this->actingAs($buyer)->postJson('/api/cart/items', ['product_id' => $product->id, 'quantity' => 1])->assertOk();
 
         $this->actingAs($buyer)->patchJson('/api/cart/promo', ['promo_code' => 'NOTREAL'])
@@ -135,6 +139,10 @@ class BuyerCommerceIntegrationTest extends TestCase
         ]);
         $firstProduct = $this->product('first-checkout-product', 1000, 5);
         $secondProduct = $this->product('second-checkout-product', 750, 8);
+        Promotion::create([
+            'seller_id' => $firstProduct->seller_id, 'kind' => 'coupon', 'code' => 'WELCOME10',
+            'name' => 'Welcome 10', 'type' => 'percentage', 'value' => 10, 'status' => 'active',
+        ]);
         $cart = Cart::create(['user_id' => $buyer->id, 'status' => 'active', 'promo_code' => 'WELCOME10']);
 
         $firstCartItem = CartItem::create([

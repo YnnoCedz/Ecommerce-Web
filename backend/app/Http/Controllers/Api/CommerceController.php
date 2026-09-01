@@ -19,13 +19,14 @@ use App\Services\NotificationService;
 use App\Services\OrderLifecycleService;
 use App\Services\PaymentService;
 use App\Services\ProductPricingService;
+use App\Services\VoucherService;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class CommerceController extends Controller
 {
@@ -36,6 +37,7 @@ class CommerceController extends Controller
         private readonly PaymentService $payments,
         private readonly MediaStorageService $media,
         private readonly ProductPricingService $pricing,
+        private readonly VoucherService $vouchers,
     ) {}
 
     public function cart(Request $request): JsonResponse
@@ -150,11 +152,22 @@ class CommerceController extends Controller
             'promo_code' => $request->filled('promo_code') ? strtoupper(trim((string) $request->input('promo_code'))) : null,
         ]);
         $data = $request->validate([
-            'promo_code' => ['nullable', 'string', 'max:50', Rule::in(['WELCOME10'])],
+            'promo_code' => ['nullable', 'string', 'max:50', 'regex:/^[A-Z0-9_-]+$/'],
         ]);
 
-        $cart = DB::transaction(function () use ($request, $data) {
-            $cart = $this->loadCurrentCart($request);
+        $cart = $this->loadCurrentCart($request);
+        $itemIds = $cart->activeItems()->pluck('id')->all();
+        if ($data['promo_code'] !== null) {
+            try {
+                $this->checkoutService->preview($request->user(), $itemIds, $data['promo_code']);
+            } catch (ValidationException $exception) {
+                throw ValidationException::withMessages([
+                    'promo_code' => [$exception->errors()['voucher_code'][0] ?? 'This promo code is invalid or unavailable.'],
+                ]);
+            }
+        }
+
+        $cart = DB::transaction(function () use ($cart, $data) {
             $cart->promo_code = $data['promo_code'];
             $cart->save();
             $this->recalculateCartTotals($cart);
@@ -191,18 +204,29 @@ class CommerceController extends Controller
 
     public function checkoutPreview(Request $request): JsonResponse
     {
+        if ($request->has('voucher_code')) {
+            $request->merge(['voucher_code' => $request->filled('voucher_code') ? strtoupper(trim((string) $request->input('voucher_code'))) : null]);
+        }
         $data = $request->validate([
             'cart_item_ids' => ['required', 'array', 'min:1', 'max:100'],
             'cart_item_ids.*' => ['integer', 'distinct'],
+            'voucher_code' => ['sometimes', 'nullable', 'string', 'max:50', 'regex:/^[A-Z0-9_-]+$/'],
         ]);
 
+        $voucherCode = array_key_exists('voucher_code', $data)
+            ? $data['voucher_code']
+            : Cart::query()->where('user_id', $request->user()->id)->where('status', 'active')->value('promo_code');
+
         return response()->json([
-            'data' => $this->checkoutService->preview($request->user(), $data['cart_item_ids']),
+            'data' => $this->checkoutService->preview($request->user(), $data['cart_item_ids'], $voucherCode),
         ]);
     }
 
     public function checkout(Request $request): JsonResponse
     {
+        if ($request->has('voucher_code')) {
+            $request->merge(['voucher_code' => $request->filled('voucher_code') ? strtoupper(trim((string) $request->input('voucher_code'))) : null]);
+        }
         $data = $request->validate([
             'address_id' => ['required', 'integer'],
             'payment_method' => ['required', 'in:cod,gcash,maya,card'],
@@ -214,6 +238,7 @@ class CommerceController extends Controller
             'cart_item_ids' => ['required', 'array', 'min:1', 'max:100'],
             'cart_item_ids.*' => ['integer', 'distinct'],
             'buyer_notes' => ['nullable', 'string', 'max:1000'],
+            'voucher_code' => ['sometimes', 'nullable', 'string', 'max:50', 'regex:/^[A-Z0-9_-]+$/'],
         ]);
 
         if (in_array($data['payment_method'], ['gcash', 'maya'], true) && empty($data['payment_details']['mobile_number'])) {
@@ -804,9 +829,27 @@ class CommerceController extends Controller
             $shipping += $sellerSubtotal >= $config['free_shipping_threshold'] ? 0 : $config['shipping_fee'];
         }
 
-        $discount = $cart->promo_code === 'WELCOME10'
-            ? round($subtotal * 0.10, 2)
-            : 0.0;
+        $discount = 0.0;
+        if ($cart->promo_code && $activeItems->isNotEmpty()) {
+            $lines = $activeItems->map(fn (CartItem $item) => [
+                'cart_item' => $item,
+                'product' => $item->product,
+                'seller' => $item->seller,
+                'subtotal' => (float) $item->line_total,
+            ]);
+            $shippingBySeller = $grouped->map(function ($sellerItems) {
+                $sellerSubtotal = (float) $sellerItems->sum('line_total');
+                $seller = $sellerItems->first()?->seller;
+                $config = $seller instanceof Seller ? $this->shippingConfigForSeller($seller) : ['free_shipping_threshold' => INF, 'shipping_fee' => 0];
+
+                return $sellerSubtotal >= $config['free_shipping_threshold'] ? 0 : $config['shipping_fee'];
+            });
+            try {
+                $discount = $this->vouchers->quote($cart->promo_code, $lines, $cart->user, $shippingBySeller)['discount_total'];
+            } catch (ValidationException) {
+                $cart->promo_code = null;
+            }
+        }
 
         $cart->forceFill([
             'subtotal' => $subtotal,

@@ -8,6 +8,8 @@ class Order extends Model
 {
     protected $fillable = [
         'buyer_id',
+        'voucher_promotion_id',
+        'voucher_code',
         'order_number',
         'status',
         'payment_status',
@@ -23,6 +25,8 @@ class Order extends Model
         'subtotal',
         'shipping_total',
         'discount_total',
+        'product_promotion_discount_total',
+        'voucher_discount_total',
         'tax_total',
         'grand_total',
         'buyer_notes',
@@ -34,6 +38,8 @@ class Order extends Model
         'subtotal' => 'decimal:2',
         'shipping_total' => 'decimal:2',
         'discount_total' => 'decimal:2',
+        'product_promotion_discount_total' => 'decimal:2',
+        'voucher_discount_total' => 'decimal:2',
         'tax_total' => 'decimal:2',
         'grand_total' => 'decimal:2',
         'placed_at' => 'datetime',
