@@ -272,9 +272,10 @@ class SellerApplicationController extends Controller
             });
         }
 
-        if ($status = trim((string) $request->input('status', ''))) {
-            $query->where('status', $status);
-        }
+        $status = $request->validate([
+            'status' => ['nullable', Rule::in(['pending', 'reviewing', 'flagged', 'approved', 'rejected', 'needs_revision'])],
+        ])['status'] ?? null;
+        $query->when($status, fn ($builder, $value) => $builder->where('status', $value));
 
         if ($categoryId = (int) $request->input('category_id', 0)) {
             $query->whereHas('categories', fn ($categoryQuery) => $categoryQuery->whereKey($categoryId));

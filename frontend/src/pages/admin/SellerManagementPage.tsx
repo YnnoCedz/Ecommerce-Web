@@ -42,10 +42,15 @@ export default function SellerManagementPage() {
   const [selectedRenewal, setSelectedRenewal] =
     useState<AdminDocumentRenewal | null>(null)
   const [search, setSearch] = useState("")
-  const [status, setStatus] = useState("")
+  const [status, setStatus] = useState(() =>
+    tab === "applications" ? "pending" : "",
+  )
   const [reason, setReason] = useState("")
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [reviewingDecision, setReviewingDecision] = useState<
+    "approve" | "reject" | "revision" | null
+  >(null)
   const [error, setError] = useState<string | null>(null)
 
   const load = () => {
@@ -83,6 +88,7 @@ export default function SellerManagementPage() {
       return
     }
     setSaving(true)
+    setReviewingDecision(approve ? "approve" : "reject")
     try {
       const response = await updateAdminSellerStatus(
         selectedSeller.id,
@@ -102,6 +108,7 @@ export default function SellerManagementPage() {
       )
     } finally {
       setSaving(false)
+      setReviewingDecision(null)
     }
   }
   const openApplication = async (application: SellerApplicationSummary) => {
@@ -125,14 +132,17 @@ export default function SellerManagementPage() {
       return
     }
     setSaving(true)
+    setReviewingDecision("revision")
     try {
       const response = approve
         ? await approveSellerApplication(selectedApplication.id)
         : await rejectSellerApplication(selectedApplication.id, reason.trim())
       setApplications((current) =>
-        current.map((item) =>
-          item.id === response.data.id ? response.data : item,
-        ),
+        status && response.data.status !== status
+          ? current.filter((item) => item.id !== response.data.id)
+          : current.map((item) =>
+              item.id === response.data.id ? response.data : item,
+            ),
       )
       setSelectedApplication(response.data)
       setReason("")
@@ -144,6 +154,7 @@ export default function SellerManagementPage() {
       )
     } finally {
       setSaving(false)
+      setReviewingDecision(null)
     }
   }
   const requestRevision = async () => {
@@ -220,7 +231,7 @@ export default function SellerManagementPage() {
                 key={value}
                 onClick={() => {
                   setTab(value)
-                  setStatus("")
+                   setStatus(value === "applications" ? "pending" : "")
                   setSelectedSeller(null)
                   setSelectedApplication(null)
                   setSelectedRenewal(null)
@@ -560,21 +571,23 @@ export default function SellerManagementPage() {
                   onClick={() => void review(true)}
                   className="px-3 py-2 bg-[var(--color-green)] text-white text-xs"
                 >
-                  Approve
+                  {reviewingDecision === "approve" ? "Approving..." : "Approve"}
                 </button>
                 <button
                   disabled={saving}
                   onClick={() => void requestRevision()}
                   className="px-3 py-2 bg-[var(--color-amber)] text-white text-xs"
                 >
-                  Request revision
+                  {reviewingDecision === "revision"
+                    ? "Requesting..."
+                    : "Request revision"}
                 </button>
                 <button
                   disabled={saving}
                   onClick={() => void review(false)}
                   className="px-3 py-2 bg-[var(--color-red)] text-white text-xs"
                 >
-                  Reject
+                  {reviewingDecision === "reject" ? "Rejecting..." : "Reject"}
                 </button>
               </div>
             </>

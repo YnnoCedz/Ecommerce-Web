@@ -122,6 +122,39 @@ class SellerAuthenticationLifecycleTest extends TestCase
         $this->withToken($token)->getJson('/api/admin/dashboard')->assertForbidden();
     }
 
+    public function test_admin_application_status_filter_returns_only_the_requested_status(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'admin',
+            'status' => 'active',
+            'email_verified_at' => now(),
+        ]);
+
+        foreach (['pending', 'approved', 'rejected'] as $status) {
+            SellerApplication::create([
+                'applicant_user_id' => User::factory()->create(['role' => 'buyer'])->id,
+                'business_name' => ucfirst($status).' Store',
+                'slug' => $status.'-store',
+                'description' => 'Status filter test application.',
+                'address_line1' => '1 Test Street',
+                'city' => 'Makati City',
+                'postal_code' => '1200',
+                'status' => $status,
+                'submitted_at' => now(),
+            ]);
+        }
+
+        foreach (['pending', 'approved', 'rejected'] as $status) {
+            $response = $this->actingAs($admin)
+                ->getJson('/api/admin/seller-applications?status='.$status)
+                ->assertOk();
+
+            $rows = $response->json('data');
+            $this->assertCount(1, $rows);
+            $this->assertSame($status, $rows[0]['status']);
+        }
+    }
+
     public function test_seller_application_rejects_incorrect_tin_and_registration_formats(): void
     {
         $buyer = User::factory()->create([
