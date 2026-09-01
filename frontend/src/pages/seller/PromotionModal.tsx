@@ -1,14 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, LoaderCircle, Search, X } from "lucide-react";
 import { ApiError } from "../../api/client";
 import {
   createSellerPromotion,
   fetchSellerProducts,
   updateSellerPromotion,
-  type SellerProduct,
+  type SellerProductPickerItem,
   type SellerPromotion,
   type TimedPromotionPayload,
 } from "../../api/seller";
+import {
+  createDebouncedProductSearch,
+  isEligibleProductSearch,
+  isLatestProductSearch,
+  PRODUCT_SEARCH_CACHE_MS,
+} from "../../utils/promotionProductSearch";
 
 type ScheduleMode = "exact" | "duration";
 type DiscountType = "percentage" | "fixed-price";
@@ -37,7 +43,7 @@ function ProductRow({
   active,
   onSelect,
 }: {
-  product: SellerProduct;
+  product: SellerProductPickerItem;
   active: boolean;
   onSelect: () => void;
 }) {
@@ -49,7 +55,9 @@ function ProductRow({
       aria-selected={active}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onSelect}
-      className={`flex w-full items-center gap-3 border-b border-[var(--color-border-subtle)] p-3 text-left last:border-0 hover:bg-[var(--color-surface)] ${active ? "bg-[var(--color-navy-surface)]" : ""}`}
+      className={`flex w-full items-center gap-3 border-b border-[var(--color-border-subtle)] p-3 text-left last:border-0 hover:bg-[var(--color-surface)] ${
+        active ? "bg-[var(--color-navy-surface)]" : ""
+      }`}
     >
       <div className="h-12 w-12 shrink-0 overflow-hidden rounded-sm bg-[var(--color-surface)]">
         {product.image ? (
@@ -99,13 +107,16 @@ export default function PromotionModal({
   const initialEnd = promotion?.ends_at
     ? localParts(new Date(promotion.ends_at))
     : initial.end;
-  const [selected, setSelected] = useState<SellerProduct | null>(null);
+  const [selected, setSelected] = useState<SellerProductPickerItem | null>(
+    null,
+  );
   const [query, setQuery] = useState(promotion?.product?.name ?? "");
-  const [results, setResults] = useState<SellerProduct[]>([]);
+  const [results, setResults] = useState<SellerProductPickerItem[]>([]);
   const [page, setPage] = useState(1);
   const [lastPage, setLastPage] = useState(1);
   const [pickerOpen, setPickerOpen] = useState(true);
   const [searching, setSearching] = useState(false);
+  const [searchPending, setSearchPending] = useState(false);
   const [searchError, setSearchError] = useState("");
   const [highlighted, setHighlighted] = useState(0);
   const [name, setName] = useState(promotion?.name ?? "");
@@ -140,53 +151,182 @@ export default function PromotionModal({
   const dialogRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const searchRequestRef = useRef(0);
+  const activeSearchControllerRef = useRef<AbortController | null>(null);
+  const debounceScheduler = useMemo(() => createDebouncedProductSearch(), []);
+  const firstQueryEffectRef = useRef(true);
+  const lastExecutedSearchRef = useRef("");
+  const defaultResultsRef = useRef<{
+    products: SellerProductPickerItem[];
+    page: number;
+    lastPage: number;
+  } | null>(null);
+  const searchCacheRef = useRef(
+    new Map<
+      string,
+      {
+        expiresAt: number;
+        products: SellerProductPickerItem[];
+        page: number;
+        lastPage: number;
+      }
+    >(),
+  );
 
-  const loadProducts = (search: string, targetPage = 1, append = false) => {
-    const controller = new AbortController();
-    const requestId = ++searchRequestRef.current;
-    setSearching(true);
-    setSearchError("");
-    void fetchSellerProducts({
-      search: search.trim(),
-      page: targetPage,
-      per_page: 12,
-      signal: controller.signal,
-    })
-      .then((response) => {
-        if (requestId !== searchRequestRef.current) return;
-        const active = response.data.filter(
-          (product) => product.status === "active",
+  const cancelScheduledSearch = useCallback(() => {
+    debounceScheduler.cancel();
+    setSearchPending(false);
+  }, [debounceScheduler]);
+
+  const cancelActiveSearch = useCallback(() => {
+    activeSearchControllerRef.current?.abort();
+    activeSearchControllerRef.current = null;
+    searchRequestRef.current += 1;
+    setSearching(false);
+  }, []);
+
+  const loadProducts = useCallback(
+    (search: string, targetPage = 1, append = false) => {
+      const normalizedSearch = search.trim();
+      const cacheKey = `${normalizedSearch.toLocaleLowerCase()}:${targetPage}`;
+      const cached = searchCacheRef.current.get(cacheKey);
+
+      cancelScheduledSearch();
+      cancelActiveSearch();
+      lastExecutedSearchRef.current = normalizedSearch;
+
+      if (cached && cached.expiresAt > Date.now()) {
+        setResults((current) =>
+          append ? [...current, ...cached.products] : cached.products,
         );
-        setResults((current) => (append ? [...current, ...active] : active));
-        setPage(response.meta?.current_page ?? targetPage);
-        setLastPage(response.meta?.last_page ?? 1);
-        if (!selected && promotion?.product?.id)
-          setSelected(
-            active.find((product) => product.id === promotion.product?.id) ??
-              null,
+        setPage(cached.page);
+        setLastPage(cached.lastPage);
+        setSearchError("");
+        return null;
+      }
+
+      const controller = new AbortController();
+      const requestId = ++searchRequestRef.current;
+      activeSearchControllerRef.current = controller;
+      setSearching(true);
+      setSearchError("");
+      void fetchSellerProducts({
+        search: normalizedSearch,
+        page: targetPage,
+        per_page: 12,
+        view: "promotion-picker",
+        signal: controller.signal,
+      })
+        .then((response) => {
+          if (!isLatestProductSearch(requestId, searchRequestRef.current))
+            return;
+          const nextPage = response.meta?.current_page ?? targetPage;
+          const nextLastPage = response.meta?.last_page ?? 1;
+          const cacheEntry = {
+            expiresAt: Date.now() + PRODUCT_SEARCH_CACHE_MS,
+            products: response.data,
+            page: nextPage,
+            lastPage: nextLastPage,
+          };
+          searchCacheRef.current.set(cacheKey, cacheEntry);
+          if (!normalizedSearch && targetPage === 1)
+            defaultResultsRef.current = cacheEntry;
+          setResults((current) =>
+            append ? [...current, ...response.data] : response.data,
           );
-      })
-      .catch((cause) => {
-        if (requestId !== searchRequestRef.current) return;
-        if (!(cause instanceof DOMException && cause.name === "AbortError"))
-          setSearchError("Unable to load products.");
-      })
-      .finally(() => {
-        if (requestId === searchRequestRef.current) setSearching(false);
-      });
-    return controller;
-  };
+          setPage(nextPage);
+          setLastPage(nextLastPage);
+          setSelected(
+            (current) =>
+              current ??
+              (promotion?.product?.id
+                ? (response.data.find(
+                    (product) => product.id === promotion.product?.id,
+                  ) ?? null)
+                : null),
+          );
+        })
+        .catch((cause) => {
+          if (!isLatestProductSearch(requestId, searchRequestRef.current))
+            return;
+          if (!(cause instanceof DOMException && cause.name === "AbortError"))
+            setSearchError("Unable to load products.");
+        })
+        .finally(() => {
+          if (isLatestProductSearch(requestId, searchRequestRef.current)) {
+            activeSearchControllerRef.current = null;
+            setSearching(false);
+          }
+        });
+      return controller;
+    },
+    [cancelActiveSearch, cancelScheduledSearch, promotion?.product?.id],
+  );
 
   useEffect(() => {
-    let controller: AbortController | undefined;
-    const timer = window.setTimeout(() => {
-      controller = loadProducts(query, 1);
-    }, 300);
+    const controller = loadProducts(query, 1);
     return () => {
-      window.clearTimeout(timer);
       controller?.abort();
     };
-  }, [query]);
+  }, [loadProducts]);
+
+  useEffect(
+    () => () => {
+      cancelScheduledSearch();
+      cancelActiveSearch();
+    },
+    [cancelActiveSearch, cancelScheduledSearch],
+  );
+
+  useEffect(() => {
+    if (firstQueryEffectRef.current) {
+      firstQueryEffectRef.current = false;
+      return;
+    }
+
+    cancelScheduledSearch();
+    cancelActiveSearch();
+    if (!pickerOpen) return;
+
+    const normalizedSearch = query.trim();
+    if (!normalizedSearch) {
+      const defaults = defaultResultsRef.current;
+      if (defaults) {
+        setResults(defaults.products);
+        setPage(defaults.page);
+        setLastPage(defaults.lastPage);
+        setSearchError("");
+        lastExecutedSearchRef.current = "";
+      } else {
+        loadProducts("", 1);
+      }
+      return;
+    }
+
+    if (!isEligibleProductSearch(normalizedSearch)) return;
+
+    setSearchPending(true);
+    debounceScheduler.schedule(() => {
+      void loadProducts(normalizedSearch, 1);
+    });
+
+    return cancelScheduledSearch;
+  }, [
+    cancelActiveSearch,
+    cancelScheduledSearch,
+    debounceScheduler,
+    loadProducts,
+    pickerOpen,
+    query,
+  ]);
+
+  const searchImmediately = () => {
+    const normalizedSearch = query.trim();
+    setSearchPending(false);
+    if (!isEligibleProductSearch(normalizedSearch)) return;
+    debounceScheduler.flush(() => {
+      void loadProducts(normalizedSearch, 1);
+    });
+  };
 
   useEffect(() => {
     const previous = document.body.style.overflow;
@@ -222,9 +362,7 @@ export default function PromotionModal({
   }, [onClose, pickerOpen, saving]);
 
   const normalPrice = selected ? (selected.sale_price ?? selected.price) : 0;
-  const hasVariants = Boolean(
-    selected?.variants.some((variant) => variant.active),
-  );
+  const hasVariants = Boolean(selected?.has_active_variants);
   const numericValue = Number(value);
   const promotionPrice =
     type === "percentage"
@@ -256,21 +394,20 @@ export default function PromotionModal({
       (!limitTotal || Number(buyerLimit) <= Number(usageLimit)));
   const canSubmit = Boolean(
     selected &&
-    name.trim() &&
-    name.trim().length <= 120 &&
-    validDiscount &&
-    validSchedule &&
-    validUsage &&
-    validBuyer &&
-    !(hasVariants && type === "fixed-price"),
+      name.trim() &&
+      name.trim().length <= 120 &&
+      validDiscount &&
+      validSchedule &&
+      validUsage &&
+      validBuyer &&
+      !(hasVariants && type === "fixed-price"),
   );
 
-  const selectProduct = (product: SellerProduct) => {
+  const selectProduct = (product: SellerProductPickerItem) => {
     setSelected(product);
     setQuery(product.name);
     setPickerOpen(false);
-    if (product.variants.some((variant) => variant.active))
-      setType("percentage");
+    if (product.has_active_variants) setType("percentage");
   };
   const setUntil = (hour: number) => {
     const start = new Date();
@@ -379,10 +516,14 @@ export default function PromotionModal({
               ) : (
                 <div className="relative">
                   <div className="relative">
-                    <Search
-                      size={16}
-                      className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-ink-muted)]"
-                    />
+                    <button
+                      type="button"
+                      aria-label="Search products"
+                      onClick={searchImmediately}
+                      className="absolute left-1 top-1/2 z-10 -translate-y-1/2 rounded-sm p-2 text-[var(--color-ink-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-navy)]"
+                    >
+                      <Search size={16} />
+                    </button>
                     <input
                       ref={searchRef}
                       role="combobox"
@@ -407,13 +548,21 @@ export default function PromotionModal({
                           event.preventDefault();
                           setHighlighted((value) => Math.max(0, value - 1));
                         }
-                        if (event.key === "Enter" && results[highlighted]) {
+                        if (event.key === "Enter") {
                           event.preventDefault();
-                          selectProduct(results[highlighted]);
+                          const normalizedSearch = query.trim();
+                          if (
+                            isEligibleProductSearch(normalizedSearch) &&
+                            normalizedSearch !== lastExecutedSearchRef.current
+                          ) {
+                            searchImmediately();
+                          } else if (results[highlighted]) {
+                            selectProduct(results[highlighted]);
+                          }
                         }
                       }}
                       placeholder="Search products by name or SKU..."
-                      className={`${INPUT} pl-9 pr-9`}
+                      className={`${INPUT} pl-10 pr-9`}
                     />
                     <ChevronDown
                       size={16}
@@ -426,6 +575,17 @@ export default function PromotionModal({
                       role="listbox"
                       className="mt-1 max-h-72 overflow-y-auto rounded-sm border border-[var(--color-border)] bg-white shadow-lg"
                     >
+                      {searchPending && (
+                        <p className="border-b border-[var(--color-border-subtle)] px-3 py-2 text-xs text-[var(--color-ink-muted)]">
+                          Searching in a moment...
+                        </p>
+                      )}
+                      {searching && results.length > 0 && (
+                        <p className="flex items-center gap-2 border-b border-[var(--color-border-subtle)] px-3 py-2 text-xs text-[var(--color-ink-muted)]">
+                          <LoaderCircle size={13} className="animate-spin" />
+                          Searching products...
+                        </p>
+                      )}
                       {searching && !results.length ? (
                         <div className="flex items-center justify-center gap-2 p-6 text-sm text-[var(--color-ink-muted)]">
                           <LoaderCircle size={16} className="animate-spin" />
@@ -436,7 +596,7 @@ export default function PromotionModal({
                           <p>{searchError}</p>
                           <button
                             type="button"
-                            onClick={() => loadProducts(query)}
+                            onClick={searchImmediately}
                             className="mt-2 text-[var(--color-navy)] underline"
                           >
                             Retry
@@ -526,7 +686,9 @@ export default function PromotionModal({
                         step="0.01"
                         value={value}
                         onChange={(event) => setValue(event.target.value)}
-                        className={`${INPUT} ${type === "fixed-price" ? "pl-11" : "pr-8"}`}
+                        className={`${INPUT} ${
+                          type === "fixed-price" ? "pl-11" : "pr-8"
+                        }`}
                       />
                       {type === "percentage" && (
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm">
@@ -608,7 +770,11 @@ export default function PromotionModal({
                           key={amount}
                           type="button"
                           onClick={() => setUsageLimit(String(amount))}
-                          className={`rounded-sm border px-3 py-2 text-xs ${Number(usageLimit) === amount ? "border-[var(--color-navy)] bg-[var(--color-navy-surface)] text-[var(--color-navy)]" : "border-[var(--color-border)]"}`}
+                          className={`rounded-sm border px-3 py-2 text-xs ${
+                            Number(usageLimit) === amount
+                              ? "border-[var(--color-navy)] bg-[var(--color-navy-surface)] text-[var(--color-navy)]"
+                              : "border-[var(--color-border)]"
+                          }`}
                         >
                           {amount} uses
                         </button>
@@ -663,7 +829,11 @@ export default function PromotionModal({
                     key={mode}
                     type="button"
                     onClick={() => setScheduleMode(mode)}
-                    className={`flex-1 rounded-sm px-3 py-2 text-xs font-[600] ${scheduleMode === mode ? "bg-[var(--color-navy)] text-white" : "text-[var(--color-ink-muted)]"}`}
+                    className={`flex-1 rounded-sm px-3 py-2 text-xs font-[600] ${
+                      scheduleMode === mode
+                        ? "bg-[var(--color-navy)] text-white"
+                        : "text-[var(--color-ink-muted)]"
+                    }`}
                   >
                     {mode === "exact" ? "Exact schedule" : "Duration"}
                   </button>
@@ -687,7 +857,11 @@ export default function PromotionModal({
                         key={minutes}
                         type="button"
                         onClick={() => setDuration(Number(minutes))}
-                        className={`rounded-sm border px-3 py-2 text-xs ${duration === Number(minutes) ? "border-[var(--color-navy)] bg-[var(--color-navy-surface)] text-[var(--color-navy)]" : "border-[var(--color-border)]"}`}
+                        className={`rounded-sm border px-3 py-2 text-xs ${
+                          duration === Number(minutes)
+                            ? "border-[var(--color-navy)] bg-[var(--color-navy-surface)] text-[var(--color-navy)]"
+                            : "border-[var(--color-border)]"
+                        }`}
                       >
                         {label}
                       </button>

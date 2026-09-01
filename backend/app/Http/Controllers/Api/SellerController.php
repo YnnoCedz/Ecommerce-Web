@@ -734,10 +734,23 @@ class SellerController extends Controller
             return response()->json(['data' => []]);
         }
 
+        $promotionPicker = $request->input('view') === 'promotion-picker';
         $query = Product::query()
-            ->with(['category', 'images' => fn ($query) => $query->orderBy('sort_order')->orderBy('id'), 'variants.options'])
             ->where('seller_id', $seller->id)
             ->whereNull('deleted_at');
+
+        if ($promotionPicker) {
+            $query->select([
+                'id', 'seller_id', 'name', 'slug', 'sku', 'status', 'price',
+                'sale_price', 'stock_quantity',
+            ])->where('status', 'active')
+                ->with(['images' => fn ($imageQuery) => $imageQuery
+                    ->select(['id', 'product_id', 'storage_disk', 'file_path', 'alt_text', 'sort_order', 'is_primary'])
+                    ->orderByDesc('is_primary')->orderBy('sort_order')->orderBy('id')])
+                ->withExists(['variants as has_active_variants' => fn ($variantQuery) => $variantQuery->where('active', true)]);
+        } else {
+            $query->with(['category', 'images' => fn ($imageQuery) => $imageQuery->orderBy('sort_order')->orderBy('id'), 'variants.options']);
+        }
 
         $search = trim((string) $request->input('search', ''));
         if ($search !== '') {
@@ -750,7 +763,6 @@ class SellerController extends Controller
             });
         }
 
-        $countQuery = clone $query;
         $applyStockStatus = function ($builder, string $status) {
             $comparison = match ($status) {
                 'in-stock' => fn ($stockQuery) => $stockQuery->whereColumn('stock_quantity', '>', 'low_stock_threshold'),
@@ -766,12 +778,16 @@ class SellerController extends Controller
                     });
             });
         };
-        $counts = [
-            'all' => (clone $countQuery)->count(),
-            'in-stock' => $applyStockStatus(clone $countQuery, 'in-stock')->count(),
-            'low-stock' => $applyStockStatus(clone $countQuery, 'low-stock')->count(),
-            'out-of-stock' => $applyStockStatus(clone $countQuery, 'out-of-stock')->count(),
-        ];
+        $counts = null;
+        if (! $promotionPicker) {
+            $countQuery = clone $query;
+            $counts = [
+                'all' => (clone $countQuery)->count(),
+                'in-stock' => $applyStockStatus(clone $countQuery, 'in-stock')->count(),
+                'low-stock' => $applyStockStatus(clone $countQuery, 'low-stock')->count(),
+                'out-of-stock' => $applyStockStatus(clone $countQuery, 'out-of-stock')->count(),
+            ];
+        }
 
         match ($request->input('stock_status')) {
             'in-stock' => $applyStockStatus($query, 'in-stock'),
@@ -780,10 +796,14 @@ class SellerController extends Controller
             default => null,
         };
 
-        if ($request->hasAny(['page', 'per_page', 'search', 'stock_status'])) {
+        if ($request->hasAny(['page', 'per_page', 'search', 'stock_status', 'view'])) {
             $perPage = min(100, max(1, (int) $request->input('per_page', 20)));
             $products = $query->latest('id')->paginate($perPage);
-            $products->setCollection($products->getCollection()->map(fn (Product $product) => $this->productPayload($product)));
+            $products->setCollection($products->getCollection()->map(
+                fn (Product $product) => $promotionPicker
+                    ? $this->promotionPickerProductPayload($product)
+                    : $this->productPayload($product)
+            ));
 
             return response()->json([
                 'data' => $products->items(),
@@ -794,7 +814,7 @@ class SellerController extends Controller
                     'total' => $products->total(),
                     'from' => $products->firstItem(),
                     'to' => $products->lastItem(),
-                    'counts' => $counts,
+                    ...($counts === null ? [] : ['counts' => $counts]),
                 ],
             ]);
         }
@@ -1097,6 +1117,24 @@ class SellerController extends Controller
             ])->values()->all(),
             'created_at' => optional($product->created_at)->toISOString(),
             'published_at' => optional($product->published_at)->toISOString(),
+        ];
+    }
+
+    protected function promotionPickerProductPayload(Product $product): array
+    {
+        $primaryImage = $product->images->first();
+
+        return [
+            'id' => $product->id,
+            'name' => $product->name,
+            'slug' => $product->slug,
+            'sku' => $product->sku,
+            'status' => $product->status,
+            'price' => (float) $product->price,
+            'sale_price' => $product->sale_price !== null ? (float) $product->sale_price : null,
+            'stock_quantity' => (int) $product->stock_quantity,
+            'image' => $this->imageUrl($primaryImage),
+            'has_active_variants' => (bool) $product->has_active_variants,
         ];
     }
 

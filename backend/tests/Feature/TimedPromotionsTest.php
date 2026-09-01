@@ -17,6 +17,70 @@ class TimedPromotionsTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_seller_promotions_listing_is_authorized_scoped_and_historical_record_safe(): void
+    {
+        [$user, $seller, $product] = $this->sellerProduct();
+        [, $otherSeller, $otherProduct] = $this->sellerProduct();
+
+        Promotion::create([
+            'seller_id' => $seller->id,
+            'product_id' => null,
+            'kind' => 'coupon',
+            'code' => 'LEGACY-UNLIMITED',
+            'name' => 'Historical unlimited promotion',
+            'type' => 'percentage',
+            'value' => 10,
+            'usage_limit' => null,
+            'per_buyer_limit' => null,
+            'status' => 'active',
+            'applies_to_label' => 'Historical products',
+        ]);
+        $limited = $this->promotion($seller, $product, now()->subMinute(), now()->addHour(), 700);
+        $limited->update(['usage_limit' => 20, 'per_buyer_limit' => 1]);
+        $this->promotion($otherSeller, $otherProduct, now()->subMinute(), now()->addHour(), 600);
+
+        $this->getJson('/api/seller/promotions')->assertUnauthorized();
+        $this->actingAs(User::factory()->create(['role' => 'buyer', 'status' => 'active']))
+            ->getJson('/api/seller/promotions')->assertForbidden();
+
+        $response = $this->actingAs($user)->getJson('/api/seller/promotions')
+            ->assertOk()
+            ->assertJsonCount(2, 'data');
+
+        $ids = collect($response->json('data'))->pluck('id');
+        $this->assertTrue($ids->contains($limited->id));
+        $this->assertFalse($ids->contains(Promotion::where('seller_id', $otherSeller->id)->value('id')));
+        $response->assertJsonFragment([
+            'name' => 'Historical unlimited promotion',
+            'usage_limit' => null,
+            'per_buyer_limit' => null,
+            'product' => null,
+        ]);
+    }
+
+    public function test_seller_with_no_promotions_receives_an_empty_list(): void
+    {
+        [$user] = $this->sellerProduct();
+
+        $this->actingAs($user)->getJson('/api/seller/promotions')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+    }
+
+    public function test_deleted_promotion_product_is_serialized_as_null(): void
+    {
+        [$user, $seller, $product] = $this->sellerProduct();
+        $promotion = $this->promotion($seller, $product, now()->subMinute(), now()->addHour(), 700);
+        $promotion->update(['applies_to_label' => $product->name]);
+        $product->forceDelete();
+
+        $this->actingAs($user)->getJson('/api/seller/promotions')
+            ->assertOk()
+            ->assertJsonPath('data.0.id', $promotion->id)
+            ->assertJsonPath('data.0.product', null)
+            ->assertJsonPath('data.0.applies_to', $product->name);
+    }
+
     public function test_seller_can_create_a_scheduled_deal_for_owned_product(): void
     {
         [$user, $seller, $product] = $this->sellerProduct();

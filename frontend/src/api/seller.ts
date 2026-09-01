@@ -98,6 +98,21 @@ export type SellerProduct = {
   published_at: string | null
 }
 
+export type SellerProductPickerItem = Pick<
+  SellerProduct,
+  | "id"
+  | "name"
+  | "slug"
+  | "sku"
+  | "status"
+  | "price"
+  | "sale_price"
+  | "stock_quantity"
+  | "image"
+> & {
+  has_active_variants: boolean
+}
+
 export type SellerProductVariantDraft = {
   server_id?: number
   name: string
@@ -387,34 +402,49 @@ export type SellerProductsMeta = {
   total: number
   from: number | null
   to: number | null
-  counts: Record<"all" | "in-stock" | "low-stock" | "out-of-stock", number>
+  counts?: Record<"all" | "in-stock" | "low-stock" | "out-of-stock", number>
 }
 
-export async function fetchSellerProducts(params?: {
+type SellerProductsParams = {
   page?: number
   per_page?: number
   search?: string
   stock_status?: string
+  view?: "promotion-picker"
   signal?: AbortSignal
-}) {
+}
+
+export function fetchSellerProducts(
+  params: SellerProductsParams & { view: "promotion-picker" },
+): Promise<{ data: SellerProductPickerItem[]; meta?: SellerProductsMeta }>
+export function fetchSellerProducts(
+  params?: SellerProductsParams,
+): Promise<{ data: SellerProduct[]; meta?: SellerProductsMeta }>
+export async function fetchSellerProducts(
+  params?: SellerProductsParams,
+): Promise<{
+  data: Array<SellerProduct | SellerProductPickerItem>
+  meta?: SellerProductsMeta
+}> {
   const query = new URLSearchParams()
   if (params?.page) query.set("page", String(params.page))
   if (params?.per_page) query.set("per_page", String(params.per_page))
   if (params?.search) query.set("search", params.search)
   if (params?.stock_status && params.stock_status !== "all")
     query.set("stock_status", params.stock_status)
+  if (params?.view) query.set("view", params.view)
   const suffix = query.toString() ? `?${query.toString()}` : ""
   if (params?.signal) {
-    return apiFetch<{ data: SellerProduct[]; meta?: SellerProductsMeta }>(
-      `/seller/products${suffix}`,
-      { signal: params.signal },
-    )
+    return apiFetch<{
+      data: Array<SellerProduct | SellerProductPickerItem>
+      meta?: SellerProductsMeta
+    }>(`/seller/products${suffix}`, { signal: params.signal })
   }
   return singleFlight(`seller:products:${suffix}`, (signal) =>
-    apiFetch<{ data: SellerProduct[]; meta?: SellerProductsMeta }>(
-      `/seller/products${suffix}`,
-      { signal },
-    ),
+    apiFetch<{
+      data: Array<SellerProduct | SellerProductPickerItem>
+      meta?: SellerProductsMeta
+    }>(`/seller/products${suffix}`, { signal }),
   )
 }
 
