@@ -860,6 +860,9 @@ class SellerController extends Controller
         }
 
         $data = $this->validateTimedPromotion($request, $seller);
+        if (($data['usage_limit'] ?? null) !== null && (int) $data['usage_limit'] < (int) $promotion->usage_count) {
+            abort(422, 'The total redemption limit cannot be lower than the number already used.');
+        }
         DB::transaction(function () use ($data, $promotion, $seller): void {
             $product = Product::query()->where('seller_id', $seller->id)->where('status', 'active')->whereNull('deleted_at')->lockForUpdate()->findOrFail($data['product_id']);
             $this->ensureNoPromotionOverlap($product, $data['starts_at'], $data['ends_at'], $promotion->id);
@@ -896,6 +899,8 @@ class SellerController extends Controller
             'deal_price' => ['nullable', 'numeric', 'gt:0'],
             'starts_at' => ['required', 'date'],
             'ends_at' => ['required', 'date', 'after:starts_at'],
+            'usage_limit' => ['nullable', 'integer', 'min:1'],
+            'per_buyer_limit' => ['nullable', 'integer', 'min:1'],
         ]);
 
         $product = Product::query()->where('seller_id', $seller->id)->where('status', 'active')->whereNull('deleted_at')->find($data['product_id']);
@@ -922,6 +927,10 @@ class SellerController extends Controller
 
         $data['starts_at'] = Carbon::parse($data['starts_at'])->setTimezone(config('app.timezone'));
         $data['ends_at'] = Carbon::parse($data['ends_at'])->setTimezone(config('app.timezone'));
+
+        if (isset($data['usage_limit'], $data['per_buyer_limit']) && $data['per_buyer_limit'] > $data['usage_limit']) {
+            abort(422, 'The per-buyer limit cannot exceed the total redemption limit.');
+        }
 
         return $data;
     }
@@ -956,6 +965,7 @@ class SellerController extends Controller
                 : 'product-price',
             'min_order' => $promotion->min_order !== null ? (float) $promotion->min_order : null,
             'usage_count' => (int) $promotion->usage_count, 'usage_limit' => $promotion->usage_limit !== null ? (int) $promotion->usage_limit : null,
+            'per_buyer_limit' => $promotion->per_buyer_limit !== null ? (int) $promotion->per_buyer_limit : null,
             'starts_at' => $promotion->starts_at?->toISOString(), 'ends_at' => $promotion->ends_at?->toISOString(),
             'start_date' => $promotion->starts_at?->toDateString(), 'end_date' => $promotion->ends_at?->toDateString(),
             'status' => $promotion->kind === 'deal' ? $promotion->derivedStatus() : $promotion->status,

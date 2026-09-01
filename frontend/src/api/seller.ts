@@ -251,6 +251,7 @@ export type SellerPromotion = {
   min_order: number | null
   usage_count: number
   usage_limit: number | null
+  per_buyer_limit: number | null
   start_date: string | null
   end_date: string | null
   status: string
@@ -394,6 +395,7 @@ export async function fetchSellerProducts(params?: {
   per_page?: number
   search?: string
   stock_status?: string
+  signal?: AbortSignal
 }) {
   const query = new URLSearchParams()
   if (params?.page) query.set("page", String(params.page))
@@ -402,9 +404,16 @@ export async function fetchSellerProducts(params?: {
   if (params?.stock_status && params.stock_status !== "all")
     query.set("stock_status", params.stock_status)
   const suffix = query.toString() ? `?${query.toString()}` : ""
-  return singleFlight(`seller:products:${suffix}`, () =>
+  if (params?.signal) {
+    return apiFetch<{ data: SellerProduct[]; meta?: SellerProductsMeta }>(
+      `/seller/products${suffix}`,
+      { signal: params.signal },
+    )
+  }
+  return singleFlight(`seller:products:${suffix}`, (signal) =>
     apiFetch<{ data: SellerProduct[]; meta?: SellerProductsMeta }>(
       `/seller/products${suffix}`,
+      { signal },
     ),
   )
 }
@@ -465,6 +474,8 @@ export type TimedPromotionPayload = {
   deal_price?: number | null
   starts_at: string
   ends_at: string
+  usage_limit?: number | null
+  per_buyer_limit?: number | null
 }
 
 export function createSellerPromotion(payload: TimedPromotionPayload) {

@@ -5,10 +5,11 @@ namespace App\Services;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Promotion;
+use App\Models\User;
 
 class ProductPricingService
 {
-    public function for(Product $product, ?ProductVariant $variant = null): array
+    public function for(Product $product, ?ProductVariant $variant = null, ?User $buyer = null): array
     {
         $variantHasRegularPrice = $variant?->price_override !== null;
         $regularPrice = (float) ($variantHasRegularPrice
@@ -21,7 +22,7 @@ class ProductPricingService
         $promotion = $product->relationLoaded('activePromotion')
             ? $product->activePromotion
             : $product->activePromotion()->first();
-        $promotionPrice = $this->promotionPrice($product, $variant, $promotion, $normalPrice);
+        $promotionPrice = $this->promotionPrice($product, $variant, $promotion, $normalPrice, $buyer);
         $appliedPromotion = $promotionPrice !== null ? $promotion : null;
         $effectivePrice = $promotionPrice ?? $normalPrice;
         $discountAmount = round(max(0, $regularPrice - $effectivePrice), 2);
@@ -42,9 +43,9 @@ class ProductPricingService
         ];
     }
 
-    private function promotionPrice(Product $product, ?ProductVariant $variant, ?Promotion $promotion, float $normalPrice): ?float
+    private function promotionPrice(Product $product, ?ProductVariant $variant, ?Promotion $promotion, float $normalPrice, ?User $buyer): ?float
     {
-        if (! $promotion instanceof Promotion || $product->status !== 'active' || $product->trashed()) {
+        if (! $promotion instanceof Promotion || ! $promotion->canBeUsedBy($buyer) || $product->status !== 'active' || $product->trashed()) {
             return null;
         }
 

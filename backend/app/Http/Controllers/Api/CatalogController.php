@@ -54,7 +54,7 @@ class CatalogController extends Controller
                 'stock_quantity', 'track_inventory', 'free_shipping', 'status', 'published_at',
             ])
             ->with([
-                'activePromotion:id,product_id,name,type,value,deal_price,starts_at,ends_at',
+                'activePromotion:id,product_id,name,type,value,deal_price,usage_limit,usage_count,per_buyer_limit,starts_at,ends_at',
                 'seller:id,user_id,slug,business_name,trade_name',
                 'category:id,slug,name',
                 'primaryImage:id,product_id,file_path,storage_disk',
@@ -109,7 +109,7 @@ class CatalogController extends Controller
         $products = Product::query()
             ->select(['id', 'seller_id', 'category_id', 'slug', 'name', 'price', 'sale_price', 'stock_quantity', 'track_inventory', 'free_shipping', 'status', 'published_at'])
             ->with([
-                'activePromotion:id,product_id,name,type,value,deal_price,starts_at,ends_at',
+                'activePromotion:id,product_id,name,type,value,deal_price,usage_limit,usage_count,per_buyer_limit,starts_at,ends_at',
                 'seller:id,user_id,slug,business_name,trade_name',
                 'category:id,slug,name',
                 'primaryImage:id,product_id,file_path,storage_disk',
@@ -216,7 +216,7 @@ class CatalogController extends Controller
                 'category.parent',
                 'images' => fn ($images) => $images->orderByDesc('is_primary')->orderBy('sort_order')->orderBy('id'),
                 'variants.options',
-                'activePromotion:id,product_id,name,type,value,deal_price,starts_at,ends_at',
+                'activePromotion:id,product_id,name,type,value,deal_price,usage_limit,usage_count,per_buyer_limit,starts_at,ends_at',
             ])
             ->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
             ->withCount(['reviews as rating_count' => fn ($reviews) => $reviews->where('status', 'approved')])
@@ -241,7 +241,7 @@ class CatalogController extends Controller
                 'seller.user',
                 'category',
                 'images' => fn ($images) => $images->orderBy('sort_order')->orderBy('id'),
-                'activePromotion:id,product_id,name,type,value,deal_price,starts_at,ends_at',
+                'activePromotion:id,product_id,name,type,value,deal_price,usage_limit,usage_count,per_buyer_limit,starts_at,ends_at',
             ])
             ->withExists(['variants as has_active_variants' => fn ($variants) => $variants->where('active', true)])
             ->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')
@@ -351,7 +351,7 @@ class CatalogController extends Controller
                     'images' => fn ($images) => $images->orderBy('sort_order')->orderBy('id'),
                     'category',
                     'seller.user',
-                    'activePromotion:id,product_id,name,type,value,deal_price,starts_at,ends_at',
+                    'activePromotion:id,product_id,name,type,value,deal_price,usage_limit,usage_count,per_buyer_limit,starts_at,ends_at',
                 ])
                     ->withExists(['variants as has_active_variants' => fn ($variants) => $variants->where('active', true)])
                     ->withAvg(['reviews as rating' => fn ($reviews) => $reviews->where('status', 'approved')], 'rating')

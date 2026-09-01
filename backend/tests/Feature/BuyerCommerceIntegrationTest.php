@@ -365,6 +365,32 @@ class BuyerCommerceIntegrationTest extends TestCase
         $this->assertDatabaseHas('order_items', ['order_id' => $response->json('data.id'), 'product_id' => $product->id, 'unit_price' => 900]);
     }
 
+    public function test_checkout_atomically_consumes_a_limited_promotion(): void
+    {
+        $buyer = User::factory()->create();
+        $address = Address::create(['user_id' => $buyer->id, ...$this->addressPayload(), 'is_default' => true]);
+        $product = $this->product('limited-checkout-deal', 1000, 5);
+        $promotion = Promotion::create([
+            'seller_id' => $product->seller_id, 'product_id' => $product->id, 'kind' => 'deal',
+            'code' => 'LIMITED-CHECKOUT', 'name' => 'Limited checkout deal', 'type' => 'fixed-price',
+            'value' => 700, 'deal_price' => 700, 'starts_at' => now()->subMinute(),
+            'ends_at' => now()->addHour(), 'usage_limit' => 1, 'per_buyer_limit' => 1, 'status' => 'active',
+        ]);
+        $cart = Cart::create(['user_id' => $buyer->id, 'status' => 'active']);
+        $cartItem = CartItem::create(['cart_id' => $cart->id, 'seller_id' => $product->seller_id, 'product_id' => $product->id, 'quantity' => 1, 'unit_price' => 700, 'line_total' => 700, 'saved_for_later' => false]);
+
+        $response = $this->actingAs($buyer)->postJson('/api/checkout', [
+            'address_id' => $address->id, 'payment_method' => 'cod', 'cart_item_ids' => [$cartItem->id],
+        ])->assertCreated()->assertJsonPath('data.subtotal', 700);
+
+        $this->assertDatabaseHas('promotion_redemptions', [
+            'promotion_id' => $promotion->id, 'order_id' => $response->json('data.id'), 'buyer_id' => $buyer->id,
+        ]);
+        $this->assertDatabaseHas('order_items', ['order_id' => $response->json('data.id'), 'promotion_id' => $promotion->id]);
+        $this->assertDatabaseHas('promotions', ['id' => $promotion->id, 'usage_count' => 1]);
+        $this->assertSame('limit_reached', $promotion->fresh()->derivedStatus());
+    }
+
     public function test_cart_uses_primary_product_image_and_resolves_its_storage_url(): void
     {
         $buyer = User::factory()->create();

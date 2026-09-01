@@ -18,6 +18,7 @@ class Promotion extends Model
         'min_order',
         'usage_limit',
         'usage_count',
+        'per_buyer_limit',
         'starts_at',
         'ends_at',
         'cancelled_at',
@@ -34,6 +35,9 @@ class Promotion extends Model
         'ends_at' => 'datetime',
         'cancelled_at' => 'datetime',
         'new_customers_only' => 'boolean',
+        'usage_limit' => 'integer',
+        'usage_count' => 'integer',
+        'per_buyer_limit' => 'integer',
     ];
 
     public function seller()
@@ -51,6 +55,26 @@ class Promotion extends Model
         return $this->belongsTo(Product::class);
     }
 
+    public function redemptions()
+    {
+        return $this->hasMany(PromotionRedemption::class);
+    }
+
+    public function hasUsageRemaining(): bool
+    {
+        return $this->usage_limit === null || (int) $this->usage_count < (int) $this->usage_limit;
+    }
+
+    public function canBeUsedBy(?User $buyer): bool
+    {
+        if (! $this->hasUsageRemaining()) {
+            return false;
+        }
+
+        return ! $buyer || $this->per_buyer_limit === null
+            || $this->redemptions()->where('buyer_id', $buyer->id)->count() < (int) $this->per_buyer_limit;
+    }
+
     public function derivedStatus(): string
     {
         if ($this->cancelled_at || $this->status === 'cancelled') {
@@ -59,6 +83,10 @@ class Promotion extends Model
 
         if ($this->kind === 'deal' && (! $this->starts_at || ! $this->ends_at)) {
             return 'draft';
+        }
+
+        if (! $this->hasUsageRemaining()) {
+            return 'limit_reached';
         }
 
         $now = now();

@@ -91,7 +91,7 @@ class ProductSearchService
             ->with([
                 'seller.user',
                 'category.parent',
-                'activePromotion:id,product_id,name,type,value,deal_price,starts_at,ends_at',
+                'activePromotion:id,product_id,name,type,value,deal_price,usage_limit,usage_count,per_buyer_limit,starts_at,ends_at',
                 'images' => fn ($images) => $images->orderBy('sort_order')->orderBy('id'),
             ])
             ->withExists(['variants as has_active_variants' => fn ($variants) => $variants->where('active', true)])

@@ -12,7 +12,7 @@ class PaymentService
 {
     private PaymentProvider $provider;
 
-    public function __construct(SimulatedPaymentProvider $simulated)
+    public function __construct(SimulatedPaymentProvider $simulated, private readonly PromotionRedemptionService $redemptions)
     {
         if (config('payments.provider') !== 'simulated') {
             throw new RuntimeException('The configured payment provider is not available.');
@@ -32,7 +32,16 @@ class PaymentService
             abort(422, 'This payment is not eligible for retry.');
         }
 
-        return $this->charge($order, $buyer, (string) $order->payment_method, $details);
+        $promotions = $this->redemptions->lockEligible(
+            $order->items()->whereNotNull('promotion_id')->pluck('promotion_id'),
+            $buyer,
+        );
+        $payment = $this->charge($order, $buyer, (string) $order->payment_method, $details);
+        if ($payment->status !== 'failed') {
+            $this->redemptions->consumeLocked($promotions, $buyer, $order);
+        }
+
+        return $payment;
     }
 
     public function refundOrderAmount(Order $order, float $amount, string $reason): ?Payment

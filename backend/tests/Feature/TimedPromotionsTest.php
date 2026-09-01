@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Promotion;
+use App\Models\PromotionRedemption;
+use App\Models\Order;
 use App\Models\Seller;
 use App\Models\User;
 use App\Services\ProductPricingService;
@@ -123,6 +125,73 @@ class TimedPromotionsTest extends TestCase
         $this->promotion($otherSeller, $variantProduct, now()->subHour(), now()->addHour(), 700);
 
         $this->getJson('/api/deals')->assertOk()->assertJsonCount(0, 'data');
+    }
+
+    public function test_seller_can_create_combined_time_and_usage_limits(): void
+    {
+        [$user, $seller, $product] = $this->sellerProduct();
+
+        $this->actingAs($user)->postJson('/api/seller/promotions', [
+            'product_id' => $product->id,
+            'name' => 'Five minute limited deal',
+            'type' => 'percentage',
+            'value' => 20,
+            'starts_at' => now()->toISOString(),
+            'ends_at' => now()->addMinutes(5)->toISOString(),
+            'usage_limit' => 20,
+            'per_buyer_limit' => 1,
+        ])->assertCreated()
+            ->assertJsonPath('data.usage_limit', 20)
+            ->assertJsonPath('data.per_buyer_limit', 1);
+
+        $this->assertDatabaseHas('promotions', [
+            'seller_id' => $seller->id,
+            'product_id' => $product->id,
+            'usage_limit' => 20,
+            'per_buyer_limit' => 1,
+        ]);
+    }
+
+    public function test_invalid_usage_limits_are_rejected(): void
+    {
+        [$user, , $product] = $this->sellerProduct();
+        $payload = [
+            'product_id' => $product->id,
+            'name' => 'Limited deal',
+            'type' => 'percentage',
+            'value' => 20,
+            'starts_at' => now()->addMinute()->toISOString(),
+            'ends_at' => now()->addHour()->toISOString(),
+        ];
+
+        $this->actingAs($user)->postJson('/api/seller/promotions', [...$payload, 'usage_limit' => 0])
+            ->assertUnprocessable()->assertJsonValidationErrors('usage_limit');
+        $this->actingAs($user)->postJson('/api/seller/promotions', [...$payload, 'usage_limit' => 2, 'per_buyer_limit' => 3])
+            ->assertUnprocessable()->assertJsonPath('message', 'The per-buyer limit cannot exceed the total redemption limit.');
+    }
+
+    public function test_exhausted_and_buyer_limited_promotions_fail_closed_in_pricing(): void
+    {
+        [, $seller, $product] = $this->sellerProduct();
+        $buyer = User::factory()->create(['role' => 'buyer']);
+        $promotion = $this->promotion($seller, $product, now()->subMinute(), now()->addHour(), 700);
+        $promotion->update(['usage_limit' => 2, 'usage_count' => 1, 'per_buyer_limit' => 1]);
+        $order = Order::create([
+            'buyer_id' => $buyer->id, 'order_number' => 'PROMO-TEST-'.uniqid(), 'status' => 'pending',
+            'payment_status' => 'paid', 'currency' => 'PHP', 'shipping_name' => 'Test Buyer',
+            'shipping_phone' => '+639171234567', 'shipping_line1' => 'Test Address',
+            'shipping_city' => 'Makati', 'shipping_province' => 'Metro Manila',
+            'shipping_postal_code' => '1200', 'subtotal' => 700, 'grand_total' => 700,
+        ]);
+        PromotionRedemption::create(['promotion_id' => $promotion->id, 'order_id' => $order->id, 'buyer_id' => $buyer->id, 'redeemed_at' => now()]);
+
+        $pricing = app(ProductPricingService::class);
+        $this->assertSame(700.0, $pricing->for($product->fresh())['effective_price']);
+        $this->assertSame(1000.0, $pricing->for($product->fresh(), null, $buyer)['effective_price']);
+
+        $promotion->update(['usage_count' => 2]);
+        $this->assertSame('limit_reached', $promotion->fresh()->derivedStatus());
+        $this->assertSame(1000.0, $pricing->for($product->fresh())['effective_price']);
     }
 
     private function sellerProduct(): array

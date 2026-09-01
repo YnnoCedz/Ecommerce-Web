@@ -8,6 +8,7 @@ use App\Models\CartItem;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Models\Promotion;
 use App\Models\Seller;
 use App\Models\SellerOrder;
 use App\Models\User;
@@ -23,6 +24,7 @@ class CheckoutService
         private readonly PaymentService $payments,
         private readonly MediaStorageService $media,
         private readonly ProductPricingService $pricing,
+        private readonly PromotionRedemptionService $redemptions,
     ) {}
 
     public function checkout(User $buyer, array $data): Order
@@ -80,7 +82,7 @@ class CheckoutService
                 ]);
             }
 
-            $checkoutLines = $this->buildCheckoutLines($cartItems);
+            $checkoutLines = $this->buildCheckoutLines($cartItems, $buyer);
             $groups = $checkoutLines->groupBy(fn (array $line) => $line['seller']->id);
             $subtotal = round((float) $checkoutLines->sum('subtotal'), 2);
             $shippingTotal = round((float) $groups->sum(fn (Collection $lines) => $this->shippingForGroup($lines)), 2);
@@ -153,6 +155,7 @@ class CheckoutService
                         'seller_id' => $seller->id,
                         'product_id' => $product->id,
                         'product_variant_id' => $variant?->id,
+                        'promotion_id' => $line['promotion']?->id,
                         'product_name' => $product->name,
                         'product_slug' => $product->slug,
                         'variant_name' => $variant?->name,
@@ -189,6 +192,11 @@ class CheckoutService
 
             $payment = $this->payments->charge($order, $buyer, $data['payment_method'], $data['payment_details'] ?? []);
             $order->forceFill(['payment_status' => $payment->status])->save();
+
+            if ($payment->status !== 'failed') {
+                $promotions = $this->redemptions->lockEligible($checkoutLines->pluck('promotion.id'), $buyer);
+                $this->redemptions->consumeLocked($promotions, $buyer, $order);
+            }
 
             $this->notifications->publishToUser($buyer, [
                 'category' => 'order',
@@ -251,7 +259,7 @@ class CheckoutService
                 throw ValidationException::withMessages(['cart_item_ids' => ['One or more selected cart items are not available.']]);
             }
 
-            $lines = $this->buildCheckoutLines($cartItems);
+            $lines = $this->buildCheckoutLines($cartItems, $buyer);
             $groups = $lines->groupBy(fn (array $line) => $line['seller']->id);
             $subtotal = round((float) $lines->sum('subtotal'), 2);
             $shipping = round((float) $groups->sum(fn (Collection $sellerLines) => $this->shippingForGroup($sellerLines)), 2);
@@ -340,7 +348,7 @@ class CheckoutService
                     continue;
                 }
 
-                $currentPrice = round((float) $this->pricing->for($product, $variant)['effective_price'], 2);
+                $currentPrice = round((float) $this->pricing->for($product, $variant, $buyer)['effective_price'], 2);
                 $storedPrice = round((float) $item->unit_price, 2);
                 if ($storedPrice === $currentPrice) {
                     continue;
@@ -361,9 +369,9 @@ class CheckoutService
         }, 3);
     }
 
-    private function buildCheckoutLines(Collection $cartItems): Collection
+    private function buildCheckoutLines(Collection $cartItems, User $buyer): Collection
     {
-        return $cartItems->map(function (CartItem $cartItem) {
+        return $cartItems->map(function (CartItem $cartItem) use ($buyer) {
             $product = Product::query()->with(['seller.user', 'images'])->lockForUpdate()->find($cartItem->product_id);
             $variant = $cartItem->product_variant_id
                 ? ProductVariant::query()->lockForUpdate()->find($cartItem->product_variant_id)
@@ -386,7 +394,27 @@ class CheckoutService
                 ]);
             }
 
-            $unitPrice = $this->pricing->for($product, $variant)['effective_price'];
+            $promotion = Promotion::query()
+                ->where('product_id', $product->id)
+                ->where('kind', 'deal')
+                ->where('status', '!=', 'cancelled')
+                ->whereNull('cancelled_at')
+                ->where('starts_at', '<=', now())
+                ->where('ends_at', '>', now())
+                ->where(function ($query) {
+                    $query->whereNull('usage_limit')->orWhereColumn('usage_count', '<', 'usage_limit');
+                })
+                ->latest('starts_at')
+                ->lockForUpdate()
+                ->first();
+            $product->setRelation('activePromotion', $promotion);
+            $pricing = $this->pricing->for($product, $variant, $buyer);
+            $unitPrice = $pricing['effective_price'];
+            if (round((float) $cartItem->unit_price, 2) !== round((float) $unitPrice, 2)) {
+                throw ValidationException::withMessages([
+                    'cart' => ["The price for {$product->name} changed. Review your cart before placing the order."],
+                ]);
+            }
 
             return [
                 'cart_item' => $cartItem,
@@ -396,6 +424,7 @@ class CheckoutService
                 'quantity' => (int) $cartItem->quantity,
                 'unit_price' => round($unitPrice, 2),
                 'subtotal' => round($unitPrice * $cartItem->quantity, 2),
+                'promotion' => $pricing['promotion'],
             ];
         });
     }

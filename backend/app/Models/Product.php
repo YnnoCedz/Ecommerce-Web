@@ -93,6 +93,9 @@ class Product extends Model
             ->whereNull('cancelled_at')
             ->where('starts_at', '<=', now())
             ->where('ends_at', '>', now())
+            ->where(function ($query) {
+                $query->whereNull('usage_limit')->orWhereColumn('usage_count', '<', 'usage_limit');
+            })
             ->orderByDesc('starts_at');
     }
 }
