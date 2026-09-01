@@ -281,9 +281,15 @@ export type CheckoutPreviewItem = {
     discount: number;
     ends_at: string | null;
   } | null;
+  eligible_discounts: import("./cart").CartDiscountOption[];
+  selected_discount: import("./cart").CartDiscountSelection | null;
+  selected_discount_details: import("./cart").CartDiscountOption | null;
+  discount_amount: number;
 };
 
 export type CheckoutPreview = {
+  warnings: string[];
+  mode: "cart" | "buy_now";
   cart_item_ids: number[];
   promo_code: string | null;
   voucher: { id: number; code: string; name: string; discount: number } | null;
@@ -304,14 +310,18 @@ export type CheckoutPreview = {
   item_count: number;
 };
 
-export async function fetchCheckoutPreview(cart_item_ids: number[], voucher_code?: string | null) {
+export type CheckoutSource =
+  | { mode: "cart"; cart_item_ids: number[] }
+  | { mode: "buy_now"; item: { product_id: number; product_variant_id: number | null; quantity: number; selected_discount?: import("./cart").CartDiscountSelection | null } };
+
+export async function fetchCheckoutPreview(source: CheckoutSource, voucher_code?: string | null) {
   return apiFetch<{ data: CheckoutPreview }>("/checkout/preview", {
     method: "POST",
-    body: JSON.stringify({ cart_item_ids, ...(voucher_code !== undefined ? { voucher_code } : {}) }),
+    body: JSON.stringify({ ...source, ...(voucher_code !== undefined ? { voucher_code } : {}) }),
   });
 }
 
-export async function submitCheckout(payload: {
+export async function submitCheckout(payload: CheckoutSource & {
   address_id: number;
   payment_method: "cod" | "gcash" | "maya" | "card";
   payment_details?: {
@@ -320,7 +330,6 @@ export async function submitCheckout(payload: {
     card_last4?: string;
     card_brand?: string;
   };
-  cart_item_ids: number[];
   voucher_code?: string | null;
   buyer_notes?: string | null;
 }) {

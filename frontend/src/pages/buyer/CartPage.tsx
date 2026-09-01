@@ -4,7 +4,7 @@ import {
   fetchCart,
   removeCartItem,
   updateCartItem,
-  updateCartPromo,
+  updateCartItemDiscount,
   type CartData,
   type CartItem,
   type CartSellerGroup,
@@ -86,15 +86,12 @@ export default function CartPage() {
   const [cart, setCart] = useState<CartData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [promoCode, setPromoCode] = useState("");
-  const [promoBusy, setPromoBusy] = useState(false);
   const [actionBusyId, setActionBusyId] = useState<number | null>(null);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<number> | null>(null);
 
   const applyCartResponse = (data: CartData) => {
     const activeIds = new Set(data.items.map((item) => item.id));
     setCart(data);
-    setPromoCode(data.promo_code ?? "");
     setSelectedItemIds((current) => current === null
       ? activeIds
       : new Set([...current].filter((id) => activeIds.has(id))));
@@ -131,9 +128,9 @@ export default function CartPage() {
   }).filter((seller) => seller.items.length > 0), [sellers, selectedItemIds]);
   const allSelected = cart !== null && cart.items.length > 0 && selectedIds.size === cart.items.length;
   const selectedCount = selectedIds.size;
-  const selectedSubtotal = selectedSellers.reduce((sum, seller) => sum + seller.subtotal, 0);
+  const selectedSubtotal = selectedSellers.reduce((sum, seller) => sum + seller.items.reduce((itemSum, item) => itemSum + ((item.original_unit_price ?? item.unit_price) * item.quantity), 0), 0);
+  const selectedDiscount = selectedSellers.reduce((sum, seller) => sum + seller.items.reduce((itemSum, item) => itemSum + item.discount_amount, 0), 0);
   const selectedShipping = selectedSellers.reduce((sum, seller) => sum + seller.shipping, 0);
-  const selectedDiscount = cart?.promo_code === "WELCOME10" ? Math.round(selectedSubtotal * 10) / 100 : 0;
   const selectedTotal = Math.max(0, selectedSubtotal + selectedShipping - selectedDiscount);
 
   const totalItems = useMemo(
@@ -158,38 +155,6 @@ export default function CartPage() {
       showToast({ kind: "error", title: "Could not update cart", error: err, errorContext: "cart" });
     } finally {
       setActionBusyId(null);
-    }
-  };
-
-  const handleApplyPromo = async () => {
-    setPromoBusy(true);
-    try {
-      const response = await updateCartPromo({ promo_code: promoCode });
-      applyCartResponse(response.data);
-      setError(null);
-      showToast({ kind: "success", title: "Promo applied", message: `${response.data.promo_code} was applied to your cart.` });
-    } catch (err) {
-      const message = mapErrorToMessage(err, { context: "cart", fallback: "We couldn't apply that promo code. Please try again.", log: false });
-      setError(message);
-      showToast({ kind: "error", title: "Could not apply promo", error: err, errorContext: "cart", fallbackMessage: message });
-    } finally {
-      setPromoBusy(false);
-    }
-  };
-
-  const handleClearPromo = async () => {
-    setPromoBusy(true);
-    try {
-      const response = await updateCartPromo({ promo_code: null });
-      applyCartResponse(response.data);
-      setError(null);
-      showToast({ kind: "success", title: "Promo removed", message: "The promo code was removed from your cart." });
-    } catch (err) {
-      const message = mapErrorToMessage(err, { context: "cart", fallback: "We couldn't remove that promo code. Please try again.", log: false });
-      setError(message);
-      showToast({ kind: "error", title: "Could not remove promo", error: err, errorContext: "cart", fallbackMessage: message });
-    } finally {
-      setPromoBusy(false);
     }
   };
 
@@ -330,6 +295,26 @@ export default function CartPage() {
                             )}
                           />
                           <span className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-disabled)]">PHP {item.unit_price.toLocaleString()} ea.{item.original_unit_price !== null && <><span className="ml-1 line-through">PHP {item.original_unit_price.toLocaleString()}</span>{item.pricing_source === "promotion" && <span className="ml-1 text-[var(--color-red)]">DEAL</span>}</>}</span>
+                          <div className="w-full max-w-xl rounded-sm border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-3">
+                            <label htmlFor={`discount-${item.id}`} className="mb-1 block text-xs font-[600] text-[var(--color-ink)]">Discount</label>
+                            <select
+                              id={`discount-${item.id}`}
+                              aria-label={`Select one discount for ${item.product_name ?? "item"}`}
+                              disabled={actionBusyId === item.id}
+                              value={item.selected_discount ? `${item.selected_discount.type}:${item.selected_discount.id}` : ""}
+                              onChange={(event) => {
+                                const [type, id] = event.target.value.split(":");
+                                const selection = event.target.value ? { type: type as "promotion" | "voucher", id: Number(id) } : null;
+                                void handleItemAction(item.id, () => updateCartItemDiscount(item.id, selection), { kind: "cart", title: "Discount updated", message: selection ? "Your item price was recalculated." : "The item discount was removed." });
+                              }}
+                              className="w-full rounded-sm border border-[var(--color-border)] bg-white px-3 py-2 text-xs text-[var(--color-ink)] focus:border-[var(--color-navy)] focus:outline-none"
+                            >
+                              <option value="">No discount</option>
+                              {item.eligible_discounts.some(option => option.type === "promotion") && <optgroup label="Promotions">{item.eligible_discounts.filter(option => option.type === "promotion").map(option => <option key={`promotion-${option.id}`} value={`promotion:${option.id}`}>{option.name} — Save PHP {option.estimated_discount.toLocaleString()}</option>)}</optgroup>}
+                              {item.eligible_discounts.some(option => option.type === "voucher") && <optgroup label="Vouchers">{item.eligible_discounts.filter(option => option.type === "voucher").map(option => <option key={`voucher-${option.id}`} value={`voucher:${option.id}`}>{option.name} — Save PHP {option.estimated_discount.toLocaleString()}</option>)}</optgroup>}
+                            </select>
+                            {item.selected_discount_details && <div className="mt-2 flex flex-wrap justify-between gap-2 text-xs"><span className="text-[var(--color-green)]">✓ You save PHP {item.discount_amount.toLocaleString()}</span><span className="text-[var(--color-ink-muted)]">Item price PHP {(item.unit_price * item.quantity).toLocaleString()}</span></div>}
+                          </div>
                           <div className="w-full sm:w-auto flex items-center gap-2 sm:ml-auto">
                             <button
                               onClick={() => void handleItemAction(
@@ -389,9 +374,9 @@ export default function CartPage() {
                       <span>Shipping total</span>
                       <span>{selectedShipping === 0 ? <span className="text-[var(--color-green)] font-[500]">Free</span> : `PHP ${selectedShipping.toLocaleString()}`}</span>
                     </div>
-                    {selectedDiscount > 0 && (
+                  {selectedDiscount > 0 && (
                       <div className="flex justify-between text-xs text-[var(--color-green)]">
-                        <span>Promo {cart?.promo_code}</span>
+                        <span>Item discounts</span>
                         <span>-PHP {selectedDiscount.toLocaleString()}</span>
                       </div>
                     )}
@@ -408,34 +393,9 @@ export default function CartPage() {
                   </div>
                 </div>
 
-                <div className="px-5 pb-4">
-                  {cart?.promo_code ? (
-                    <div className="flex items-center gap-2 px-3 py-2 bg-[var(--color-green-light)] border border-[var(--color-green-border)] rounded-sm">
-                      <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="var(--color-green)" strokeWidth="1.5" strokeLinecap="round"><path d="M2 7l3.5 3.5 6.5-6" /></svg>
-                      <span className="text-xs text-[var(--color-green)] font-[500] flex-1">{cart.promo_code} applied</span>
-                      <button onClick={handleClearPromo} disabled={promoBusy} className="text-[var(--color-green)] hover:opacity-70 disabled:opacity-50 cursor-pointer text-xs">x</button>
-                    </div>
-                  ) : (
-                    <div className="flex gap-2">
-                      <input
-                        value={promoCode}
-                        onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
-                        placeholder="Promo code"
-                        className="flex-1 text-xs bg-[var(--color-surface)] border border-[var(--color-border)] rounded-sm px-3 py-2 text-[var(--color-ink)] placeholder:text-[var(--color-ink-disabled)] outline-none focus:border-[var(--color-navy)] font-[var(--font-mono)]"
-                      />
-                      <button
-                        onClick={handleApplyPromo}
-                        disabled={promoBusy}
-                        className="text-xs px-3 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] text-[var(--color-ink)] rounded-sm hover:bg-[var(--color-border)] disabled:opacity-50 cursor-pointer transition-colors whitespace-nowrap">
-                        Apply
-                      </button>
-                    </div>
-                  )}
-                </div>
-
                 <div className="px-5 pb-5 space-y-2">
                   <button
-                    onClick={() => navigate(`/checkout?items=${[...selectedIds].join(",")}`)}
+                    onClick={() => navigate(`/checkout?mode=cart&items=${[...selectedIds].join(",")}`)}
                     disabled={selectedCount === 0}
                     className="w-full py-3 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
                     Checkout ({selectedCount})

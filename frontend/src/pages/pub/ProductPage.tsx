@@ -11,6 +11,7 @@ import { startConversation } from "../../api/account";
 import ReportDialog from "../../components/ReportDialog";
 import { usePersistedWishlist } from "../../hooks/usePersistedWishlist";
 import { useUrlTab } from "../../hooks/useUrlTab";
+import { saveBuyNowIntent } from "../../checkout/checkoutIntent";
 
 const PRODUCT_PLACEHOLDER = "/images/product-placeholder.svg";
 const PRODUCT_TABS = ["description", "specs", "reviews"] as const;
@@ -325,10 +326,8 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
     }
     setCartBusy(true);
     try {
-      const response = await addCartItem({ product_id: product.id, product_variant_id: selectedVariant?.id ?? null, quantity: qty });
-      const item = response.data.items.find((cartItem) => cartItem.product_id === product.id && cartItem.product_variant_id === (selectedVariant?.id ?? null));
-      showToast({ kind: "cart", title: "Ready for checkout", message: `${product.name} was added to your cart.` });
-      onNavigate("checkout", item ? { items: String(item.id) } : undefined);
+      saveBuyNowIntent({ product_id: product.id, product_variant_id: selectedVariant?.id ?? null, quantity: qty });
+      navigate("/checkout?mode=buy_now");
     } catch (error) {
       const status = error && typeof error === "object" && "status" in error ? (error as { status?: number }).status : undefined;
       if (status === 401) {

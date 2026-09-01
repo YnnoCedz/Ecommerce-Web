@@ -16,11 +16,26 @@ export type CartItem = {
   unit_price: number;
   original_unit_price: number | null;
   discount_percentage: number;
-  pricing_source: "regular" | "sale" | "promotion";
+  pricing_source: "regular" | "sale" | "promotion" | "voucher";
   promotion: { id: number; name: string | null; ends_at: string | null } | null;
   line_total: number;
   stock: number;
   saved_for_later: boolean;
+  eligible_discounts: CartDiscountOption[];
+  selected_discount: CartDiscountSelection | null;
+  selected_discount_details: CartDiscountOption | null;
+  discount_amount: number;
+};
+
+export type CartDiscountSelection = { type: "promotion" | "voucher"; id: number };
+export type CartDiscountOption = CartDiscountSelection & {
+  name: string;
+  discount_type: string;
+  discount_value: number;
+  estimated_discount: number;
+  estimated_final_price: number;
+  ends_at: string | null;
+  minimum_spend: number | null;
 };
 
 export type CartSellerGroup = {
@@ -75,6 +90,13 @@ export async function updateCartItem(itemId: number, payload: {
   return apiFetch<CartResponse>(`/cart/items/${itemId}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
+  });
+}
+
+export async function updateCartItemDiscount(itemId: number, selected_discount: CartDiscountSelection | null) {
+  return apiFetch<CartResponse>(`/cart/items/${itemId}/discount`, {
+    method: "PATCH",
+    body: JSON.stringify({ selected_discount }),
   });
 }
 

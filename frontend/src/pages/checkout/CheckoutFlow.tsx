@@ -5,6 +5,8 @@ import { useToast } from "../../components/ToastProvider";
 import PhilippineAddressSelector, { EMPTY_PHILIPPINE_ADDRESS } from "../../components/PhilippineAddressSelector";
 import PhilippinePhoneField from "../../components/PhilippinePhoneField";
 import { useAuth } from "../../auth/AuthContext";
+import { updateCartItemDiscount, type CartDiscountSelection } from "../../api/cart";
+import { clearBuyNowIntent, loadBuyNowIntent, saveBuyNowIntent, type BuyNowIntent } from "../../checkout/checkoutIntent";
 
 type Step = 1 | 2 | 3 | 4;
 type PaymentMethod = "cod" | "gcash" | "maya" | "card";
@@ -36,6 +38,7 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
   const { user } = useAuth();
   const { showToast } = useToast();
   const [searchParams] = useSearchParams();
+  const checkoutMode = searchParams.get("mode") === "buy_now" ? "buy_now" : searchParams.get("mode") === "cart" ? "cart" : null;
   const selectedItemIds = useMemo(() => [...new Set((searchParams.get("items") ?? "")
     .split(",")
     .map((value) => Number(value))
@@ -47,13 +50,12 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
   const [selectedPayment, setSelectedPayment] = useState<PaymentMethod>("cod");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [applyingVoucher, setApplyingVoucher] = useState(false);
-  const [voucherInput, setVoucherInput] = useState("");
-  const [voucherError, setVoucherError] = useState<string | null>(null);
+  const [discountBusyId, setDiscountBusyId] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [addingAddress, setAddingAddress] = useState(false);
   const [order, setOrder] = useState<CheckoutResult | null>(null);
+  const [buyNowIntent, setBuyNowIntent] = useState<BuyNowIntent | null>(() => checkoutMode === "buy_now" ? loadBuyNowIntent() : null);
   const [mobileNumber, setMobileNumber] = useState("+63");
   const [cardholderName, setCardholderName] = useState("");
   const [cardNumber, setCardNumber] = useState("");
@@ -77,18 +79,23 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
     let active = true;
 
     void (async () => {
-      if (selectedItemIds.length === 0) {
-        setError("No products were selected for checkout.");
+      const source = checkoutMode === "buy_now" && buyNowIntent
+        ? { mode: "buy_now" as const, item: buyNowIntent }
+        : checkoutMode === "cart" && selectedItemIds.length > 0
+          ? { mode: "cart" as const, cart_item_ids: selectedItemIds }
+          : null;
+      if (!source) {
+        setError(checkoutMode === "buy_now" ? "This Buy Now checkout session expired." : "No products were selected for checkout.");
         setLoading(false);
         return;
       }
 
       try {
-        const [previewResponse, addressResponse] = await Promise.all([fetchCheckoutPreview(selectedItemIds), fetchAccountAddresses()]);
+        const [previewResponse, addressResponse] = await Promise.all([fetchCheckoutPreview(source), fetchAccountAddresses()]);
         if (!active) return;
 
         setPreview(previewResponse.data);
-        setVoucherInput(previewResponse.data.promo_code ?? "");
+        setNotice(previewResponse.data.warnings.length ? `${previewResponse.data.warnings.join(" ")} Your order total has been updated.` : null);
         setAddresses(addressResponse.data);
         setSelectedAddressId(addressResponse.data.find((address) => address.is_default)?.id ?? addressResponse.data[0]?.id ?? null);
         setError(null);
@@ -103,7 +110,7 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
     return () => {
       active = false;
     };
-  }, [searchParams]);
+  }, [checkoutMode, selectedItemIds, buyNowIntent]);
 
   const selectedAddress = useMemo(
     () => addresses.find((address) => address.id === selectedAddressId) ?? null,
@@ -120,18 +127,28 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
   };
   const itemCount = preview?.item_count ?? 0;
 
-  const recalculateVoucher = async (voucherCode: string | null) => {
-    if (applyingVoucher || selectedItemIds.length === 0) return;
-    setApplyingVoucher(true);
-    setVoucherError(null);
+  const selectItemDiscount = async (itemId: number, selection: CartDiscountSelection | null) => {
+    if (discountBusyId !== null) return;
+    setDiscountBusyId(itemId);
     try {
-      const response = await fetchCheckoutPreview(selectedItemIds, voucherCode);
+      let source;
+      if (checkoutMode === "buy_now" && buyNowIntent) {
+        const nextIntent = { ...buyNowIntent, selected_discount: selection };
+        saveBuyNowIntent(nextIntent);
+        setBuyNowIntent(nextIntent);
+        source = { mode: "buy_now" as const, item: nextIntent };
+      } else {
+        await updateCartItemDiscount(itemId, selection);
+        source = { mode: "cart" as const, cart_item_ids: selectedItemIds };
+      }
+      const response = await fetchCheckoutPreview(source, null);
       setPreview(response.data);
-      setVoucherInput(response.data.promo_code ?? "");
+      setNotice(response.data.warnings.length ? `${response.data.warnings.join(" ")} Your order total has been updated.` : null);
+      setError(null);
     } catch (cause) {
-      setVoucherError(cause instanceof Error ? cause.message : "Unable to apply this voucher.");
+      setError(cause instanceof Error ? cause.message : "Unable to update this item discount.");
     } finally {
-      setApplyingVoucher(false);
+      setDiscountBusyId(null);
     }
   };
 
@@ -179,10 +196,12 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
       }
 
       const response = await submitCheckout({
+        ...(checkoutMode === "buy_now" && buyNowIntent
+          ? { mode: "buy_now" as const, item: buyNowIntent }
+          : { mode: "cart" as const, cart_item_ids: preview?.cart_item_ids ?? [] }),
         address_id: selectedAddressId,
         payment_method: selectedPayment,
-        cart_item_ids: preview?.cart_item_ids ?? [],
-        voucher_code: preview?.promo_code ?? null,
+        voucher_code: null,
         payment_details: selectedPayment === "card" ? {
           cardholder_name: cardholderName.trim(),
           card_last4: cardDigits.slice(-4),
@@ -192,6 +211,7 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
       setOrder(response.data);
       setNotice(response.message);
       setStep(4);
+      if (checkoutMode === "buy_now") clearBuyNowIntent();
       setError(null);
       showToast(response.data.payment_status === "failed"
         ? { kind: "error", title: "Payment not completed", message: "Payment couldn't be completed." }
@@ -200,9 +220,12 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to submit checkout.");
       try {
-        if (selectedItemIds.length > 0) {
-          const refreshed = await fetchCheckoutPreview(selectedItemIds, preview?.promo_code ?? null);
+        if (checkoutMode === "buy_now" ? buyNowIntent !== null : selectedItemIds.length > 0) {
+          const refreshed = await fetchCheckoutPreview(checkoutMode === "buy_now" && buyNowIntent
+            ? { mode: "buy_now", item: buyNowIntent }
+            : { mode: "cart", cart_item_ids: selectedItemIds }, null);
           setPreview(refreshed.data);
+          setNotice(refreshed.data.warnings.length ? `${refreshed.data.warnings.join(" ")} Your order total has been updated.` : null);
         }
       } catch {
         // Preserve the checkout error; the buyer can still return to the cart.
@@ -412,34 +435,20 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
               </div>
             </SectionCard>
 
-            <SectionCard title="Discounts">
+            <SectionCard title="Item discounts">
               <div className="space-y-4">
-                {preview?.sellers.some(seller => seller.items.some(item => item.automatic_promotion)) && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-[600] text-[var(--color-ink)]">Automatic promotions</p>
-                    {preview.sellers.flatMap(seller => seller.items).filter(item => item.automatic_promotion).map(item => (
-                      <div key={item.id} className="rounded-sm bg-[var(--color-green-light)] p-3 text-xs">
-                        <div className="flex items-center justify-between gap-3"><span className="font-[600] text-[var(--color-green)]">Timed Deal · {item.automatic_promotion?.name}</span><span className="text-[var(--color-green)]">-{currency(item.automatic_promotion?.discount ?? 0)}</span></div>
-                        <p className="mt-1 text-[var(--color-ink-muted)]">{item.product_name}: {currency(item.regular_unit_price)} → {currency(item.unit_price)}</p>
-                      </div>
-                    ))}
+                {preview?.sellers.flatMap(seller => seller.items).map(item => (
+                  <div key={item.id} className="rounded-sm border border-[var(--color-border-subtle)] p-3">
+                    <div className="mb-2 flex justify-between gap-3 text-xs"><span className="font-[600]">{item.product_name}</span><span>{currency(item.unit_price * item.quantity)}</span></div>
+                    <label htmlFor={`checkout-discount-${item.id}`} className="text-xs text-[var(--color-ink-muted)]">Discount</label>
+                    <select id={`checkout-discount-${item.id}`} disabled={discountBusyId === item.id} value={item.selected_discount ? `${item.selected_discount.type}:${item.selected_discount.id}` : ""} onChange={event => { const [type, id] = event.target.value.split(":"); void selectItemDiscount(item.id, event.target.value ? { type: type as CartDiscountSelection["type"], id: Number(id) } : null); }} className="mt-1 w-full rounded-sm border border-[var(--color-border)] bg-white px-3 py-2 text-xs">
+                      <option value="">No discount</option>
+                      {item.eligible_discounts.some(option => option.type === "promotion") && <optgroup label="Promotions">{item.eligible_discounts.filter(option => option.type === "promotion").map(option => <option key={`promotion-${option.id}`} value={`promotion:${option.id}`}>{option.name} — Save {currency(option.estimated_discount)}</option>)}</optgroup>}
+                      {item.eligible_discounts.some(option => option.type === "voucher") && <optgroup label="Vouchers">{item.eligible_discounts.filter(option => option.type === "voucher").map(option => <option key={`voucher-${option.id}`} value={`voucher:${option.id}`}>{option.name} — Save {currency(option.estimated_discount)}</option>)}</optgroup>}
+                    </select>
+                    {item.selected_discount_details && <p className="mt-2 text-xs text-[var(--color-green)]">{item.selected_discount_details.name}: -{currency(item.discount_amount)}</p>}
                   </div>
-                )}
-                <div>
-                  <label htmlFor="checkout-voucher" className="text-xs font-[600] text-[var(--color-ink)]">Voucher / promo code</label>
-                  {preview?.voucher ? (
-                    <div className="mt-2 flex items-center justify-between rounded-sm border border-[var(--color-green)] bg-[var(--color-green-light)] px-3 py-2.5 text-sm">
-                      <span className="font-[600] text-[var(--color-green)]">✓ {preview.voucher.code} · {currency(preview.voucher.discount)} applied</span>
-                      <button type="button" disabled={applyingVoucher} onClick={() => void recalculateVoucher(null)} className="text-xs text-[var(--color-navy)] underline disabled:opacity-50">{applyingVoucher ? "Removing..." : "Remove"}</button>
-                    </div>
-                  ) : (
-                    <div className="mt-2 flex gap-2">
-                      <input id="checkout-voucher" value={voucherInput} onChange={event => { setVoucherInput(event.target.value.toUpperCase()); setVoucherError(null); }} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); if (voucherInput.trim()) void recalculateVoucher(voucherInput.trim()); } }} maxLength={50} placeholder="Enter voucher code" className="min-w-0 flex-1 rounded-sm border border-[var(--color-border)] px-3 py-2.5 text-sm" />
-                      <button type="button" disabled={applyingVoucher || !voucherInput.trim()} onClick={() => void recalculateVoucher(voucherInput.trim())} className="rounded-sm bg-[var(--color-navy)] px-4 py-2.5 text-sm text-white disabled:opacity-50">{applyingVoucher ? "Applying..." : "Apply"}</button>
-                    </div>
-                  )}
-                  {voucherError && <p role="alert" className="mt-2 text-xs text-[var(--color-red)]">{voucherError}</p>}
-                </div>
+                ))}
               </div>
             </SectionCard>
 

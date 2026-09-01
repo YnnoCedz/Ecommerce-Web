@@ -13,7 +13,10 @@ class OrderItem extends Model
         'product_id',
         'product_variant_id',
         'promotion_id',
+        'discount_source_type',
         'promotion_name',
+        'discount_type',
+        'discount_value',
         'product_name',
         'product_slug',
         'variant_name',
@@ -33,6 +36,7 @@ class OrderItem extends Model
         'regular_unit_price' => 'decimal:2',
         'promotion_discount' => 'decimal:2',
         'voucher_discount' => 'decimal:2',
+        'discount_value' => 'decimal:2',
         'quantity' => 'integer',
         'subtotal' => 'decimal:2',
     ];

@@ -68,6 +68,7 @@ Route::middleware(['auth:sanctum', 'account.active'])->group(function () {
     Route::get('/cart', [CommerceController::class, 'cart']);
     Route::post('/cart/items', [CommerceController::class, 'storeCartItem']);
     Route::patch('/cart/items/{itemId}', [CommerceController::class, 'updateCartItem']);
+    Route::patch('/cart/items/{itemId}/discount', [CommerceController::class, 'updateCartItemDiscount']);
     Route::delete('/cart/items/{itemId}', [CommerceController::class, 'destroyCartItem']);
     Route::patch('/cart/promo', [CommerceController::class, 'updateCartPromo']);
     Route::post('/checkout/preview', [CommerceController::class, 'checkoutPreview']);

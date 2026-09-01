@@ -13,19 +13,20 @@ use App\Models\Review;
 use App\Models\Seller;
 use App\Models\SellerOrder;
 use App\Models\WishlistItem;
+use App\Services\CartDiscountService;
 use App\Services\CheckoutService;
 use App\Services\MediaStorageService;
 use App\Services\NotificationService;
 use App\Services\OrderLifecycleService;
 use App\Services\PaymentService;
 use App\Services\ProductPricingService;
-use App\Services\VoucherService;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class CommerceController extends Controller
@@ -37,7 +38,7 @@ class CommerceController extends Controller
         private readonly PaymentService $payments,
         private readonly MediaStorageService $media,
         private readonly ProductPricingService $pricing,
-        private readonly VoucherService $vouchers,
+        private readonly CartDiscountService $cartDiscounts,
     ) {}
 
     public function cart(Request $request): JsonResponse
@@ -146,39 +147,47 @@ class CommerceController extends Controller
         ]);
     }
 
-    public function updateCartPromo(Request $request): JsonResponse
+    public function updateCartItemDiscount(Request $request, int $itemId): JsonResponse
     {
-        $request->merge([
-            'promo_code' => $request->filled('promo_code') ? strtoupper(trim((string) $request->input('promo_code'))) : null,
-        ]);
+        abort_if($request->hasAny(['promotion_id', 'voucher_id']), 422, 'Submit one selected_discount object only.');
         $data = $request->validate([
-            'promo_code' => ['nullable', 'string', 'max:50', 'regex:/^[A-Z0-9_-]+$/'],
+            'selected_discount' => ['present', 'nullable', 'array:type,id'],
+            'selected_discount.type' => ['required_with:selected_discount', Rule::in(['promotion', 'voucher'])],
+            'selected_discount.id' => ['required_with:selected_discount', 'integer'],
         ]);
 
-        $cart = $this->loadCurrentCart($request);
-        $itemIds = $cart->activeItems()->pluck('id')->all();
-        if ($data['promo_code'] !== null) {
-            try {
-                $this->checkoutService->preview($request->user(), $itemIds, $data['promo_code']);
-            } catch (ValidationException $exception) {
-                throw ValidationException::withMessages([
-                    'promo_code' => [$exception->errors()['voucher_code'][0] ?? 'This promo code is invalid or unavailable.'],
-                ]);
+        $cart = DB::transaction(function () use ($request, $itemId, $data) {
+            $cart = $this->loadCurrentCart($request);
+            $item = CartItem::query()->where('cart_id', $cart->id)->whereKey($itemId)->lockForUpdate()->firstOrFail();
+            $selection = $data['selected_discount'];
+            if (($selection['type'] ?? null) === 'voucher' && CartItem::query()
+                ->where('cart_id', $cart->id)->whereKeyNot($item->id)
+                ->where('selected_discount_type', 'voucher')->where('selected_discount_id', $selection['id'])->exists()) {
+                throw ValidationException::withMessages(['selected_discount' => ['This voucher is already selected for another cart item.']]);
             }
-        }
+            $item->forceFill([
+                'selected_discount_type' => $selection['type'] ?? null,
+                'selected_discount_id' => $selection['id'] ?? null,
+            ])->save();
 
-        $cart = DB::transaction(function () use ($cart, $data) {
-            $cart->promo_code = $data['promo_code'];
-            $cart->save();
+            try {
+                $this->cartDiscounts->quoteItems(collect([$item]), $request->user(), true, true);
+            } catch (ValidationException $exception) {
+                throw ValidationException::withMessages(['selected_discount' => [collect($exception->errors())->flatten()->first()]]);
+            }
             $this->recalculateCartTotals($cart);
 
             return $cart->fresh();
         });
 
+        return response()->json(['message' => 'Item discount updated.', 'data' => $this->cartPayload($cart)]);
+    }
+
+    public function updateCartPromo(Request $request): JsonResponse
+    {
         return response()->json([
-            'message' => 'Cart promo updated.',
-            'data' => $this->cartPayload($cart),
-        ]);
+            'message' => 'Manual promo codes are no longer accepted. Select one eligible discount on each cart item.',
+        ], 422);
     }
 
     public function destroyCartItem(Request $request, int $itemId): JsonResponse
@@ -208,8 +217,16 @@ class CommerceController extends Controller
             $request->merge(['voucher_code' => $request->filled('voucher_code') ? strtoupper(trim((string) $request->input('voucher_code'))) : null]);
         }
         $data = $request->validate([
-            'cart_item_ids' => ['required', 'array', 'min:1', 'max:100'],
+            'mode' => ['required', 'in:cart,buy_now'],
+            'cart_item_ids' => ['required_if:mode,cart', 'prohibited_if:mode,buy_now', 'array', 'min:1', 'max:100'],
             'cart_item_ids.*' => ['integer', 'distinct'],
+            'item' => ['required_if:mode,buy_now', 'prohibited_if:mode,cart', 'array'],
+            'item.product_id' => ['required_if:mode,buy_now', 'integer'],
+            'item.product_variant_id' => ['nullable', 'integer'],
+            'item.quantity' => ['required_if:mode,buy_now', 'integer', 'min:1', 'max:99'],
+            'item.selected_discount' => ['nullable', 'array'],
+            'item.selected_discount.type' => ['required_with:item.selected_discount', 'in:promotion,voucher'],
+            'item.selected_discount.id' => ['required_with:item.selected_discount', 'integer'],
             'voucher_code' => ['sometimes', 'nullable', 'string', 'max:50', 'regex:/^[A-Z0-9_-]+$/'],
         ]);
 
@@ -218,7 +235,7 @@ class CommerceController extends Controller
             : Cart::query()->where('user_id', $request->user()->id)->where('status', 'active')->value('promo_code');
 
         return response()->json([
-            'data' => $this->checkoutService->preview($request->user(), $data['cart_item_ids'], $voucherCode),
+            'data' => $this->checkoutService->preview($request->user(), $data, $voucherCode),
         ]);
     }
 
@@ -228,6 +245,7 @@ class CommerceController extends Controller
             $request->merge(['voucher_code' => $request->filled('voucher_code') ? strtoupper(trim((string) $request->input('voucher_code'))) : null]);
         }
         $data = $request->validate([
+            'mode' => ['required', 'in:cart,buy_now'],
             'address_id' => ['required', 'integer'],
             'payment_method' => ['required', 'in:cod,gcash,maya,card'],
             'payment_details' => ['nullable', 'array'],
@@ -235,8 +253,15 @@ class CommerceController extends Controller
             'payment_details.cardholder_name' => ['nullable', 'string', 'max:120'],
             'payment_details.card_last4' => ['nullable', 'digits:4'],
             'payment_details.card_brand' => ['nullable', 'string', 'max:30'],
-            'cart_item_ids' => ['required', 'array', 'min:1', 'max:100'],
+            'cart_item_ids' => ['required_if:mode,cart', 'prohibited_if:mode,buy_now', 'array', 'min:1', 'max:100'],
             'cart_item_ids.*' => ['integer', 'distinct'],
+            'item' => ['required_if:mode,buy_now', 'prohibited_if:mode,cart', 'array'],
+            'item.product_id' => ['required_if:mode,buy_now', 'integer'],
+            'item.product_variant_id' => ['nullable', 'integer'],
+            'item.quantity' => ['required_if:mode,buy_now', 'integer', 'min:1', 'max:99'],
+            'item.selected_discount' => ['nullable', 'array'],
+            'item.selected_discount.type' => ['required_with:item.selected_discount', 'in:promotion,voucher'],
+            'item.selected_discount.id' => ['required_with:item.selected_discount', 'integer'],
             'buyer_notes' => ['nullable', 'string', 'max:1000'],
             'voucher_code' => ['sometimes', 'nullable', 'string', 'max:50', 'regex:/^[A-Z0-9_-]+$/'],
         ]);
@@ -801,16 +826,20 @@ class CommerceController extends Controller
         $cart->load([
             'items.seller',
             'items.product.images',
-            'items.product.activePromotion',
+            'items.product.variants',
             'items.variant',
         ]);
 
         $activeItems = $cart->items->where('saved_for_later', false);
+        $quotes = $this->cartDiscounts->quoteItems($activeItems, $cart->user);
         foreach ($activeItems as $item) {
-            $currentPrice = $this->pricing->for($item->product, $item->variant)['effective_price'];
-            if ((float) $item->unit_price !== $currentPrice) {
-                $item->forceFill(['unit_price' => $currentPrice, 'line_total' => $currentPrice * $item->quantity])->save();
+            $quote = $quotes->get($item->id);
+            $currentPrice = $quote['unit_price'];
+            $updates = ['unit_price' => $currentPrice, 'line_total' => $currentPrice * $item->quantity];
+            if (! $quote['selected'] && $item->selected_discount_id) {
+                $updates += ['selected_discount_type' => null, 'selected_discount_id' => null];
             }
+            $item->forceFill($updates)->save();
         }
         $grouped = $activeItems->groupBy('seller_id');
 
@@ -829,33 +858,12 @@ class CommerceController extends Controller
             $shipping += $sellerSubtotal >= $config['free_shipping_threshold'] ? 0 : $config['shipping_fee'];
         }
 
-        $discount = 0.0;
-        if ($cart->promo_code && $activeItems->isNotEmpty()) {
-            $lines = $activeItems->map(fn (CartItem $item) => [
-                'cart_item' => $item,
-                'product' => $item->product,
-                'seller' => $item->seller,
-                'subtotal' => (float) $item->line_total,
-            ]);
-            $shippingBySeller = $grouped->map(function ($sellerItems) {
-                $sellerSubtotal = (float) $sellerItems->sum('line_total');
-                $seller = $sellerItems->first()?->seller;
-                $config = $seller instanceof Seller ? $this->shippingConfigForSeller($seller) : ['free_shipping_threshold' => INF, 'shipping_fee' => 0];
-
-                return $sellerSubtotal >= $config['free_shipping_threshold'] ? 0 : $config['shipping_fee'];
-            });
-            try {
-                $discount = $this->vouchers->quote($cart->promo_code, $lines, $cart->user, $shippingBySeller)['discount_total'];
-            } catch (ValidationException) {
-                $cart->promo_code = null;
-            }
-        }
-
         $cart->forceFill([
+            'promo_code' => null,
             'subtotal' => $subtotal,
             'shipping_total' => $shipping,
-            'discount_total' => $discount,
-            'grand_total' => max(0, $subtotal + $shipping - $discount),
+            'discount_total' => 0,
+            'grand_total' => max(0, $subtotal + $shipping),
             'last_checked_out_at' => $cart->last_checked_out_at,
         ])->save();
     }
@@ -865,16 +873,17 @@ class CommerceController extends Controller
         $cart->loadMissing([
             'items.seller',
             'items.product.images',
-            'items.product.activePromotion',
+            'items.product.variants',
             'items.variant',
         ]);
+        $quotes = $this->cartDiscounts->quoteItems($cart->items, $cart->user);
 
         $sellerGroups = $cart->items
             ->where('saved_for_later', false)
             ->groupBy('seller_id')
-            ->map(function ($items) {
+            ->map(function ($items) use ($quotes) {
                 $seller = $items->first()?->seller;
-                $productItems = $items->map(fn (CartItem $item) => $this->cartItemPayload($item))->values();
+                $productItems = $items->map(fn (CartItem $item) => $this->cartItemPayload($item, false, $quotes->get($item->id)))->values();
                 $subtotal = (float) $items->sum('line_total');
                 $config = $seller instanceof Seller ? $this->shippingConfigForSeller($seller) : ['free_shipping_threshold' => 1500, 'shipping_fee' => 100];
 
@@ -901,17 +910,17 @@ class CommerceController extends Controller
             'grand_total' => (float) $cart->grand_total,
             'items' => $cart->items
                 ->where('saved_for_later', false)
-                ->map(fn (CartItem $item) => $this->cartItemPayload($item))
+                ->map(fn (CartItem $item) => $this->cartItemPayload($item, false, $quotes->get($item->id)))
                 ->values(),
             'saved_items' => $cart->items
                 ->where('saved_for_later', true)
-                ->map(fn (CartItem $item) => $this->cartItemPayload($item, true))
+                ->map(fn (CartItem $item) => $this->cartItemPayload($item, true, $quotes->get($item->id)))
                 ->values(),
             'sellers' => $sellerGroups,
         ];
     }
 
-    private function cartItemPayload(CartItem $item, bool $saved = false): array
+    private function cartItemPayload(CartItem $item, bool $saved = false, ?array $discountQuote = null): array
     {
         $product = $item->product;
         $seller = $item->seller ?? $product?->seller;
@@ -927,8 +936,8 @@ class CommerceController extends Controller
                 : $this->media->publicUrl($primaryImage->file_path, $primaryImage->storage_disk ?: 'r2'))
             : null;
         $stock = $variant?->stock_quantity ?? $product?->stock_quantity ?? 0;
-        $pricing = $product ? $this->pricing->for($product, $variant) : null;
-        $promotion = $pricing['promotion'] ?? null;
+        $basePrice = (float) ($discountQuote['base_unit_price'] ?? $item->unit_price);
+        $selected = $discountQuote['selected'] ?? null;
 
         return [
             'id' => $item->id,
@@ -943,14 +952,14 @@ class CommerceController extends Controller
             'image' => $imageUrl,
             'quantity' => $item->quantity,
             'unit_price' => (float) $item->unit_price,
-            'original_unit_price' => $pricing['original_price'] ?? null,
-            'discount_percentage' => $pricing['discount_percentage'] ?? 0,
-            'pricing_source' => $pricing['pricing_source'] ?? 'regular',
-            'promotion' => $promotion ? [
-                'id' => $promotion->id,
-                'name' => $promotion->name,
-                'ends_at' => $promotion->ends_at?->toISOString(),
-            ] : null,
+            'original_unit_price' => $selected ? $basePrice : null,
+            'discount_percentage' => $selected && $basePrice > 0 ? (int) round((1 - ((float) $item->unit_price / $basePrice)) * 100) : 0,
+            'pricing_source' => $selected ? $selected['type'] : 'regular',
+            'promotion' => $selected && $selected['type'] === 'promotion' ? ['id' => $selected['id'], 'name' => $selected['name'], 'ends_at' => $selected['ends_at']] : null,
+            'eligible_discounts' => $discountQuote['options'] ?? [],
+            'selected_discount' => $selected ? ['type' => $selected['type'], 'id' => $selected['id']] : null,
+            'selected_discount_details' => $selected,
+            'discount_amount' => (float) ($discountQuote['discount_amount'] ?? 0),
             'line_total' => (float) $item->line_total,
             'stock' => (int) $stock,
             'saved_for_later' => $saved || (bool) $item->saved_for_later,

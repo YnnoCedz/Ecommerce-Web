@@ -87,14 +87,11 @@ class BuyerCommerceIntegrationTest extends TestCase
         $this->actingAs($buyer)->postJson('/api/cart/items', ['product_id' => $product->id, 'quantity' => 1])->assertOk();
 
         $this->actingAs($buyer)->patchJson('/api/cart/promo', ['promo_code' => 'NOTREAL'])
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors('promo_code');
+            ->assertUnprocessable();
 
         $this->actingAs($buyer)->patchJson('/api/cart/promo', ['promo_code' => ' welcome10 '])
-            ->assertOk()
-            ->assertJsonPath('data.promo_code', 'WELCOME10')
-            ->assertJsonPath('data.discount_total', 100)
-            ->assertJsonPath('data.grand_total', 1000);
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Manual promo codes are no longer accepted. Select one eligible discount on each cart item.');
     }
 
     public function test_addresses_are_owned_and_keep_exactly_one_default(): void
@@ -167,7 +164,7 @@ class BuyerCommerceIntegrationTest extends TestCase
         $checkout = [
             'address_id' => $address->id,
             'payment_method' => 'cod',
-            'cart_item_ids' => [$firstCartItem->id, $secondCartItem->id],
+            'mode' => 'cart', 'cart_item_ids' => [$firstCartItem->id, $secondCartItem->id],
         ];
         $this->actingAs($buyer)->postJson('/api/checkout', $checkout)
             ->assertUnprocessable()
@@ -267,7 +264,7 @@ class BuyerCommerceIntegrationTest extends TestCase
         $this->actingAs($buyer)->postJson('/api/checkout', [
             'address_id' => $foreignAddress->id,
             'payment_method' => 'cod',
-            'cart_item_ids' => [$cartItem->id],
+            'mode' => 'cart', 'cart_item_ids' => [$cartItem->id],
         ])->assertUnprocessable();
 
         $ownAddress = Address::create(['user_id' => $buyer->id, ...$this->addressPayload(), 'is_default' => true]);
@@ -275,13 +272,13 @@ class BuyerCommerceIntegrationTest extends TestCase
         $this->actingAs($buyer)->postJson('/api/checkout', [
             'address_id' => $ownAddress->id,
             'payment_method' => 'bank_transfer',
-            'cart_item_ids' => [$cartItem->id],
+            'mode' => 'cart', 'cart_item_ids' => [$cartItem->id],
         ])->assertUnprocessable();
 
         $this->actingAs($buyer)->postJson('/api/checkout', [
             'address_id' => $ownAddress->id,
             'payment_method' => 'cod',
-            'cart_item_ids' => [$cartItem->id],
+            'mode' => 'cart', 'cart_item_ids' => [$cartItem->id],
         ])->assertUnprocessable();
 
         $this->assertDatabaseCount('orders', 0);
@@ -316,7 +313,7 @@ class BuyerCommerceIntegrationTest extends TestCase
         $checkout = [
             'address_id' => $address->id,
             'payment_method' => 'cod',
-            'cart_item_ids' => [$cartItem->id],
+            'mode' => 'cart', 'cart_item_ids' => [$cartItem->id],
         ];
         $this->actingAs($buyer)->postJson('/api/checkout', $checkout)
             ->assertUnprocessable()
@@ -357,9 +354,9 @@ class BuyerCommerceIntegrationTest extends TestCase
             'status' => 'active',
         ]);
         $cart = Cart::create(['user_id' => $buyer->id, 'status' => 'active']);
-        $cartItem = CartItem::create(['cart_id' => $cart->id, 'seller_id' => $product->seller_id, 'product_id' => $product->id, 'quantity' => 1, 'unit_price' => 700, 'line_total' => 700, 'saved_for_later' => false]);
+        $cartItem = CartItem::create(['cart_id' => $cart->id, 'seller_id' => $product->seller_id, 'product_id' => $product->id, 'selected_discount_type' => 'promotion', 'selected_discount_id' => $promotion->id, 'quantity' => 1, 'unit_price' => 700, 'line_total' => 700, 'saved_for_later' => false]);
         $promotion->update(['ends_at' => now()->subSecond()]);
-        $checkout = ['address_id' => $address->id, 'payment_method' => 'cod', 'cart_item_ids' => [$cartItem->id]];
+        $checkout = ['address_id' => $address->id, 'payment_method' => 'cod', 'mode' => 'cart', 'cart_item_ids' => [$cartItem->id]];
 
         $this->actingAs($buyer)->postJson('/api/checkout', $checkout)
             ->assertUnprocessable()
@@ -385,10 +382,10 @@ class BuyerCommerceIntegrationTest extends TestCase
             'ends_at' => now()->addHour(), 'usage_limit' => 1, 'per_buyer_limit' => 1, 'status' => 'active',
         ]);
         $cart = Cart::create(['user_id' => $buyer->id, 'status' => 'active']);
-        $cartItem = CartItem::create(['cart_id' => $cart->id, 'seller_id' => $product->seller_id, 'product_id' => $product->id, 'quantity' => 1, 'unit_price' => 700, 'line_total' => 700, 'saved_for_later' => false]);
+        $cartItem = CartItem::create(['cart_id' => $cart->id, 'seller_id' => $product->seller_id, 'product_id' => $product->id, 'selected_discount_type' => 'promotion', 'selected_discount_id' => $promotion->id, 'quantity' => 1, 'unit_price' => 700, 'line_total' => 700, 'saved_for_later' => false]);
 
         $response = $this->actingAs($buyer)->postJson('/api/checkout', [
-            'address_id' => $address->id, 'payment_method' => 'cod', 'cart_item_ids' => [$cartItem->id],
+            'address_id' => $address->id, 'payment_method' => 'cod', 'mode' => 'cart', 'cart_item_ids' => [$cartItem->id],
         ])->assertCreated()->assertJsonPath('data.subtotal', 700);
 
         $this->assertDatabaseHas('promotion_redemptions', [
@@ -466,7 +463,7 @@ class BuyerCommerceIntegrationTest extends TestCase
         $this->actingAs($buyer)->postJson('/api/checkout', [
             'address_id' => $address->id,
             'payment_method' => 'cod',
-            'cart_item_ids' => $cartItemIds,
+            'mode' => 'cart', 'cart_item_ids' => $cartItemIds,
         ])->assertUnprocessable();
 
         $this->assertDatabaseCount('orders', 0);
@@ -488,11 +485,12 @@ class BuyerCommerceIntegrationTest extends TestCase
         $saved = CartItem::create(['cart_id' => $cart->id, 'seller_id' => $savedProduct->seller_id, 'product_id' => $savedProduct->id, 'quantity' => 1, 'unit_price' => 200, 'line_total' => 200, 'saved_for_later' => true]);
 
         $this->actingAs($buyer)->postJson('/api/checkout', [
+            'mode' => 'cart',
             'address_id' => $address->id,
             'payment_method' => 'cod',
         ])->assertUnprocessable()->assertJsonValidationErrors('cart_item_ids');
 
-        $this->actingAs($buyer)->postJson('/api/checkout/preview', ['cart_item_ids' => [$selected->id]])
+        $this->actingAs($buyer)->postJson('/api/checkout/preview', ['mode' => 'cart', 'cart_item_ids' => [$selected->id]])
             ->assertOk()
             ->assertJsonPath('data.cart_item_ids.0', $selected->id)
             ->assertJsonPath('data.item_count', 2)
@@ -500,14 +498,14 @@ class BuyerCommerceIntegrationTest extends TestCase
             ->assertJsonPath('data.sellers.0.name', $selectedProduct->seller->trade_name ?? $selectedProduct->seller->business_name)
             ->assertJsonCount(1, 'data.sellers');
 
-        $this->actingAs($buyer)->postJson('/api/checkout/preview', ['cart_item_ids' => [$saved->id]])
+        $this->actingAs($buyer)->postJson('/api/checkout/preview', ['mode' => 'cart', 'cart_item_ids' => [$saved->id]])
             ->assertUnprocessable()
             ->assertJsonValidationErrors('cart_item_ids');
 
         $order = $this->actingAs($buyer)->postJson('/api/checkout', [
             'address_id' => $address->id,
             'payment_method' => 'cod',
-            'cart_item_ids' => [$selected->id],
+            'mode' => 'cart', 'cart_item_ids' => [$selected->id],
         ])->assertCreated()->assertJsonPath('data.item_count', 2);
 
         $this->assertDatabaseHas('order_items', ['order_id' => $order->json('data.id'), 'product_id' => $selectedProduct->id]);

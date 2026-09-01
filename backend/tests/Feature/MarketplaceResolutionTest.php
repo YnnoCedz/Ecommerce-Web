@@ -31,7 +31,7 @@ class MarketplaceResolutionTest extends TestCase
         $response = $this->actingAs($buyer)->postJson('/api/checkout', [
             'address_id' => $address->id,
             'payment_method' => 'gcash',
-            'cart_item_ids' => [$cartItem->id],
+            'mode' => 'cart', 'cart_item_ids' => [$cartItem->id],
             'payment_details' => ['mobile_number' => '+639171234567'],
         ])->assertCreated()->assertJsonPath('data.payment_status', 'paid')->assertJsonPath('data.payment.provider', 'simulated');
 
@@ -50,7 +50,7 @@ class MarketplaceResolutionTest extends TestCase
         $response = $this->actingAs($buyer)->postJson('/api/checkout', [
             'address_id' => $address->id,
             'payment_method' => 'maya',
-            'cart_item_ids' => [$cartItem->id],
+            'mode' => 'cart', 'cart_item_ids' => [$cartItem->id],
             'payment_details' => ['mobile_number' => '+639171234567'],
         ])->assertCreated()->assertJsonPath('data.payment_status', 'failed');
 
@@ -67,7 +67,7 @@ class MarketplaceResolutionTest extends TestCase
         $checkout = $this->actingAs($buyer)->postJson('/api/checkout', [
             'address_id' => $address->id,
             'payment_method' => 'gcash',
-            'cart_item_ids' => [$cartItem->id],
+            'mode' => 'cart', 'cart_item_ids' => [$cartItem->id],
             'payment_details' => ['mobile_number' => '+639171234567'],
         ])->assertCreated();
         $order = Order::with('sellerOrders')->findOrFail($checkout->json('data.id'));
@@ -89,7 +89,7 @@ class MarketplaceResolutionTest extends TestCase
         $checkout = $this->actingAs($buyer)->postJson('/api/checkout', [
             'address_id' => $address->id,
             'payment_method' => 'card',
-            'cart_item_ids' => [$cartItem->id],
+            'mode' => 'cart', 'cart_item_ids' => [$cartItem->id],
             'payment_details' => ['cardholder_name' => 'Buyer Test', 'card_last4' => '4242', 'card_brand' => 'Visa'],
         ])->assertCreated();
         $order = Order::with(['sellerOrders', 'items'])->findOrFail($checkout->json('data.id'));
