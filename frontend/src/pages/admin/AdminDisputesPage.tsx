@@ -7,6 +7,7 @@ import {
   type DisputeDetail,
   type DisputeSummary,
 } from "../../api/adminModeration";
+import { StatusBadge } from "../../components/admin/StatusBadge";
 
 const OUTCOMES = [
   ["approve_return", "Approve return"],
@@ -132,7 +133,7 @@ export default function AdminDisputesPage() {
             {loading ? <div className="h-full flex items-center justify-center gap-2 text-sm text-[var(--color-ink-muted)]"><LoaderCircle size={16} className="animate-spin" /> Loading disputes...</div>
               : filtered.length === 0 ? <div className="h-full flex flex-col items-center justify-center gap-2 py-16 text-[var(--color-ink-muted)]"><Scale size={28} /><p className="text-sm">No disputes found.</p></div>
               : filtered.map((dispute) => <button key={dispute.id} onClick={() => void openDispute(dispute)} className={`w-full p-4 text-left border-b border-[var(--color-border-subtle)] hover:bg-[var(--color-surface)] ${selected?.id === dispute.id ? "bg-[var(--color-navy-surface)] border-l-2 border-l-[var(--color-navy)]" : ""}`}>
-                <div className="flex justify-between gap-2"><span className="font-[var(--font-mono)] text-[9px] text-[var(--color-ink-muted)]">{dispute.reference}</span><span className={`text-[9px] font-[var(--font-mono)] ${dispute.status === "open" ? "text-[var(--color-red)]" : "text-[var(--color-ink-muted)]"}`}>{label(dispute.status)}</span></div>
+                <div className="flex justify-between gap-2"><span className="font-[var(--font-mono)] text-[9px] text-[var(--color-ink-muted)]">{dispute.reference}</span><StatusBadge status={dispute.status} /></div>
                 <p className="text-sm font-[600] mt-2">{dispute.order_number}</p><p className="text-xs text-[var(--color-ink-muted)] mt-1">{dispute.buyer_name} vs {dispute.seller_name}</p><p className="text-xs mt-2">Requested {money(dispute.requested_amount)}</p>
               </button>)}
           </div>
@@ -141,7 +142,7 @@ export default function AdminDisputesPage() {
             {detailLoading ? <div className="h-full flex items-center justify-center"><LoaderCircle size={20} className="animate-spin" /></div>
               : !selected ? <div className="h-full flex items-center justify-center text-sm text-[var(--color-ink-muted)]">Select a dispute to view its details.</div>
               : <div className="p-5 md:p-6 space-y-6">
-                <div className="flex justify-between gap-4 flex-wrap"><div><p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)]">{selected.reference}</p><h2 className="font-[var(--font-display)] text-xl mt-1">{selected.reason}</h2><p className="text-xs text-[var(--color-ink-muted)] mt-1">Opened {date(selected.opened_at)}</p></div><span className="h-fit px-2 py-1 text-[10px] font-[var(--font-mono)] bg-[var(--color-surface)] border border-[var(--color-border)]">{label(selected.status)}</span></div>
+                <div className="flex justify-between gap-4 flex-wrap"><div><p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)]">{selected.reference}</p><h2 className="font-[var(--font-display)] text-xl mt-1">{selected.reason}</h2><p className="text-xs text-[var(--color-ink-muted)] mt-1">Opened {date(selected.opened_at)}</p></div><StatusBadge status={selected.status} /></div>
 
                 <div className="grid sm:grid-cols-2 gap-3">
                   <section className="p-4 bg-[var(--color-surface)] border border-[var(--color-border)]"><p className="text-[9px] uppercase tracking-widest text-[var(--color-ink-muted)]">Buyer</p><p className="text-sm font-[600] mt-1">{selected.buyer.name}</p><p className="text-xs text-[var(--color-ink-muted)]">{selected.buyer.email}</p></section>

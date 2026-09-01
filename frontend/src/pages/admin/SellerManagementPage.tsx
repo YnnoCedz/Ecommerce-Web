@@ -18,6 +18,8 @@ import {
   type SellerApplicationSummary,
 } from "../../api/sellerApplications"
 import { useUrlTab } from "../../hooks/useUrlTab"
+import CategoryBadges from "../../components/admin/CategoryBadges"
+import { StatusBadge } from "../../components/admin/StatusBadge"
 
 const money = (value: number) =>
   new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(
@@ -315,8 +317,8 @@ export default function SellerManagementPage() {
                       {seller.user?.name ?? "No owner"}
                     </p>
                   </td>
-                  <td className="capitalize">{seller.status}</td>
-                  <td>{seller.categories.join(", ") || "None"}</td>
+                  <td><StatusBadge status={seller.status} /></td>
+                  <td><CategoryBadges categories={seller.categories} /></td>
                   <td>{seller.products}</td>
                   <td>{seller.orders}</td>
                   <td>{money(seller.gmv)}</td>
@@ -344,7 +346,7 @@ export default function SellerManagementPage() {
                 >
                   <td className="p-3">{application.business_name}</td>
                   <td>{application.applicant?.name ?? "Unknown"}</td>
-                  <td className="capitalize">{application.status}</td>
+                  <td><StatusBadge status={application.status} /></td>
                   <td>
                     {application.submitted_at
                       ? new Date(application.submitted_at).toLocaleDateString(
@@ -383,7 +385,7 @@ export default function SellerManagementPage() {
                   <td className="capitalize">
                     {renewal.document_type.replaceAll("_", " ")}
                   </td>
-                  <td className="capitalize">{renewal.status}</td>
+                  <td><StatusBadge status={renewal.status} /></td>
                   <td>
                     {renewal.submitted_at
                       ? new Date(renewal.submitted_at).toLocaleDateString(
@@ -437,7 +439,13 @@ export default function SellerManagementPage() {
               className="flex justify-between py-2 border-b border-[var(--color-border-subtle)] text-sm"
             >
               <span className="text-[var(--color-ink-muted)]">{label}</span>
-              <span>{value}</span>
+              <span>
+                {label === "Status" ? (
+                  <StatusBadge status={String(value)} />
+                ) : (
+                  value
+                )}
+              </span>
             </div>
           ))}
           <textarea
@@ -524,7 +532,19 @@ export default function SellerManagementPage() {
                 className="grid grid-cols-[6rem_1fr] gap-2 border-b border-[var(--color-border-subtle)] pb-2"
               >
                 <span className="text-[var(--color-ink-muted)]">{label}</span>
-                <span className="break-words capitalize">{value}</span>
+              <span className="break-words capitalize">
+                {label === "Status" ? (
+                  <StatusBadge status={String(value)} />
+                ) : label === "Categories" ? (
+                  <CategoryBadges
+                    categories={selectedApplication.categories.map(
+                      (category) => category.name,
+                    )}
+                  />
+                ) : (
+                  value
+                )}
+              </span>
               </div>
             ))}
           </div>
@@ -611,9 +631,9 @@ export default function SellerManagementPage() {
           <p className="text-sm capitalize mb-2">
             {selectedRenewal.document_type.replaceAll("_", " ")}
           </p>
-          <p className="text-xs text-[var(--color-ink-muted)] mb-4">
-            Status: {selectedRenewal.status}
-          </p>
+           <div className="mb-4">
+             <StatusBadge status={selectedRenewal.status} />
+           </div>
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={async () => {

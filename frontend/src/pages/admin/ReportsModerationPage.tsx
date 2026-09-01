@@ -8,6 +8,7 @@ import {
   type ReportStatus,
   type ReportTargetType,
 } from "../../api/adminModeration";
+import { StatusBadge } from "../../components/admin/StatusBadge";
 
 const STATUS_STYLE: Record<ReportStatus, string> = {
   pending: "bg-yellow-50 text-yellow-700",
@@ -166,7 +167,7 @@ export default function ReportsModerationPage() {
                     <div className="flex gap-2 items-center mb-1">
                       <span className="font-[var(--font-mono)] text-[9px] text-[var(--color-ink-muted)]">{report.reference}</span>
                       <span className={`text-[8px] px-1.5 py-0.5 rounded font-[var(--font-mono)] ${SEVERITY_STYLE[report.severity]}`}>{label(report.severity)}</span>
-                      <span className={`text-[8px] px-1.5 py-0.5 rounded font-[var(--font-mono)] ${STATUS_STYLE[report.status]}`}>{label(report.status)}</span>
+                      <StatusBadge status={report.status} />
                     </div>
                     <p className="text-sm font-[500] truncate">{report.target_name}</p>
                     <p className="text-xs text-[var(--color-ink-muted)] truncate">{label(report.reason)} by {report.reporter?.name ?? "Unknown user"}</p>
