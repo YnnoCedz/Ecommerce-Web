@@ -28,13 +28,13 @@ class CourierApplicationReviewedNotification extends Notification
         $mail = (new MailMessage)->greeting("Hello {$notifiable->display_name},");
 
         if ($this->decision === 'approved') {
-            return $mail->subject('Your Maketo courier application was approved')
+            return $mail->subject('Your Marketo courier application was approved')
                 ->line('Your courier account has been approved.')
-                ->line('The future Maketo Courier app will use this same account for delivery operations.');
+                ->line('The future Marketo Courier app will use this same account for delivery operations.');
         }
 
-        return $mail->subject('Your Maketo courier application was reviewed')
+        return $mail->subject('Your Marketo courier application was reviewed')
             ->line('Your courier application was not approved.')
-            ->line('Reason: '.($this->reason ?: 'Please contact Maketo support for details.'));
+            ->line('Reason: '.($this->reason ?: 'Please contact Marketo support for details.'));
     }
 }

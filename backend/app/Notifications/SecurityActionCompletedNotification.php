@@ -11,7 +11,7 @@ class SecurityActionCompletedNotification extends Notification
 {
     use Queueable;
 
-    public function __construct(private string $action, private string $supportEmail = 'support@marketohub.online', private string $platformName = 'Maketo') {}
+    public function __construct(private string $action, private string $supportEmail = 'support@marketohub.online', private string $platformName = 'Marketo') {}
 
     public function via(User $notifiable): array
     {

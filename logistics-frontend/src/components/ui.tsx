@@ -5,7 +5,7 @@ import {
 } from "lucide-react"
 
 /**
- * Maketo UI primitives for the Logistics Partner Portal.
+ * Marketo UI primitives for the Logistics Partner Portal.
  *
  * These mirror the Marketplace implementations so both apps render one design
  * system: Field/AuthAlert from frontend/src/pages/auth/AuthLayout.tsx,

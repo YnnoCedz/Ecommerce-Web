@@ -33,7 +33,7 @@ export default function AdminDashboard() {
   ] as const : [];
 
   return <div className="p-6 max-w-screen-xl mx-auto space-y-6">
-    <div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="font-[var(--font-display)] text-2xl">Platform dashboard</h1><p className="text-sm text-[var(--color-ink-muted)]">Live marketplace data from the Maketo API</p></div><div className="flex border border-[var(--color-border)] p-0.5">{([7, 30, 90] as Range[]).map(value => <button key={value} onClick={() => setRange(value)} className={`px-3 py-1 text-xs ${range === value ? "bg-[var(--color-navy)] text-white" : "text-[var(--color-ink-muted)]"}`}>{value}d</button>)}</div></div>
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="font-[var(--font-display)] text-2xl">Platform dashboard</h1><p className="text-sm text-[var(--color-ink-muted)]">Live marketplace data from the Marketo API</p></div><div className="flex border border-[var(--color-border)] p-0.5">{([7, 30, 90] as Range[]).map(value => <button key={value} onClick={() => setRange(value)} className={`px-3 py-1 text-xs ${range === value ? "bg-[var(--color-navy)] text-white" : "text-[var(--color-ink-muted)]"}`}>{value}d</button>)}</div></div>
     {loading && <div className="py-16 text-center text-sm text-[var(--color-ink-muted)]">Loading dashboard...</div>}
     {error && <div className="border border-[var(--color-red-border)] bg-[var(--color-red-light)] p-4 text-sm text-[var(--color-red)]">{error}</div>}
     {!loading && !error && data && <>

@@ -135,7 +135,7 @@ class SellerSecurityController extends Controller
             }
         });
         Notification::send($user, new SecurityActionCompletedNotification(
-            $data['action'] === 'close' ? 'Your Maketo seller account was closed. Historical orders and records were preserved.' : 'Your Maketo seller store was deactivated and hidden from buyers.',
+            $data['action'] === 'close' ? 'Your Marketo seller account was closed. Historical orders and records were preserved.' : 'Your Marketo seller store was deactivated and hidden from buyers.',
             $this->settings->get('support_email'),
             $this->settings->get('platform_name'),
         ));
@@ -228,7 +228,7 @@ class SellerSecurityController extends Controller
             $challenge?->update(['consumed_at' => now()]);
             $this->activity->log('seller.password.changed', 'authentication', 'Seller password changed.', $user, $request, $user);
         });
-        Notification::send($user, new SecurityActionCompletedNotification('Your Maketo seller password was changed.', $this->settings->get('support_email'), $this->settings->get('platform_name')));
+        Notification::send($user, new SecurityActionCompletedNotification('Your Marketo seller password was changed.', $this->settings->get('support_email'), $this->settings->get('platform_name')));
 
         return response()->json(['message' => 'Password updated. Other sessions and access tokens were revoked.']);
     }
@@ -260,7 +260,7 @@ class SellerSecurityController extends Controller
             $challenge->update(['consumed_at' => now()]);
             $this->activity->log('seller.mfa.'.($enabled ? 'enabled' : 'disabled'), 'authentication', 'Seller email MFA '.($enabled ? 'enabled.' : 'disabled.'), $user, $request, $user);
         });
-        Notification::send($user, new SecurityActionCompletedNotification('Email MFA was '.($data['action'] === 'enable' ? 'enabled' : 'disabled').' for your Maketo seller account.', $this->settings->get('support_email'), $this->settings->get('platform_name')));
+        Notification::send($user, new SecurityActionCompletedNotification('Email MFA was '.($data['action'] === 'enable' ? 'enabled' : 'disabled').' for your Marketo seller account.', $this->settings->get('support_email'), $this->settings->get('platform_name')));
 
         return response()->json(['message' => 'Email MFA '.$data['action'].'d.', 'data' => ['enabled' => $data['action'] === 'enable', 'method' => $data['action'] === 'enable' ? 'email' : null]]);
     }

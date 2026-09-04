@@ -347,8 +347,8 @@ class CourierDeliveryService
     private function notifyProgress(SellerOrder $sellerOrder, Order $order, string $status): void
     {
         $labels = [
-            'picked-up' => ['Order picked up', 'Your order was picked up by Maketo Logistics.'],
-            'in-transit' => ['Order in transit', 'Your order is in transit with Maketo Logistics.'],
+            'picked-up' => ['Order picked up', 'Your order was picked up by Marketo Logistics.'],
+            'in-transit' => ['Order in transit', 'Your order is in transit with Marketo Logistics.'],
             'out-for-delivery' => ['Order out for delivery', 'Your order is out for delivery.'],
             'delivered' => ['Order delivered', 'Your order has been delivered.'],
         ];
@@ -365,7 +365,7 @@ class CourierDeliveryService
             $this->notifications->publishToUser($sellerOrder->seller->user, [
                 'category' => 'order',
                 'title' => $status === 'picked-up' ? 'Order picked up' : 'Order delivered successfully',
-                'body' => "Order {$order->order_number} was ".($status === 'picked-up' ? 'collected by Maketo Logistics.' : 'delivered.'),
+                'body' => "Order {$order->order_number} was ".($status === 'picked-up' ? 'collected by Marketo Logistics.' : 'delivered.'),
                 'action_type' => 'seller_order', 'action_label' => 'View order',
                 'order_id' => $order->id, 'seller_order_id' => $sellerOrder->id,
             ]);

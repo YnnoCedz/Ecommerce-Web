@@ -1,12 +1,12 @@
-# Maketo Logistics API Contract
+# Marketo Logistics API Contract
 
 All routes are under `/api` and return JSON. Logistics routes require a Sanctum bearer token plus `account.active` and `logistics.staff.active`. Admin routes retain the existing authenticated active-account `role:admin` guard.
 
 ## Shared identity and provider registration
 
-Logistics is independent of Marketplace Buyer capability. A new provider applicant uses `POST /auth/register/logistics`, verifies the same shared Maketo identity once, and receives an identity bearer token while the provider application remains pending. An existing verified identity uses `POST /logistics/applications`. Both paths require private applicant-ID and Business/DTI-permit uploads.
+Logistics is independent of Marketplace Buyer capability. A new provider applicant uses `POST /auth/register/logistics`, verifies the same shared Marketo identity once, and receives an identity bearer token while the provider application remains pending. An existing verified identity uses `POST /logistics/applications`. Both paths require private applicant-ID and Business/DTI-permit uploads.
 
-`GET /logistics/application` returns the current identity's latest application without private storage paths. Maketo Admin reviews applications through:
+`GET /logistics/application` returns the current identity's latest application without private storage paths. Marketo Admin reviews applications through:
 
 - `GET /admin/logistics-applications`
 - `GET /admin/logistics-applications/{application}`
@@ -29,7 +29,7 @@ It does not return provider internals, hubs, or the staff record.
 
 ## Provider-scoped operations
 
-Rider applications belong to the provider selected by the applicant. Provider managers—not Maketo Admin—own the decision and must select an active hub from their own tenant when approving:
+Rider applications belong to the provider selected by the applicant. Provider managers—not Marketo Admin—own the decision and must select an active hub from their own tenant when approving:
 
 - `GET /logistics/rider-applications`
 - `GET /logistics/rider-applications/{application}`
@@ -53,13 +53,13 @@ Foreign-provider applications, documents, and hubs are constrained before serial
 
 Tenant ownership is applied in the database query or checked before payload construction. A foreign-provider resource is returned as not found where appropriate to avoid tenant disclosure.
 
-## Maketo Admin operations
+## Marketo Admin operations
 
 - `GET /admin/logistics/providers` — paginated provider list; supports `status`, `search`, and `per_page` up to 50.
 - `POST /admin/logistics/providers` — create a provider. `code` and `company_name` are required; omitted status defaults to `pending`.
 - `GET /admin/logistics/providers/{provider}` — provider with hubs, service areas, staff summaries, and shipment count.
 - `PATCH /admin/logistics/providers/{provider}` — update details or transition among `pending`, `active`, `suspended`, and `inactive`.
-- `POST /admin/logistics/providers/{provider}/staff` — associate an eligible existing Maketo user with this provider and staff type.
+- `POST /admin/logistics/providers/{provider}/staff` — associate an eligible existing Marketo user with this provider and staff type.
 - `PATCH /admin/logistics/staff/{staff}` — update staff status/type/primary hub with provider ownership checks.
 - `PATCH /admin/logistics/shipments/{shipment}/provider` — explicitly assign an existing ready non-terminal shipment to an approved active provider using `{ "logistics_provider_id": number, "reason"?: string }`.
 

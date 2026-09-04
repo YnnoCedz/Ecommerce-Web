@@ -36,16 +36,16 @@ class CourierE2ESeeder extends Seeder
         }
 
         DB::transaction(function () use ($password): void {
-            $admin = $this->user('admin@example.test', 'Maketo E2E Admin', 'admin', 'active', '0001', $password);
-            $buyer = $this->user('buyer@example.test', 'Maketo E2E Buyer', 'buyer', 'active', '0002', $password);
-            $sellerUser = $this->user('seller@example.test', 'Maketo E2E Seller', 'seller', 'active', '0003', $password);
-            $sellerCourierUser = $this->user('seller.courier@example.test', 'Maketo E2E Seller Courier', 'seller', 'active', '0004', $password);
-            $activeUser = $this->user('active.courier@example.test', 'Maketo E2E Courier A', 'buyer', 'active', '0005', $password);
-            $courierBUser = $this->user('courier.b@example.test', 'Maketo E2E Courier B', 'buyer', 'active', '0006', $password);
-            $pendingUser = $this->user('pending.courier@example.test', 'Maketo E2E Pending Courier', 'buyer', 'active', '0007', $password);
-            $rejectedUser = $this->user('rejected.courier@example.test', 'Maketo E2E Rejected Courier', 'buyer', 'active', '0008', $password);
-            $inactiveUser = $this->user('inactive.courier@example.test', 'Maketo E2E Inactive Courier', 'buyer', 'active', '0009', $password);
-            $suspendedUser = $this->user('suspended.courier@example.test', 'Maketo E2E Suspended Courier', 'buyer', 'active', '0010', $password);
+            $admin = $this->user('admin@example.test', 'Marketo E2E Admin', 'admin', 'active', '0001', $password);
+            $buyer = $this->user('buyer@example.test', 'Marketo E2E Buyer', 'buyer', 'active', '0002', $password);
+            $sellerUser = $this->user('seller@example.test', 'Marketo E2E Seller', 'seller', 'active', '0003', $password);
+            $sellerCourierUser = $this->user('seller.courier@example.test', 'Marketo E2E Seller Courier', 'seller', 'active', '0004', $password);
+            $activeUser = $this->user('active.courier@example.test', 'Marketo E2E Courier A', 'buyer', 'active', '0005', $password);
+            $courierBUser = $this->user('courier.b@example.test', 'Marketo E2E Courier B', 'buyer', 'active', '0006', $password);
+            $pendingUser = $this->user('pending.courier@example.test', 'Marketo E2E Pending Courier', 'buyer', 'active', '0007', $password);
+            $rejectedUser = $this->user('rejected.courier@example.test', 'Marketo E2E Rejected Courier', 'buyer', 'active', '0008', $password);
+            $inactiveUser = $this->user('inactive.courier@example.test', 'Marketo E2E Inactive Courier', 'buyer', 'active', '0009', $password);
+            $suspendedUser = $this->user('suspended.courier@example.test', 'Marketo E2E Suspended Courier', 'buyer', 'active', '0010', $password);
 
             $seller = $this->seller($sellerUser, 'maketo-e2e-seller');
             $this->seller($sellerCourierUser, 'maketo-e2e-seller-courier');
@@ -60,14 +60,14 @@ class CourierE2ESeeder extends Seeder
 
             $category = Category::query()->firstOrCreate(
                 ['slug' => 'maketo-e2e-courier'],
-                ['name' => 'Maketo E2E Courier', 'active' => true, 'sort_order' => 999],
+                ['name' => 'Marketo E2E Courier', 'active' => true, 'sort_order' => 999],
             );
             $product = Product::query()->firstOrCreate(
                 ['sku' => 'MKT-E2E-COURIER-001'],
                 [
                     'seller_id' => $seller->id,
                     'category_id' => $category->id,
-                    'name' => 'Maketo E2E Parcel',
+                    'name' => 'Marketo E2E Parcel',
                     'slug' => 'maketo-e2e-parcel',
                     'description' => 'Clearly fake local courier E2E fixture.',
                     'price' => '500.00',
@@ -237,7 +237,7 @@ class CourierE2ESeeder extends Seeder
             'payment_status' => 'pending',
             'payment_method' => 'cod',
             'currency' => 'PHP',
-            'shipping_name' => 'Maketo E2E Recipient',
+            'shipping_name' => 'Marketo E2E Recipient',
             'shipping_phone' => '+639170099999',
             'shipping_line1' => '300 Example Drop-off Road',
             'shipping_city' => 'Taguig City',

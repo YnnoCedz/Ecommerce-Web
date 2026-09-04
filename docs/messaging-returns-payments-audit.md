@@ -1,10 +1,10 @@
-# Maketo Messaging, Returns, and Simulated Payments
+# Marketo Messaging, Returns, and Simulated Payments
 
 Date: 2026-08-22
 
 ## Architecture Decisions
 
-- Order images are copied to immutable `orders/{order}/items` objects when the source is managed by Maketo storage. External legacy URLs are frozen as the historical reference but cannot be copied without importing the remote asset.
+- Order images are copied to immutable `orders/{order}/items` objects when the source is managed by Marketo storage. External legacy URLs are frozen as the historical reference but cannot be copied without importing the remote asset.
 - Cancellation is scoped to `seller_orders`. Buyers may cancel pending portions; sellers may cancel pending or confirmed portions. Inventory restoration and cancellation records are idempotent.
 - Returns are item and quantity scoped. Refund amounts use the historical `order_items.unit_price`, never a current product price or a frontend amount.
 - GCash, Maya, and card payments use the `simulated` provider. COD begins `unpaid`. No real provider is contacted and no money moves.

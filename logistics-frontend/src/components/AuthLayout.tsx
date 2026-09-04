@@ -39,8 +39,8 @@ export function PublicFooter() {
           <span className="font-[var(--font-display)] text-lg font-[400]">Marketo</span>
         </div>
         <p className="text-xs text-white/50 leading-relaxed max-w-md">
-          The Logistics Partner Portal is the workspace for approved Maketo logistics providers.
-          Rider access is available only in the Maketo Rider App.
+          The Logistics Partner Portal is the workspace for approved Marketo logistics providers.
+          Rider access is available only in the Marketo Rider App.
         </p>
         <div className="border-t border-white/10 mt-8 pt-6">
           <p className="text-xs text-white/30 font-[var(--font-mono)]">&copy; 2026 Marketo Inc. All rights reserved.</p>

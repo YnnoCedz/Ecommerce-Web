@@ -18,7 +18,7 @@ class SellerSalesXlsxExporter
     {
         $workbook = new Spreadsheet;
         $workbook->getProperties()
-            ->setCreator('Maketo')
+            ->setCreator('Marketo')
             ->setTitle('Seller Sales Report')
             ->setSubject($report['period']['label']);
 

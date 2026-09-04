@@ -410,7 +410,7 @@ class CatalogController extends Controller
             'seller' => $product->seller?->trade_name
                 ?? $product->seller?->business_name
                 ?? $product->seller?->user?->display_name
-                ?? 'Maketo Seller',
+                ?? 'Marketo Seller',
             'category_slug' => $product->category?->slug,
             'category' => $product->category?->name ?? 'Uncategorized',
             'regular_price' => $pricing['regular_price'],
@@ -560,7 +560,7 @@ class CatalogController extends Controller
         $lastInitial = mb_substr(trim((string) $review->user?->last_name), 0, 1);
         $displayName = $firstName !== ''
             ? trim($firstName.' '.($lastInitial !== '' ? $lastInitial.'.' : ''))
-            : 'Maketo Buyer';
+            : 'Marketo Buyer';
         $order = $review->orderItem?->order;
         $sellerOrder = $review->orderItem?->sellerOrder;
         $verifiedPurchase = $review->order_item_id !== null

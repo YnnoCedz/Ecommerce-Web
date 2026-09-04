@@ -560,7 +560,7 @@ class CourierApplicationController extends Controller
             MarketplaceNotification::create([
                 'user_id' => $application->user_id, 'category' => 'account',
                 'title' => $decision === 'approved' ? 'Courier application approved' : 'Courier application rejected',
-                'body' => $decision === 'approved' ? 'Your Maketo courier account is now active.' : 'Your courier application was not approved. Review the application status for details.',
+                'body' => $decision === 'approved' ? 'Your Marketo courier account is now active.' : 'Your courier application was not approved. Review the application status for details.',
                 'action_type' => 'courier-application', 'action_label' => 'View application', 'read_at' => null,
             ]);
         } catch (\Throwable $exception) {

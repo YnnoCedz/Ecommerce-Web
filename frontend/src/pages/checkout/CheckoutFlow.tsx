@@ -459,7 +459,7 @@ export default function CheckoutFlow({ initialStep = 1 }: { initialStep?: Step }
               {submitting ? (selectedPayment === "cod" ? "Placing order..." : "Processing demo payment...") : "Place order"}
             </button>
             <p className="text-xs text-[var(--color-ink-muted)] leading-relaxed">
-              Your price, inventory, address ownership, and seller totals are validated again by Maketo before the order is saved.
+              Your price, inventory, address ownership, and seller totals are validated again by Marketo before the order is saved.
             </p>
           </div>
         </div>

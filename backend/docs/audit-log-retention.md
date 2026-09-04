@@ -1,6 +1,6 @@
 # Audit log retention
 
-Maketo activity logs deliberately exclude credentials, authentication tokens, verification codes, MFA secrets, and private document contents.
+Marketo activity logs deliberately exclude credentials, authentication tokens, verification codes, MFA secrets, and private document contents.
 
 Security, administrator, seller-state, document-review, and platform-setting events should be retained for at least 365 days. Events tied to orders, disputes, payouts, account closure, or regulatory evidence should follow the longer financial-record retention policy once that policy is formally approved.
 

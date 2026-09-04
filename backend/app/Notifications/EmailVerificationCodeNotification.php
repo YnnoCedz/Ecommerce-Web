@@ -36,11 +36,11 @@ class EmailVerificationCodeNotification extends Notification
     public function toMail($notifiable): MailMessage
     {
         return (new MailMessage)
-            ->subject('Your Maketo verification code')
+            ->subject('Your Marketo verification code')
             ->greeting('Hello '.($notifiable->display_name ?? $notifiable->name ?? 'there').',')
-            ->line('Use the code below to verify your Maketo email address.')
+            ->line('Use the code below to verify your Marketo email address.')
             ->line(new HtmlString('Verification code: <strong>'.e($this->code).'</strong>'))
             ->line('This code expires in 10 minutes.')
-            ->line('Enter this code on the Maketo verification page. If you did not request it, you can ignore this email.');
+            ->line('Enter this code on the Marketo verification page. If you did not request it, you can ignore this email.');
     }
 }

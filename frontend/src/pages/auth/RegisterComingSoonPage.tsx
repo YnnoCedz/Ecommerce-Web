@@ -21,7 +21,7 @@ export default function RegisterComingSoonPage({
 
   const body =
     variant === "rider"
-      ? "Rider registration is available only through the Maketo Rider App."
+      ? "Rider registration is available only through the Marketo Rider App."
       : "Logistics business registration is available on the dedicated web form."
 
   return (
@@ -48,8 +48,8 @@ export default function RegisterComingSoonPage({
     >
       <p className="text-sm text-[var(--color-ink-muted)] leading-relaxed">
         {variant === "rider"
-          ? "Use the Rider App to create or reuse one Maketo identity, select an approved provider, and submit the provider-owned application."
-          : "Logistics registration creates or reuses one Maketo identity and does not require Marketplace Buyer access."}
+          ? "Use the Rider App to create or reuse one Marketo identity, select an approved provider, and submit the provider-owned application."
+          : "Logistics registration creates or reuses one Marketo identity and does not require Marketplace Buyer access."}
       </p>
 
       <Link

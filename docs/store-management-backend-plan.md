@@ -1,4 +1,4 @@
-# Maketo Store Management Backend Plan
+# Marketo Store Management Backend Plan
 
 Date: 2026-08-19
 

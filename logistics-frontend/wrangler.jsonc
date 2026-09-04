@@ -1,5 +1,5 @@
 {
-  // Cloudflare Worker (static assets) for the Maketo Logistics Partner Portal.
+  // Cloudflare Worker (static assets) for the Marketo Logistics Partner Portal.
   // Deployed separately from the Marketplace Worker (frontend/wrangler.jsonc, "ecommerce-web").
   //
   // Workers Builds: root path "logistics-frontend", build "npm run build", deploy "npx wrangler deploy".

@@ -29,6 +29,6 @@ return [
 
     'from' => [
         'address' => env('MAIL_FROM_ADDRESS', 'noreply@maketo.local'),
-        'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Maketo')),
+        'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Marketo')),
     ],
 ];

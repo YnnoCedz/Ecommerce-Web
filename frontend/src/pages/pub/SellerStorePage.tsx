@@ -243,7 +243,7 @@ export default function SellerStorePage({ sellerSlug, onNavigate }: { sellerSlug
             </div>
             <div className="bg-[var(--color-navy-surface)] border border-[var(--color-navy-border)] rounded-sm p-4">
               <p className="text-sm text-[var(--color-navy)] font-[500] mb-1">Buyer Protection Applies</p>
-              <p className="text-xs text-[var(--color-navy)]/70 leading-relaxed">All orders from this seller are covered by Maketo's Buyer Protection Policy.</p>
+              <p className="text-xs text-[var(--color-navy)]/70 leading-relaxed">All orders from this seller are covered by Marketo's Buyer Protection Policy.</p>
             </div>
           </div>
         )}

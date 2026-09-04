@@ -23,7 +23,7 @@ const OPTIONS: Option[] = [
   {
     key: "user",
     label: "User",
-    description: "Shop and use the Maketo Marketplace.",
+    description: "Shop and use the Marketo Marketplace.",
     href: "/register/user",
     icon: ShoppingBag,
     enabled: true,
@@ -43,8 +43,8 @@ export default function RegisterSelectPage() {
 
   return (
     <AuthLayout
-      title="Create your Maketo account"
-      subtitle="How would you like to join Maketo?"
+      title="Create your Marketo account"
+      subtitle="How would you like to join Marketo?"
       footer={
         <span className="block space-y-1">
           <span className="block">
@@ -95,11 +95,11 @@ export default function RegisterSelectPage() {
       </div>
 
       <p className="text-xs text-[var(--color-ink-muted)] leading-relaxed">
-        Selling on Maketo? Create a User account first, then apply through
+        Selling on Marketo? Create a User account first, then apply through
         Become a Seller from your account menu.
       </p>
       <p className="text-xs text-[var(--color-ink-muted)] leading-relaxed">
-        Rider registration is available only through the Maketo Rider App.
+        Rider registration is available only through the Marketo Rider App.
       </p>
     </AuthLayout>
   )

@@ -49,8 +49,8 @@ class AdminSellerSecurityUpgradeTest extends TestCase
         $this->getJson('/api/admin/settings')->assertUnauthorized();
         $this->actingAs($buyer)->getJson('/api/admin/settings')->assertForbidden();
         $this->actingAs($seller)->putJson('/api/admin/settings', ['settings' => ['platform_name' => 'Nope']])->assertForbidden();
-        $this->actingAs($admin)->patchJson('/api/admin/settings', ['settings' => ['platform_name' => 'Maketo Hub', 'seller_document_expiry_warning_days' => 21]])
-            ->assertOk()->assertJsonPath('data.platform_name', 'Maketo Hub')->assertJsonPath('data.seller_document_expiry_warning_days', 21);
+        $this->actingAs($admin)->patchJson('/api/admin/settings', ['settings' => ['platform_name' => 'Marketo Hub', 'seller_document_expiry_warning_days' => 21]])
+            ->assertOk()->assertJsonPath('data.platform_name', 'Marketo Hub')->assertJsonPath('data.seller_document_expiry_warning_days', 21);
         $this->assertDatabaseHas('platform_settings', ['key' => 'platform_name', 'updated_by' => $admin->id]);
         $this->assertDatabaseHas('activity_logs', ['event_type' => 'platform.setting.changed', 'user_id' => $admin->id]);
         $this->actingAs($admin)->putJson('/api/admin/settings', ['settings' => ['unsupported_key' => true]])->assertUnprocessable();

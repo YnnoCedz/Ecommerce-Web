@@ -35,9 +35,9 @@ class PasswordResetLinkNotification extends Notification
         $resetUrl = $frontendUrl . '/auth/reset-password?' . $query;
 
         return (new MailMessage)
-            ->subject('Reset your Maketo password')
+            ->subject('Reset your Marketo password')
             ->greeting("Hello {$notifiable->display_name},")
-            ->line('We received a request to reset your Maketo password.')
+            ->line('We received a request to reset your Marketo password.')
             ->action('Reset password', $resetUrl)
             ->line('This reset link expires in 60 minutes.')
             ->line('If you did not request a password reset, you can ignore this email.');

@@ -1,4 +1,4 @@
-# Maketo Search System Audit
+# Marketo Search System Audit
 
 Date: 2026-08-20
 
@@ -94,7 +94,7 @@ Synonym matches receive lower weights than original terms. Text relevance is the
 
 ## Visibility and Inventory
 
-Only active, non-deleted products from approved, non-deleted sellers whose user account is active are searchable. Existing Maketo behavior keeps out-of-stock products visible, so they remain searchable but rank below in-stock products when textual relevance ties.
+Only active, non-deleted products from approved, non-deleted sellers whose user account is active are searchable. Existing Marketo behavior keeps out-of-stock products visible, so they remain searchable but rank below in-stock products when textual relevance ties.
 
 ## Pagination and Performance
 

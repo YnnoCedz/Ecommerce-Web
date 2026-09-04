@@ -1,4 +1,4 @@
-# Maketo Full Backend Page Audit
+# Marketo Full Backend Page Audit
 
 Date: 2026-08-22
 Project: `C:\Users\Ynno\Ecommerce-WEB`
@@ -380,7 +380,7 @@ Add routed pages for:
 
 ## Practical Conclusion
 
-Maketo is no longer a frontend-only scaffold.
+Marketo is no longer a frontend-only scaffold.
 
 The current state is:
 

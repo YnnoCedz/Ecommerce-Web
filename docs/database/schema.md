@@ -1,4 +1,4 @@
-# Maketo MySQL Schema
+# Marketo MySQL Schema
 
 This schema is derived from the current frontend and intentionally avoids generic ecommerce tables that the UI does not require.
 

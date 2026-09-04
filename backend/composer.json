@@ -1,7 +1,7 @@
 {
   "name": "maketo/backend",
   "type": "project",
-  "description": "Maketo Laravel backend scaffold",
+  "description": "Marketo Laravel backend scaffold",
   "require": {
     "php": "^8.2",
     "laravel/framework": "^12.0",

@@ -61,13 +61,13 @@ function PublicCourierLanding({ checking }: { checking: boolean }) {
       <section className="border-b border-[var(--color-border)] bg-[var(--color-navy)] text-white">
         <div className="mx-auto max-w-screen-xl px-4 py-16 md:px-8 md:py-24">
           <p className="font-[var(--font-mono)] text-[10px] uppercase tracking-widest text-[var(--color-amber)]">
-            Deliver with Maketo
+            Deliver with Marketo
           </p>
           <h1 className="mt-3 max-w-3xl font-[var(--font-display)] text-4xl leading-tight md:text-6xl">
-            Become a Maketo Courier
+            Become a Marketo Courier
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-7 text-white/75">
-            Use one Maketo account to apply to the delivery network. Courier
+            Use one Marketo account to apply to the delivery network. Courier
             access is enabled only after an administrator reviews and approves
             your application.
           </p>
@@ -77,7 +77,7 @@ function PublicCourierLanding({ checking }: { checking: boolean }) {
               to={`/auth/register?returnTo=${returnTo}`}
               className="inline-flex min-h-11 items-center justify-center rounded-sm bg-[var(--color-amber)] px-6 py-3 text-sm font-[700] text-[var(--color-navy)]"
             >
-              Create Maketo Account
+              Create Marketo Account
             </Link>
             <Link
               aria-disabled={checking}
@@ -96,7 +96,7 @@ function PublicCourierLanding({ checking }: { checking: boolean }) {
           </h2>
           <ul className="mt-5 space-y-3 text-sm leading-6 text-[var(--color-ink-muted)]">
             {[
-              "An active, email-verified Maketo account",
+              "An active, email-verified Marketo account",
               "A Philippine mobile number and current address",
               "Motorcycle, car, or van details",
               "Clear images of your driver's license, vehicle OR, and vehicle CR",
@@ -262,7 +262,7 @@ function StatusView({ application }: { application: CourierApplication }) {
         </h1>
         <p className="mt-3 text-sm leading-6 text-[var(--color-ink-muted)]">
           {approved
-            ? "Your approved, active courier profile now grants courier capability. Your Maketo account role has not changed."
+            ? "Your approved, active courier profile now grants courier capability. Your Marketo account role has not changed."
             : rejected
               ? "No courier access was granted. Your application remains securely on record."
               : "Your application is awaiting administrator review. Courier permissions remain disabled until approval."}
@@ -587,7 +587,7 @@ export default function CourierApplicationPage() {
     <main className="mx-auto w-full max-w-4xl px-4 py-10 md:px-8 md:py-14">
       <div className="mb-7">
         <p className="font-[var(--font-mono)] text-[10px] uppercase tracking-widest text-[var(--color-amber)]">
-          Partner with Maketo
+          Partner with Marketo
         </p>
         <h1 className="mt-2 font-[var(--font-display)] text-4xl">
           Courier application

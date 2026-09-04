@@ -755,11 +755,11 @@ export default function SellerOnboarding({
               </span>
             </div>
             <span className="font-[var(--font-mono)] text-[11px] text-[var(--color-ink-muted)] tracking-widest uppercase">
-              Maketo Seller Center
+              Marketo Seller Center
             </span>
           </Link>
           <h1 className="font-[var(--font-display)] text-3xl font-[400] text-[var(--color-ink)] mb-2">
-            Apply to sell on Maketo
+            Apply to sell on Marketo
           </h1>
           <p className="text-[var(--color-ink-muted)] text-sm max-w-md mx-auto">
             Reach millions of buyers across the Philippines. Complete your
@@ -1198,7 +1198,7 @@ export default function SellerOnboarding({
           {step === 3 && (
             <FormSection
               title="Set up your store"
-              desc="Your store is your public face on Maketo. Choose a name that represents your brand."
+              desc="Your store is your public face on Marketo. Choose a name that represents your brand."
             >
               <Field
                 label="Store name"
@@ -1269,7 +1269,7 @@ export default function SellerOnboarding({
           {step === 4 && (
             <FormSection
               title="Contact information"
-              desc="How buyers and Maketo will reach you. Your personal contact is kept private from buyers."
+              desc="How buyers and Marketo will reach you. Your personal contact is kept private from buyers."
             >
               <div className="grid grid-cols-2 gap-4">
                 <Field label="First name" required>
@@ -1488,7 +1488,7 @@ export default function SellerOnboarding({
                 </p>
                 <p className="text-xs text-[var(--color-ink-muted)] mb-3">
                   Your seller accreditation or business permit certificate. Kept
-                  private and visible only to you and Maketo administrators.
+                  private and visible only to you and Marketo administrators.
                 </p>
                 <input
                   name="seller_certificate_file"
@@ -1747,7 +1747,7 @@ function ApplicationStatus({
               </span>
             </div>
             <span className="font-[var(--font-mono)] text-[11px] text-[var(--color-ink-muted)] tracking-widest uppercase">
-              Maketo Seller Center
+              Marketo Seller Center
             </span>
           </div>
         </div>

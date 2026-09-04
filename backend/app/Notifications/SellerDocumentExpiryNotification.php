@@ -25,7 +25,7 @@ class SellerDocumentExpiryNotification extends Notification
         $timing = $this->daysRemaining === 0 ? 'has expired' : "expires in {$this->daysRemaining} days";
 
         return (new MailMessage)
-            ->subject('Maketo seller document renewal reminder')
+            ->subject('Marketo seller document renewal reminder')
             ->greeting("Hello {$notifiable->display_name},")
             ->line("Your {$label} {$timing}.")
             ->line('Open Seller Center → Store → Renewal to submit a private replacement for administrator review.');

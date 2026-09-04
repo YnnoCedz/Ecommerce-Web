@@ -1,14 +1,14 @@
-# Maketo — Codex Database Schema Implementation Instructions
+# Marketo — Codex Database Schema Implementation Instructions
 
 ## 1. Purpose
 
-You are working on the **Maketo** project.
+You are working on the **Marketo** project.
 
-The existing Maketo project contains the **frontend**, but the backend/database architecture is not yet finalized.
+The existing Marketo project contains the **frontend**, but the backend/database architecture is not yet finalized.
 
 Your task in this phase is to:
 
-1. Inspect the existing Maketo frontend.
+1. Inspect the existing Marketo frontend.
 2. Identify all persistent data requirements.
 3. Design the correct relational MySQL database schema.
 4. Implement the schema using Laravel migrations.
@@ -61,7 +61,7 @@ Do not skip directly from frontend inspection to controllers.
 
 # 3. First Task: Inspect the Existing Project
 
-Before creating or modifying any database table, inspect the entire Maketo project.
+Before creating or modifying any database table, inspect the entire Marketo project.
 
 Do not assume the project structure.
 
@@ -133,7 +133,7 @@ Use the actual repository structure instead of assuming directories exist.
 
 # 4. Do Not Guess the Database
 
-The database must be derived from the existing Maketo frontend.
+The database must be derived from the existing Marketo frontend.
 
 Do NOT blindly create a generic marketplace schema.
 
@@ -155,7 +155,7 @@ gps_tracking
 unless:
 
 1. The frontend actually requires them, or
-2. An explicit Maketo requirement requires them.
+2. An explicit Marketo requirement requires them.
 
 The design principle is:
 
@@ -206,7 +206,7 @@ For every major frontend feature, document:
 
 This table is only an example.
 
-The final inventory must come from the actual Maketo frontend.
+The final inventory must come from the actual Marketo frontend.
 
 ---
 
@@ -405,7 +405,7 @@ Use junction/pivot tables for genuine many-to-many relationships.
 
 # 10. Seller Categories
 
-Maketo is a marketplace where a seller may be able to apply for multiple categories or lines of business.
+Marketo is a marketplace where a seller may be able to apply for multiple categories or lines of business.
 
 Verify this behavior from the frontend.
 
@@ -731,7 +731,7 @@ Do not assume the role architecture before inspecting the project.
 
 # 19. Known Roles
 
-Investigate these possible Maketo roles:
+Investigate these possible Marketo roles:
 
 ```text
 Buyer
@@ -1184,7 +1184,7 @@ Do not proceed to full API implementation until the schema passes this review.
 
 The database implementation is complete only when ALL of the following are true:
 
-* [ ] Entire Maketo frontend inspected
+* [ ] Entire Marketo frontend inspected
 * [ ] Actual project structure identified
 * [ ] All frontend routes inspected
 * [ ] All major pages inspected
@@ -1385,14 +1385,14 @@ Only after all of the above passes should you begin implementing the Laravel API
 
 ## Most Important Rule
 
-> **Do not guess the Maketo database.**
+> **Do not guess the Marketo database.**
 >
 > **Read the frontend, derive the requirements, design the relational schema, validate it, and only then build the backend around it.**
 
 The final system must be:
 
 ```text
-Actual Maketo Frontend
+Actual Marketo Frontend
         ↓
 Validated Database Requirements
         ↓
@@ -1413,4 +1413,4 @@ Frontend Integration
 
 **Do not build a generic ecommerce schema.**
 
-**Build the database that the actual Maketo frontend requires.**
+**Build the database that the actual Marketo frontend requires.**

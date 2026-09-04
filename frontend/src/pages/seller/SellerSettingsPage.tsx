@@ -453,7 +453,7 @@ function PayoutsTab({ profile }: { profile: SellerProfile | null }) {
           </button>
         </div>
       </SectionCard>
-      <SectionCard title="Payout history" subtitle="Authoritative settlements created by Maketo administration.">
+      <SectionCard title="Payout history" subtitle="Authoritative settlements created by Marketo administration.">
         {historyError && <p className="text-sm text-[var(--color-red)]">{historyError}</p>}
         {!historyError && history.length === 0 && <p className="text-sm text-[var(--color-ink-muted)]">No payout records yet.</p>}
         <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr>{["Reference","Period","Gross","Commission","Net","Status"].map((heading) => <th key={heading} className="border-b p-3">{heading}</th>)}</tr></thead><tbody>{history.map((payout) => <tr key={payout.id} className="border-b"><td className="p-3 font-medium">{payout.payout_number}</td><td className="p-3">{payout.period_start} – {payout.period_end}</td><td className="p-3">₱{Number(payout.gross_amount).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</td><td className="p-3">₱{Number(payout.commission_amount).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</td><td className="p-3 font-semibold">₱{Number(payout.net_amount).toLocaleString("en-PH", { minimumFractionDigits: 2 })}</td><td className="p-3 uppercase">{payout.status}</td></tr>)}</tbody></table></div>

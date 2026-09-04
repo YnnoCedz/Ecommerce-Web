@@ -13,7 +13,7 @@ return [
         ),
         'default_returns' => env(
             'MARKETPLACE_DEFAULT_RETURN_POLICY',
-            'Returns and refunds are handled under the Maketo marketplace policy.'
+            'Returns and refunds are handled under the Marketo marketplace policy.'
         ),
     ],
 ];

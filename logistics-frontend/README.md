@@ -1,7 +1,7 @@
-# Maketo Logistics Partner Portal
+# Marketo Logistics Partner Portal
 
 Minimal standalone React/Vite client for `logistics.marketohub.online`. It uses
-the shared Maketo identity API and contains only:
+the shared Marketo identity API and contains only:
 
 - `/login` with shared password and two-factor authentication
 - `/access-denied` for authenticated identities without Logistics capability

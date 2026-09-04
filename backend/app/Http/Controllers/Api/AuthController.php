@@ -197,7 +197,7 @@ class AuthController extends Controller
         }
 
         $message = $verificationEmailSent
-            ? 'Registration received. Verify your email, then a Maketo administrator will review your account.'
+            ? 'Registration received. Verify your email, then a Marketo administrator will review your account.'
             : 'Your registration is saved temporarily, but the verification email could not be sent. Please use Resend code.';
 
         return response()->json([
@@ -383,7 +383,7 @@ class AuthController extends Controller
     private function existingAccountResponse(User $user): JsonResponse
     {
         return response()->json([
-            'message' => 'An existing Maketo identity was found. Sign in to continue.',
+            'message' => 'An existing Marketo identity was found. Sign in to continue.',
             'code' => 'existing_account',
             'existing_account' => true,
             'email_verified' => $user->hasVerifiedEmail(),

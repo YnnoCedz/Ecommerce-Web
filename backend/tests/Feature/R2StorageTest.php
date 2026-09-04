@@ -22,7 +22,7 @@ class R2StorageTest extends TestCase
 
         $file = UploadedFile::fake()->createWithContent(
             'owner-id-card.pdf',
-            str_repeat('Maketo R2 storage test.', 64)
+            str_repeat('Marketo R2 storage test.', 64)
         );
 
         $result = app(MediaStorageService::class)->storePrivateFile($file, 'seller-documents/42/owner-id');

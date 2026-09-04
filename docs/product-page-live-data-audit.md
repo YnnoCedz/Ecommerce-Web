@@ -1,4 +1,4 @@
-# Maketo Product Page Live Data Audit
+# Marketo Product Page Live Data Audit
 
 Date: 2026-08-20
 
@@ -9,7 +9,7 @@ The public React route is `/p/:id` and the page resolves the route value as a pr
 | Section | Status | Source and behavior |
 | --- | --- | --- |
 | Product core | LIVE | `products`, `categories`, and the public catalog API provide name, description, pricing, SKU, barcode, dimensions, and status. |
-| Images | LIVE | Ordered `product_images` are resolved through `MediaStorageService`; missing images use the shared Maketo SVG placeholder. |
+| Images | LIVE | Ordered `product_images` are resolved through `MediaStorageService`; missing images use the shared Marketo SVG placeholder. |
 | Variants | LIVE | Active `product_variants` and options provide price, SKU, stock, and the submitted cart `product_variant_id`. |
 | Stock | LIVE | Product or selected-variant inventory controls availability and quantity; Laravel performs final validation. |
 | Seller information | LIVE | Public store name, slug, logo, verification, location, description, and joined year come from `sellers`. Private seller fields are not returned. |

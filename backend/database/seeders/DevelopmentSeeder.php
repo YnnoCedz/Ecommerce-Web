@@ -26,7 +26,7 @@ class DevelopmentSeeder extends Seeder
                 'password' => Hash::make(env('ADMIN_PASSWORD', 'password123')),
                 'role' => 'admin',
                 'status' => 'active',
-                'location_label' => 'Maketo Admin',
+                'location_label' => 'Marketo Admin',
                 'two_factor_enabled' => false,
                 'email_verified_at' => now(),
                 'last_active_at' => now(),

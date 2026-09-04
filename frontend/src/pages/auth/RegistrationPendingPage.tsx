@@ -7,21 +7,21 @@ const COPY: Record<State, { title: string; body: string; note?: string }> = {
   "verify-email": {
     title: "Verify your email",
     body: "We sent a verification code to your email address. Enter it to continue.",
-    note: "Verifying your email confirms the address is yours. A Maketo administrator still needs to review your registration afterwards.",
+    note: "Verifying your email confirms the address is yours. A Marketo administrator still needs to review your registration afterwards.",
   },
   "awaiting-approval": {
     title: "Marketplace application under review",
-    body: "Your shared Maketo identity is active and your email is verified. A Maketo administrator is reviewing your Marketplace application and ID.",
+    body: "Your shared Marketo identity is active and your email is verified. A Marketo administrator is reviewing your Marketplace application and ID.",
     note: "You may sign in now, but shopping and Seller application access remain unavailable until Marketplace approval.",
   },
   approved: {
     title: "Marketplace access approved",
-    body: "A Maketo administrator approved your Marketplace application. You can sign in and start shopping.",
+    body: "A Marketo administrator approved your Marketplace application. You can sign in and start shopping.",
   },
   rejected: {
     title: "Marketplace application not approved",
     body: "Your Marketplace capability application was reviewed and was not approved. Your shared identity remains separate.",
-    note: "If you believe this is a mistake, contact Maketo support.",
+    note: "If you believe this is a mistake, contact Marketo support.",
   },
 }
 
@@ -35,7 +35,7 @@ function resolveState(raw: string | null): State {
 
 /**
  * Deliberately never says "Registration successful — start shopping now" while
- * Maketo Admin approval is still outstanding.
+ * Marketo Admin approval is still outstanding.
  */
 export default function RegistrationPendingPage() {
   const [searchParams] = useSearchParams()

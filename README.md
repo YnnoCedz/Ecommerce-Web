@@ -1,4 +1,4 @@
-# Maketo
+# Marketo
 
 Production website: https://marketohub.online
 

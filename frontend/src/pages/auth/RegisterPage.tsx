@@ -164,7 +164,7 @@ export default function RegisterPage({ onNavigate }: { onNavigate: NavFn }) {
             </svg>
           </div>
           <p className="text-sm text-[var(--color-ink-muted)] leading-relaxed mb-6">
-            Your Maketo account was created successfully, but it still needs
+            Your Marketo account was created successfully, but it still needs
             email verification before you can sign in.
           </p>
           <p className="text-xs text-[var(--color-ink-muted)] mt-4">
@@ -184,12 +184,12 @@ export default function RegisterPage({ onNavigate }: { onNavigate: NavFn }) {
   return (
     <AuthLayout
       title={
-        isCourierApplication ? "Create Maketo Account" : "Create your account"
+        isCourierApplication ? "Create Marketo Account" : "Create your account"
       }
       subtitle={
         isCourierApplication
-          ? "Use one account for your courier application and Maketo"
-          : "Join Maketo as a buyer"
+          ? "Use one account for your courier application and Marketo"
+          : "Join Marketo as a buyer"
       }
       footer={
         <span>
@@ -333,7 +333,7 @@ export default function RegisterPage({ onNavigate }: { onNavigate: NavFn }) {
               )}
             </div>
             <span className="text-sm text-[var(--color-ink-muted)] leading-snug">
-              I agree to Maketo's{" "}
+              I agree to Marketo's{" "}
               <span className="text-[var(--color-navy)] font-[500] hover:underline cursor-pointer">
                 Terms of Service
               </span>{" "}

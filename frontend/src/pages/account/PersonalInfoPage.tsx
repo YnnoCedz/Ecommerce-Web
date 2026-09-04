@@ -66,7 +66,7 @@ export default function PersonalInfoPage() {
     <div className="mx-auto max-w-screen-xl px-4 py-6 md:px-8 lg:px-12">
       <div className="mb-5">
         <h1 className="font-[var(--font-display)] text-2xl text-[var(--color-ink)]">Personal information</h1>
-        <p className="mt-1 text-sm text-[var(--color-ink-muted)]">Update the contact information saved to your Maketo account.</p>
+        <p className="mt-1 text-sm text-[var(--color-ink-muted)]">Update the contact information saved to your Marketo account.</p>
       </div>
       <form onSubmit={submit} className="overflow-hidden rounded-sm border border-[var(--color-border)] bg-white">
         <div className="flex flex-wrap items-center gap-4 border-b border-[var(--color-border)] p-6">

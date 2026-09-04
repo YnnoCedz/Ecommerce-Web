@@ -1,10 +1,10 @@
-# Maketo Courier API Contract
+# Marketo Courier API Contract
 
 This defines the Laravel contract consumed by the separate Rider Flutter client. This alignment does not modify that Flutter project. All paths use the existing `/api` namespace and shared Sanctum bearer authentication.
 
 ## Identity and authorization
 
-Courier operations use one Maketo user identity and the canonical `couriers.user_id` relationship. Operational routes require, in order:
+Courier operations use one Marketo user identity and the canonical `couriers.user_id` relationship. Operational routes require, in order:
 
 1. `auth:sanctum`
 2. `account.active`
@@ -23,7 +23,7 @@ Rider registration is app-only. There is no web Rider registration or Rider logi
 - Email verification creates an active shared identity and a pending provider-owned courier application; it does not grant Buyer or Rider capability.
 - Existing authenticated identities use `POST /api/courier/applications` with `logistics_provider_id` and the same private application data.
 - Provider managers use the tenant-scoped `/api/logistics/rider-applications` routes to list, view, view private documents, approve with a provider-owned hub, or reject.
-- Maketo Admin `/api/admin/courier-applications` endpoints are read-only oversight; Admin does not approve or reject Riders.
+- Marketo Admin `/api/admin/courier-applications` endpoints are read-only oversight; Admin does not approve or reject Riders.
 
 The client uses the shared authentication endpoints:
 
@@ -141,7 +141,7 @@ The generic status endpoint supports the first three edges only. It cannot set `
 
 Each response contains `allowed_transitions`. A repeated identical courier transition returns the canonical current delivery without appending another event. Invalid or terminal transitions return `422 invalid_delivery_transition`. A courier cannot change payment, refund, dispute, payout, seller, buyer, or courier assignment fields.
 
-Delivery updates lock the seller order and shipment in one database transaction, recheck assignment, synchronize the compatibility `seller_orders.courier_id`, append one tracking event, synchronize order status, update availability, create existing Maketo notifications, and create an activity record. `delivered` remains distinct from buyer-confirmed `completed`.
+Delivery updates lock the seller order and shipment in one database transaction, recheck assignment, synchronize the compatibility `seller_orders.courier_id`, append one tracking event, synchronize order status, update availability, create existing Marketo notifications, and create an activity record. `delivered` remains distinct from buyer-confirmed `completed`.
 
 ### `POST /api/courier/deliveries/{shipment}/deliver`
 
@@ -165,7 +165,7 @@ Access is limited to the assigned courier, owning buyer, owning seller, and admi
 
 ### `GET /api/admin/couriers/eligible`
 
-Requires the existing admin middleware. Supports `search`, `page`, and `per_page` (maximum 50). Returns only approved active couriers whose Maketo account is active. Private application data is excluded.
+Requires the existing admin middleware. Supports `search`, `page`, and `per_page` (maximum 50). Returns only approved active couriers whose Marketo account is active. Private application data is excluded.
 
 ### `PATCH /api/admin/shipments/{shipment}/courier`
 
@@ -181,7 +181,7 @@ The existing `PATCH /api/admin/seller-orders/{sellerOrder}/delivery-status` endp
 
 ## Earnings and payouts
 
-Maketo already has authoritative courier commission entries created from delivered shipment shipping fees and administrative payout records.
+Marketo already has authoritative courier commission entries created from delivered shipment shipping fees and administrative payout records.
 
 ### `GET /api/courier/earnings/summary`
 

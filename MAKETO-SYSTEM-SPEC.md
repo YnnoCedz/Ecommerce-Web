@@ -1,7 +1,7 @@
-You are the senior full-stack engineer responsible for integrating my entire Maketo ecommerce system.
+You are the senior full-stack engineer responsible for integrating my entire Marketo ecommerce system.
 
 PROJECT:
-Maketo — multi-seller ecommerce platform
+Marketo — multi-seller ecommerce platform
 
 CURRENT STACK:
 - Frontend: existing frontend in this repository

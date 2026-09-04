@@ -35,7 +35,7 @@ function formatAddress(row: UserRegistration): string {
 }
 
 /**
- * Phase 2.6 - Maketo Admin review of marketplace User registrations.
+ * Phase 2.6 - Marketo Admin review of marketplace User registrations.
  * Seller, Rider and Logistics applications keep their own separate queues.
  */
 export default function UserRegistrationsPage() {

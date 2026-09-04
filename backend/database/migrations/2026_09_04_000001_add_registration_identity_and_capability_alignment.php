@@ -30,7 +30,7 @@ return new class extends Migration
 
             // Registration review is a separate fact from operational account status.
             // `users.status` answers "may this account operate?"; this answers
-            // "what did Maketo Admin decide about the registration?".
+            // "what did Marketo Admin decide about the registration?".
             if (! Schema::hasColumn('users', 'registration_status')) {
                 $table->string('registration_status', 30)->default('approved')->after('status');
             }

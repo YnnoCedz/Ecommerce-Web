@@ -24,7 +24,7 @@ class CourierAssignmentService
 
             if (! $lockedCourier->active || $lockedCourier->status !== 'active' || ! $lockedCourier->approved_at || $lockedCourier->user?->status !== 'active') {
                 throw ValidationException::withMessages([
-                    'courier_id' => ['Only an approved active courier with an active Maketo account can be assigned.'],
+                    'courier_id' => ['Only an approved active courier with an active Marketo account can be assigned.'],
                 ]);
             }
             if (in_array($lockedShipment->status, ['delivered', 'cancelled', 'failed'], true)

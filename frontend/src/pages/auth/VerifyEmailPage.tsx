@@ -140,7 +140,7 @@ export default function VerifyEmailPage({ onNavigate }: { onNavigate: NavFn }) {
   return (
     <AuthLayout
       title="Verify your email"
-      subtitle="Enter the 6-digit code we sent to your inbox to continue inside Maketo."
+      subtitle="Enter the 6-digit code we sent to your inbox to continue inside Marketo."
       footer={
         <span>
           Need to sign in instead?{" "}

@@ -1243,7 +1243,7 @@ class SellerController extends Controller
                 'note' => $sellerOrder->shipment->deliveryProof->note,
             ] : ['exists' => false],
             'courier' => $sellerOrder->shipment ? [
-                'name' => $sellerOrder->shipment->courier?->name ?? 'Maketo Logistics',
+                'name' => $sellerOrder->shipment->courier?->name ?? 'Marketo Logistics',
                 'tracking' => $sellerOrder->shipment->tracking_number,
                 'driver' => $sellerOrder->shipment->driver_name,
                 'status' => $sellerOrder->shipment->status,

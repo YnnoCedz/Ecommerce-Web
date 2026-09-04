@@ -513,7 +513,7 @@ export default function AdminOrdersPage() {
             </h2>
             <p className="mt-2 text-sm text-[var(--color-ink-muted)]">
               {confirmation.status === "picked-up"
-                ? "This confirms that the package has been collected from the seller and is now under Maketo delivery handling."
+                ? "This confirms that the package has been collected from the seller and is now under Marketo delivery handling."
                 : confirmation.status === "delivered"
                   ? "This confirms delivery and will notify the buyer and seller."
                   : `This will move ${confirmation.orderNumber} to ${label(confirmation.status)}.`}

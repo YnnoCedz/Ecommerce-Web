@@ -1,8 +1,8 @@
-# Maketo Shared Identity and Capability Architecture
+# Marketo Shared Identity and Capability Architecture
 
 ## Invariants
 
-Maketo has one identity per person: one `users` row, one unique email, one
+Marketo has one identity per person: one `users` row, one unique email, one
 normalized unique Philippine mobile number, one password, one email-verification
 state, and one two-factor configuration. Buyer, Seller, Rider, Logistics, and
 Admin are independently derived capabilities attached to that identity.
@@ -115,7 +115,7 @@ Buyer through Become a Seller.
 2. Email verification creates an active verified `users` row, address,
    `user_documents` metadata, and a pending `marketplace_profiles` row.
 3. A bearer token is issued because identity verification is complete.
-4. Maketo Admin approves or rejects only the Marketplace profile and document.
+4. Marketo Admin approves or rejects only the Marketplace profile and document.
 5. Shopping and Seller application middleware remain denied until approval.
 
 An existing verified identity can submit `POST /api/marketplace/applications`
@@ -128,7 +128,7 @@ then creates a pending `logistics_provider_applications` row and two private
 documents (`applicant_id`, `business_permit`). An existing verified identity
 uses `POST /api/logistics/applications` instead. Buyer approval is irrelevant.
 
-Maketo Admin reviews the application. Approval transactionally creates an
+Marketo Admin reviews the application. Approval transactionally creates an
 active `logistics_providers` row and the applicant's first active
 `provider_manager` staff row. Rejection leaves the global identity usable and
 does not create provider access.
@@ -144,7 +144,7 @@ to that provider. Buyer approval is neither required nor implied.
 Provider-manager routes are tenant-scoped before pagination and serialization.
 The manager reviews documents, selects a provider-owned active hub, and approves
 or rejects the application. Approval creates or activates the courier profile
-and its provider affiliation. Maketo Admin retains read-only oversight and does
+and its provider affiliation. Marketo Admin retains read-only oversight and does
 not own Rider decisions.
 
 ## Authorization matrix

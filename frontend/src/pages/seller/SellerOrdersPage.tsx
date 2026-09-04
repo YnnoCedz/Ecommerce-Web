@@ -451,7 +451,7 @@ function OrderCard({
           )}
           {!order.next_status && ["ready", "picked-up", "in-transit", "out-for-delivery"].includes(status) && (
             <div className="rounded-sm border border-[var(--color-navy-border)] bg-[var(--color-navy-surface)] p-3 text-sm text-[var(--color-navy)]">
-              {status === "ready" ? "Awaiting Maketo pickup." : status === "picked-up" ? "Picked up by Maketo Logistics." : status === "in-transit" ? "In transit with Maketo Logistics." : "Maketo Logistics is out for delivery."}
+              {status === "ready" ? "Awaiting Marketo pickup." : status === "picked-up" ? "Picked up by Marketo Logistics." : status === "in-transit" ? "In transit with Marketo Logistics." : "Marketo Logistics is out for delivery."}
             </div>
           )}
           {["new", "confirmed"].includes(status) && (

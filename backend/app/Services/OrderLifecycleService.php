@@ -159,8 +159,8 @@ class OrderLifecycleService
             'shipment_id' => $shipment->id,
             'status' => $status,
             'note' => match ($status) {
-                'ready' => 'Seller prepared the order for Maketo pickup.',
-                'picked-up' => 'Package collected from the seller by Maketo Logistics.',
+                'ready' => 'Seller prepared the order for Marketo pickup.',
+                'picked-up' => 'Package collected from the seller by Marketo Logistics.',
                 'in-transit' => 'Package is moving through delivery.',
                 'out-for-delivery' => 'Package is on its way to the buyer.',
                 'delivered' => 'Package was delivered to the buyer.',

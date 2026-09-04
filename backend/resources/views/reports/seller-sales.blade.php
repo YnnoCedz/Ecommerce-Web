@@ -114,7 +114,7 @@
         Refunds PHP {{ number_format($report['summary']['refunds'], 2) }} |
         Net PHP {{ number_format($report['summary']['net_product_sales'], 2) }}
     </div>
-    <div class="footer">Maketo Seller Sales Report | Generated {{ $report['generated_at']->format('Y-m-d H:i T') }}</div>
+    <div class="footer">Marketo Seller Sales Report | Generated {{ $report['generated_at']->format('Y-m-d H:i T') }}</div>
     <script type="text/php">
         if (isset($pdf)) {
             $font = $fontMetrics->get_font("DejaVu Sans", "normal");

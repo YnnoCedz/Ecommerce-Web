@@ -50,7 +50,7 @@ function LoginPage({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => v
       title={challenge ? "Verify your identity" : "Sign in"}
       subtitle={challenge
         ? "Enter the 6-digit verification code sent to your registered contact method."
-        : "Use your Maketo identity to access your Logistics Partner workspace."}
+        : "Use your Marketo identity to access your Logistics Partner workspace."}
       footnote={challenge ? undefined : (
         <span>
           Not yet a Logistics partner?{" "}
@@ -121,11 +121,11 @@ function AccessDenied({ user }: { user: AuthUser | null }) {
   return (
     <AuthLayout
       title="Access unavailable"
-      subtitle={user ? `Signed in as ${user.email}.` : "You are signed in with a Maketo identity."}
+      subtitle={user ? `Signed in as ${user.email}.` : "You are signed in with a Marketo identity."}
     >
       <Alert type="warning">
-        This Maketo identity does not currently have access to the Logistics Partner Portal.
-        Sign-in succeeded; Logistics access is approved separately by a Maketo administrator.
+        This Marketo identity does not currently have access to the Logistics Partner Portal.
+        Sign-in succeeded; Logistics access is approved separately by a Marketo administrator.
       </Alert>
       <p className="text-sm text-[var(--color-ink-muted)] leading-relaxed">
         If your provider application is still under review, you will be able to sign in here once it is approved.
@@ -233,7 +233,7 @@ export default function App() {
   // Session restore renders the branded shell with skeletons rather than a blank page.
   if (loading) {
     return (
-      <AuthLayout title="Restoring session" subtitle="Checking your Maketo identity...">
+      <AuthLayout title="Restoring session" subtitle="Checking your Marketo identity...">
         <LoadingRows rows={3} />
       </AuthLayout>
     )

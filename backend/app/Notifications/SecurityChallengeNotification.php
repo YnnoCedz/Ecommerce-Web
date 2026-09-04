@@ -40,11 +40,11 @@ class SecurityChallengeNotification extends Notification
         $minutes = max(1, now()->diffInMinutes($this->challenge->expires_at, false));
 
         return (new MailMessage)
-            ->subject('Confirm your Maketo account action')
+            ->subject('Confirm your Marketo account action')
             ->greeting("Hello {$notifiable->display_name},")
             ->line("A request was made to {$action}.")
             ->line("Verification code: {$this->code}")
             ->line("This single-use code expires in {$minutes} minute".($minutes === 1 ? '' : 's').'.')
-            ->line('If you did not request this action, do not share the code and contact Maketo support.');
+            ->line('If you did not request this action, do not share the code and contact Marketo support.');
     }
 }

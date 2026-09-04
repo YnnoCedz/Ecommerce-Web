@@ -53,7 +53,7 @@ test("marketplace login has explicit non-Buyer denial and capability-safe Logist
   assert.match(router, /path: "\/marketplace-unavailable"/)
 })
 
-test("registration pages share the Maketo auth design system", () => {
+test("registration pages share the Marketo auth design system", () => {
   // One shared kit: layout, field, select, file upload, sections, password strength.
   for (const source of [userRegistration, logisticsRegistration]) {
     assert.match(source, /from "\.\/AuthLayout"/)

@@ -1,10 +1,10 @@
-# Maketo Courier Architecture
+# Marketo Courier Architecture
 
 ## Current implementation
 
-The courier registration flow is part of the existing Maketo modular Laravel API. The React website, admin website, and future Flutter Courier app share the same `users` identity, Sanctum bearer-token authentication, Aiven MySQL database, notification records, activity logs, and Cloudflare R2 storage service.
+The courier registration flow is part of the existing Marketo modular Laravel API. The React website, admin website, and future Flutter Courier app share the same `users` identity, Sanctum bearer-token authentication, Aiven MySQL database, notification records, activity logs, and Cloudflare R2 storage service.
 
-Public discovery starts at the `Become a Courier` Footer link and opens `/courier/apply`. Guests first see the public courier landing page, requirements, privacy summary, and separate `Create Maketo Account` and `Sign In` actions. Both existing authentication flows preserve `/courier/apply` as the return destination. Verified, active users may submit an application. Admin accounts are ineligible.
+Public discovery starts at the `Become a Courier` Footer link and opens `/courier/apply`. Guests first see the public courier landing page, requirements, privacy summary, and separate `Create Marketo Account` and `Sign In` actions. Both existing authentication flows preserve `/courier/apply` as the return destination. Verified, active users may submit an application. Admin accounts are ineligible.
 
 Applicants may save one scalar-only draft and resume it later. Draft saves do not upload documents; all three images are selected and validated during final submission. Submitting promotes the same record to `pending`. It does not create an active courier or grant courier permissions. The page displays the current pending, approved, or rejected state instead of rendering a second blank form.
 

@@ -44,7 +44,7 @@ test("public routes share the branded auth shell, authenticated routes the app s
   assert.match(authLayout, /PublicFooter/)
   assert.match(authLayout, /Logistics Partner Portal/)
 
-  // Maketo branding, but none of the Marketplace commerce navigation.
+  // Marketo branding, but none of the Marketplace commerce navigation.
   for (const source of [app, authLayout, appShell]) {
     assert.doesNotMatch(source, /Cart|Wishlist|Seller Center|Categories|Wishlist/)
   }

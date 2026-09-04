@@ -1,13 +1,13 @@
-# Maketo Revised Logistics Phase 2 Architecture
+# Marketo Revised Logistics Phase 2 Architecture
 
 ## Implemented boundary
 
-Maketo keeps one user identity and one Laravel/Sanctum authentication system. Third-party logistics access is an additive capability represented by a unique `logistics_staff.user_id` record. It is never derived from `users.role`, and an administrator receives no implicit logistics-portal access.
+Marketo keeps one user identity and one Laravel/Sanctum authentication system. Third-party logistics access is an additive capability represented by a unique `logistics_staff.user_id` record. It is never derived from `users.role`, and an administrator receives no implicit logistics-portal access.
 
 The V1 responsibility boundary is:
 
 1. A seller makes a seller order ready and the existing shipment is created.
-2. Maketo Admin explicitly assigns that ready shipment to one approved active logistics provider.
+2. Marketo Admin explicitly assigns that ready shipment to one approved active logistics provider.
 3. Active staff of that provider can see the shipment.
 4. Authorized provider staff explicitly check the shipment into an active provider-owned hub.
 5. Provider staff choose an eligible same-hub affiliated courier.
@@ -28,13 +28,13 @@ These fields are orthogonal; none is inferred from another.
 
 `logistics_providers` uses the centralized states `pending`, `active`, `suspended`, and `inactive`. An operational provider must be `active` and have `approved_at` set. Provider codes are stable and globally unique. Global uniqueness avoids ambiguous operational codes in logs, support tools, and cross-provider administration.
 
-`logistics_staff` belongs to one Maketo user and one provider. V1 permits one staff capability per user:
+`logistics_staff` belongs to one Marketo user and one provider. V1 permits one staff capability per user:
 
 - `provider_manager`: provider-wide access to all of its hubs; no primary hub required.
 - `hub_manager`: one required active primary hub.
 - `dispatcher`: one required active primary hub.
 
-The `auth:sanctum`, `account.active`, and `logistics.staff.active` middleware chain checks authentication, active Maketo account, approved active staff capability, and approved active provider. Provider and hub context always comes from the authenticated staff record, never a client-supplied provider ID.
+The `auth:sanctum`, `account.active`, and `logistics.staff.active` middleware chain checks authentication, active Marketo account, approved active staff capability, and approved active provider. Provider and hub context always comes from the authenticated staff record, never a client-supplied provider ID.
 
 ## Hubs and service areas
 
@@ -44,7 +44,7 @@ Every `logistics_hubs` row has a required provider. Hub geography is normalized 
 
 ## Courier affiliation and dispatch policy
 
-`courier_logistics_affiliations` preserves provider and primary-hub history. Affiliation is performed transactionally while locking the courier row; this serializes competing affiliation attempts and permits only one row with active status and no end time. The courier must already be an approved active Maketo courier with an active user account, and the selected active hub must belong to the active provider.
+`courier_logistics_affiliations` preserves provider and primary-hub history. Affiliation is performed transactionally while locking the courier row; this serializes competing affiliation attempts and permits only one row with active status and no end time. The courier must already be an approved active Marketo courier with an active user account, and the selected active hub must belong to the active provider.
 
 Couriers cannot self-affiliate. A provider manager may affiliate a courier only with their own provider and hub. Ending an affiliation updates the existing row instead of deleting it and is blocked while the courier has an active delivery.
 

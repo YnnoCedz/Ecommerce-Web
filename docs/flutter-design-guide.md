@@ -1,6 +1,6 @@
-# Maketo Flutter design guide
+# Marketo Flutter design guide
 
-This guide describes a possible mobile counterpart to Maketo's existing web system. The web palette is warm and editorial: Fraunces-style display headings, Outfit-style UI text, an ink/cream foundation, navy actions, amber commerce accents, and restrained status colors. The previously colocated Flutter starter was removed from this web repository and was intentionally independent of the Laravel API.
+This guide describes a possible mobile counterpart to Marketo's existing web system. The web palette is warm and editorial: Fraunces-style display headings, Outfit-style UI text, an ink/cream foundation, navy actions, amber commerce accents, and restrained status colors. The previously colocated Flutter starter was removed from this web repository and was intentionally independent of the Laravel API.
 
 ## Architecture and tokens
 

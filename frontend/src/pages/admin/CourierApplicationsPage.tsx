@@ -87,7 +87,7 @@ export default function CourierApplicationsPage() {
             Courier Applications
           </h1>
           <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
-            Read-only Maketo oversight of provider-owned Rider applications.
+            Read-only Marketo oversight of provider-owned Rider applications.
             Provider managers approve or reject applicants in their tenant.
           </p>
           <div className="mt-4 flex overflow-x-auto border-b border-[var(--color-border)]">

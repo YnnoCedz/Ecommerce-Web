@@ -426,7 +426,7 @@ class CommerceController extends Controller
                     'shipment_id' => $sellerOrder->shipment?->id,
                     'driver_name' => $sellerOrder->shipment?->driver_name,
                     'courier_name' => $sellerOrder->shipment
-                        ? ($sellerOrder->shipment->courier?->name ?? 'Maketo Logistics')
+                        ? ($sellerOrder->shipment->courier?->name ?? 'Marketo Logistics')
                         : null,
                     'delivered_at' => optional($sellerOrder->delivered_at)->toISOString(),
                     'completed_at' => optional($sellerOrder->completed_at)->toISOString(),

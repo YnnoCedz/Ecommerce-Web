@@ -293,7 +293,7 @@ class AdminPlatformController extends Controller
             $challenge?->update(['consumed_at' => now()]);
             $this->activity->log('auth.password.changed', 'authentication', 'Administrator password changed.', $user, $request, $user);
         });
-        Notification::send($user, new SecurityActionCompletedNotification('Your Maketo administrator password was changed.', $this->settings->get('support_email'), $this->settings->get('platform_name')));
+        Notification::send($user, new SecurityActionCompletedNotification('Your Marketo administrator password was changed.', $this->settings->get('support_email'), $this->settings->get('platform_name')));
 
         return response()->json(['message' => 'Password updated. Other sessions and access tokens were revoked.']);
     }
@@ -364,7 +364,7 @@ class AdminPlatformController extends Controller
             'marketplace_growth' => $this->userGrowth($from, $monthly),
             'top_sellers' => $this->topSellers($from, $to)->take(5)->values(),
             'top_products' => $this->topProducts($from, $to)->take(5)->values(),
-            'definitions' => ['active_buyers' => 'Unique Maketo accounts that placed an order during the selected period, regardless of current role.'],
+            'definitions' => ['active_buyers' => 'Unique Marketo accounts that placed an order during the selected period, regardless of current role.'],
         ];
     }
 

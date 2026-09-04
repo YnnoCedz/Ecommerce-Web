@@ -1,4 +1,4 @@
-# Maketo Integration Audit
+# Marketo Integration Audit
 
 Date: 2026-08-17
 

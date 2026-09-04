@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Notification;
 use Illuminate\Validation\Rule;
 
 /**
- * Phase 2.6 - Maketo Admin review of marketplace User registrations.
+ * Phase 2.6 - Marketo Admin review of marketplace User registrations.
  *
  * This queue holds User/Buyer registrations only. Seller, Rider and Logistics
  * applications keep their own separate queues and are never mixed in here.
@@ -221,7 +221,7 @@ class AdminUserRegistrationController extends Controller
             'category' => 'account',
             'title' => $decision === 'approved' ? 'Your Marketplace access is approved' : 'Your Marketplace application was not approved',
             'body' => $decision === 'approved'
-                ? 'You can now shop and use the Maketo Marketplace.'
+                ? 'You can now shop and use the Marketo Marketplace.'
                 : 'Your Marketplace application was reviewed and not approved.',
         ]);
     }

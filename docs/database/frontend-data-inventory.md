@@ -1,4 +1,4 @@
-# Maketo Frontend Data Inventory
+# Marketo Frontend Data Inventory
 
 Source of truth: the React frontend under `frontend/src`.
 

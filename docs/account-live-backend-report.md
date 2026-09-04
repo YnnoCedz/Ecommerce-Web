@@ -1,4 +1,4 @@
-# Maketo Account Live Backend Report
+# Marketo Account Live Backend Report
 
 Date: 2026-08-20
 

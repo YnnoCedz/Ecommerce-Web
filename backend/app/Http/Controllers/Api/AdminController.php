@@ -124,7 +124,7 @@ class AdminController extends Controller
             if ($data['status'] !== 'active') {
                 $user->tokens()->delete();
             }
-            $this->notifications->publishToUser($user, ['category' => 'account', 'title' => 'Account status updated', 'body' => $data['status'] === 'active' ? 'Your Maketo account is active.' : (string) $data['reason']]);
+            $this->notifications->publishToUser($user, ['category' => 'account', 'title' => 'Account status updated', 'body' => $data['status'] === 'active' ? 'Your Marketo account is active.' : (string) $data['reason']]);
         });
         app(ActivityLogger::class)->log('admin.user.status_changed', 'moderation', 'Marketplace user status changed.', $request->user(), $request, $user, ['status' => $data['status']]);
 
@@ -317,7 +317,7 @@ class AdminController extends Controller
                         'note' => $shipment->deliveryProof->note,
                         'courier_name' => $shipment->courier?->name,
                     ] : ['exists' => false],
-                    'delivery_handler' => $shipment?->courier?->name ?? ($shipment ? 'Maketo Logistics' : null),
+                    'delivery_handler' => $shipment?->courier?->name ?? ($shipment ? 'Marketo Logistics' : null),
                     'courier_id' => $shipment?->courier_id,
                     'seller' => $sellerOrder->seller ? [
                         'id' => $sellerOrder->seller->id,

@@ -1,4 +1,4 @@
-# Maketo Authentication and Session Forensic Audit
+# Marketo Authentication and Session Forensic Audit
 
 Date: 2026-08-20
 

@@ -1,4 +1,4 @@
-# Maketo Seller + Admin Auth Route Audit
+# Marketo Seller + Admin Auth Route Audit
 
 Date: 2026-08-19
 

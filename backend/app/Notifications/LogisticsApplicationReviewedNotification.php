@@ -22,13 +22,13 @@ class LogisticsApplicationReviewedNotification extends Notification
     {
         $mail = (new MailMessage)->greeting("Hello {$notifiable->display_name},");
         if ($this->decision === 'approved') {
-            return $mail->subject('Your Maketo logistics provider is approved')
+            return $mail->subject('Your Marketo logistics provider is approved')
                 ->line('Your logistics provider application was approved.')
                 ->line('You can now sign in to the Logistics Partner Portal.');
         }
 
         return $mail->subject('Your logistics provider application was reviewed')
             ->line('Your application was not approved.')
-            ->line('Reason: '.($this->reason ?: 'Please contact Maketo support for details.'));
+            ->line('Reason: '.($this->reason ?: 'Please contact Marketo support for details.'));
     }
 }

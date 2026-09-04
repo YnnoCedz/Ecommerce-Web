@@ -1,4 +1,4 @@
-# Maketo Seller Input / Form Persistence Audit
+# Marketo Seller Input / Form Persistence Audit
 
 Date: 2026-08-19
 

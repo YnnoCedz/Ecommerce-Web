@@ -69,7 +69,7 @@ function getSellerName(seller: CatalogProduct["seller"]): string {
     if (typeof businessName === "string" && businessName.trim()) return businessName;
   }
 
-  return "Maketo Seller";
+  return "Marketo Seller";
 }
 
 function getSellerInitials(seller: CatalogProduct["seller"], fallbackName: string): string {
@@ -234,7 +234,7 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
   const currentStock = selectedVariant?.stock_quantity ?? product?.stock_quantity ?? 0;
   const currentInStock = product ? (product.track_inventory ? currentStock > 0 : true) : false;
   const categoryLabel = product ? getCategoryLabel(product.category) : "Uncategorized";
-  const sellerName = product ? getSellerName(product.seller) : "Maketo Seller";
+  const sellerName = product ? getSellerName(product.seller) : "Marketo Seller";
   const sellerInitials = product ? getSellerInitials(product.seller, sellerName) : "M";
   const seller = product && typeof product.seller === "object" ? product.seller : null;
   const reviewSummary = product?.review_summary ?? {

@@ -1,4 +1,4 @@
-# Maketo Order Lifecycle Audit
+# Marketo Order Lifecycle Audit
 
 Date: 2026-08-22
 

@@ -22,7 +22,7 @@ function deriveMarketplaceUrl(): string {
 export const MARKETPLACE_URL: string =
   configuredMarketplaceUrl || (import.meta.env.DEV ? LOCAL_MARKETPLACE_URL : deriveMarketplaceUrl())
 
-/** Shared Maketo identity password reset (Marketplace-owned). */
+/** Shared Marketo identity password reset (Marketplace-owned). */
 export const forgotPasswordUrl = (): string => `${MARKETPLACE_URL}/auth/forgot-password`
 
 /** Logistics provider application (Marketplace public registration surface). */

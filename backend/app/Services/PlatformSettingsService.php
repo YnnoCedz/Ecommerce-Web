@@ -11,7 +11,7 @@ use Illuminate\Validation\ValidationException;
 class PlatformSettingsService
 {
     private const DEFINITIONS = [
-        'platform_name' => ['type' => 'string', 'group' => 'general', 'default' => 'Maketo', 'rules' => ['string', 'min:2', 'max:80']],
+        'platform_name' => ['type' => 'string', 'group' => 'general', 'default' => 'Marketo', 'rules' => ['string', 'min:2', 'max:80']],
         'support_email' => ['type' => 'string', 'group' => 'general', 'default' => 'support@marketohub.online', 'rules' => ['email', 'max:255']],
         'seller_document_expiry_warning_days' => ['type' => 'integer', 'group' => 'seller', 'default' => 30, 'rules' => ['integer', 'min:1', 'max:180']],
     ];

@@ -99,7 +99,7 @@ class MediaStorageService
         $this->assertR2Configured();
 
         $key = $prefix.'/r2-connection-test.txt';
-        $payload = 'Maketo R2 connection test at '.now()->toDateTimeString();
+        $payload = 'Marketo R2 connection test at '.now()->toDateTimeString();
 
         $disk = Storage::disk('r2');
         $disk->put($key, $payload);

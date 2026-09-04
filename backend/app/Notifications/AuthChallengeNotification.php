@@ -38,9 +38,9 @@ class AuthChallengeNotification extends Notification
         $expiresMinutes = max(1, now()->diffInMinutes($this->challenge->expires_at, false));
 
         return (new MailMessage)
-            ->subject('Your Maketo sign-in code')
+            ->subject('Your Marketo sign-in code')
             ->greeting("Hello {$notifiable->display_name},")
-            ->line('Use the code below to finish signing in to your Maketo account.')
+            ->line('Use the code below to finish signing in to your Marketo account.')
             ->line("Verification code: {$this->code}")
             ->line("This code expires in {$expiresMinutes} minute" . ($expiresMinutes === 1 ? '' : 's') . '.')
             ->line('If you did not try to sign in, you can ignore this email.');

@@ -33,10 +33,10 @@ Artisan::command('mail:test {email?}', function () {
 
     try {
         Mail::raw(
-            'Maketo mail test sent at '.now()->toDateTimeString(),
+            'Marketo mail test sent at '.now()->toDateTimeString(),
             function ($message) use ($recipient) {
                 $message->to($recipient);
-                $message->subject('Maketo mail test');
+                $message->subject('Marketo mail test');
             }
         );
     } catch (Throwable $e) {

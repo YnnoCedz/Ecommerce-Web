@@ -282,8 +282,8 @@ export default function UserRegistrationPage() {
   return (
     <AuthLayout
       width="wide"
-      title="Create your Maketo account"
-      subtitle="Verify your email, then a Maketo administrator reviews your registration before your account is activated."
+      title="Create your Marketo account"
+      subtitle="Verify your email, then a Marketo administrator reviews your registration before your account is activated."
       footer={
         <span>
           Already have an account?{" "}
@@ -401,7 +401,7 @@ export default function UserRegistrationPage() {
             file={idDocument}
             onChange={setIdDocument}
             error={errors.idDocument}
-            hint="Stored privately and visible only to Maketo administrators during review."
+            hint="Stored privately and visible only to Marketo administrators during review."
             required
           />
         </FormSection>

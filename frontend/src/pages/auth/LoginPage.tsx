@@ -97,10 +97,10 @@ export default function LoginPage({ onNavigate }: { onNavigate: NavFn }) {
   return (
     <AuthLayout
       title="Welcome back"
-      subtitle="Sign in to your Maketo account"
+      subtitle="Sign in to your Marketo account"
       footer={
         <span>
-          New to Maketo?{" "}
+          New to Marketo?{" "}
           <button
             onClick={() =>
               isCapabilityApplicationReturn
@@ -114,7 +114,7 @@ export default function LoginPage({ onNavigate }: { onNavigate: NavFn }) {
             className="text-[var(--color-navy)] font-[500] hover:underline cursor-pointer"
           >
             {safeReturn === "/courier/apply"
-              ? "Create Maketo Account"
+              ? "Create Marketo Account"
               : isCapabilityApplicationReturn
                 ? "Start Logistics registration"
               : "Create an account"}

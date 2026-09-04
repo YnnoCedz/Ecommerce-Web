@@ -173,7 +173,7 @@ export function mapErrorToMessage(error: unknown, options: ErrorMappingOptions =
   const context = options.context ?? "generic";
 
   if (options.log !== false && import.meta.env.DEV) {
-    console.error(`[Maketo:${context}]`, error);
+    console.error(`[Marketo:${context}]`, error);
   }
 
   return mappedMessage(error, context) ?? options.fallback ?? CONTEXT_FALLBACKS[context];

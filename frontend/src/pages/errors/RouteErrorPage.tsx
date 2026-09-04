@@ -6,7 +6,7 @@ export default function RouteErrorPage() {
 
   useEffect(() => {
     if (import.meta.env.DEV) {
-      console.error("[Maketo:route-error]", error);
+      console.error("[Marketo:route-error]", error);
     }
   }, [error]);
 
@@ -14,7 +14,7 @@ export default function RouteErrorPage() {
     <div className="min-h-screen flex items-center justify-center bg-[var(--color-ground)] px-6 py-12">
       <div className="max-w-md w-full bg-white border border-[var(--color-border)] rounded-sm shadow-[0_4px_24px_rgba(28,27,24,0.08)] p-8 text-center">
         <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-disabled)] tracking-widest uppercase mb-3">
-          Maketo
+          Marketo
         </p>
         <h1 className="font-[var(--font-display)] text-3xl text-[var(--color-ink)] font-[400] mb-3">
           Something went wrong

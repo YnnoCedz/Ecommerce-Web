@@ -46,7 +46,7 @@ export default function EmailVerifiedPage() {
   return (
     <AuthLayout
       title={loading ? "Verifying session" : verified ? "Email verified" : "Email verified"}
-      subtitle={loading ? "Restoring your Maketo session..." : "Your email address was verified successfully."}
+      subtitle={loading ? "Restoring your Marketo session..." : "Your email address was verified successfully."}
     >
       {loading ? (
         <div className="rounded-sm border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-5 text-sm text-[var(--color-ink-muted)] leading-relaxed">
@@ -62,7 +62,7 @@ export default function EmailVerifiedPage() {
         <>
           <AuthAlert type="success" message="Your email address has been verified successfully." />
           <div className="rounded-sm border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-5 text-sm text-[var(--color-ink-muted)] leading-relaxed space-y-3">
-            <p>Your email is verified. If your session is still active, Maketo will take you to the right page automatically.</p>
+            <p>Your email is verified. If your session is still active, Marketo will take you to the right page automatically.</p>
             <p>If you were signed out, please sign in again to continue.</p>
           </div>
           <button

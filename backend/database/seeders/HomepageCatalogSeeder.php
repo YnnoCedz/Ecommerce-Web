@@ -80,7 +80,7 @@ class HomepageCatalogSeeder extends Seeder
                         'seller_id' => $seller->id,
                         'category_id' => $category->id,
                         'name' => $productName,
-                        'description' => 'A carefully selected marketplace product from an approved Maketo seller.',
+                        'description' => 'A carefully selected marketplace product from an approved Marketo seller.',
                         'sku' => $sku,
                         'price' => $price,
                         'sale_price' => null,

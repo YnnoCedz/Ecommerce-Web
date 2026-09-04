@@ -13,7 +13,7 @@ class MakeAdminCommand extends Command
 {
     protected $signature = 'make:admin';
 
-    protected $description = 'Create one verified active Maketo administrator account';
+    protected $description = 'Create one verified active Marketo administrator account';
 
     public function handle(): int
     {

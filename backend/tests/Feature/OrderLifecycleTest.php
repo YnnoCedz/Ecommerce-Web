@@ -211,7 +211,7 @@ class OrderLifecycleTest extends TestCase
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.order_number', 'ADMIN-DELIVERY-1')
             ->assertJsonPath('data.0.seller_orders.0.next_delivery_status', 'picked-up')
-            ->assertJsonPath('data.0.seller_orders.0.delivery_handler', 'Maketo Logistics')
+            ->assertJsonPath('data.0.seller_orders.0.delivery_handler', 'Marketo Logistics')
             ->assertJsonPath('data.0.seller_orders.0.courier_id', null)
             ->assertJsonPath('data.0.seller_orders.0.tracking_events.0.status', 'ready');
 
@@ -226,11 +226,11 @@ class OrderLifecycleTest extends TestCase
         $this->actingAs($sellerUser)->getJson('/api/seller/orders')
             ->assertOk()
             ->assertJsonPath('data.0.status', 'picked-up')
-            ->assertJsonPath('data.0.courier.name', 'Maketo Logistics');
+            ->assertJsonPath('data.0.courier.name', 'Marketo Logistics');
         $this->actingAs($buyer)->getJson('/api/orders/ADMIN-DELIVERY-1')
             ->assertOk()
             ->assertJsonPath('data.status', 'picked-up')
-            ->assertJsonPath('data.seller_orders.0.courier_name', 'Maketo Logistics')
+            ->assertJsonPath('data.seller_orders.0.courier_name', 'Marketo Logistics')
             ->assertJsonPath('data.seller_orders.0.tracking_events.0.status', 'picked-up');
     }
 

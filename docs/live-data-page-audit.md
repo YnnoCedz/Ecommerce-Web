@@ -1,4 +1,4 @@
-# Maketo Live Data Page Audit
+# Marketo Live Data Page Audit
 
 Scope:
 - User / buyer / customer pages

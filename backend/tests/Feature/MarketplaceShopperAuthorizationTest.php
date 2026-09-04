@@ -142,7 +142,7 @@ class MarketplaceShopperAuthorizationTest extends TestCase
         $this->actingAs($this->user('admin'))->getJson('/api/admin/analytics/platform?section=overview&range=30d')
             ->assertOk()
             ->assertJsonPath('data.kpis.active_buyers.value', 2)
-            ->assertJsonPath('data.definitions.active_buyers', 'Unique Maketo accounts that placed an order during the selected period, regardless of current role.');
+            ->assertJsonPath('data.definitions.active_buyers', 'Unique Marketo accounts that placed an order during the selected period, regardless of current role.');
     }
 
     private function user(string $role, string $status = 'active'): User

@@ -8,7 +8,7 @@ use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 /**
- * Maketo Admin decision on a marketplace User registration.
+ * Marketo Admin decision on a marketplace User registration.
  *
  * Deliberately concise: it carries the decision and, on rejection, only the
  * reason the reviewer chose to share. No internal review metadata is exposed.
@@ -32,14 +32,14 @@ class UserRegistrationReviewedNotification extends Notification
         $mail = (new MailMessage)->greeting("Hello {$notifiable->display_name},");
 
         if ($this->decision === 'approved') {
-            return $mail->subject('Your Maketo Marketplace access is approved')
-                ->line('A Maketo administrator has approved your Marketplace application.')
-                ->line('You can now shop and use the marketplace with this Maketo identity.')
-                ->action('Sign in to Maketo', url('/auth/login'));
+            return $mail->subject('Your Marketo Marketplace access is approved')
+                ->line('A Marketo administrator has approved your Marketplace application.')
+                ->line('You can now shop and use the marketplace with this Marketo identity.')
+                ->action('Sign in to Marketo', url('/auth/login'));
         }
 
-        return $mail->subject('Your Maketo Marketplace application was reviewed')
+        return $mail->subject('Your Marketo Marketplace application was reviewed')
             ->line('Your Marketplace application was reviewed and was not approved.')
-            ->line('Reason: '.($this->reason ?: 'Please contact Maketo support for details.'));
+            ->line('Reason: '.($this->reason ?: 'Please contact Marketo support for details.'));
     }
 }
