@@ -1,0 +1,17 @@
+{
+  // Cloudflare Worker (static assets) for the Maketo Logistics Partner Portal.
+  // Deployed separately from the Marketplace Worker (frontend/wrangler.jsonc, "ecommerce-web").
+  //
+  // Workers Builds: root path "logistics-frontend", build "npm run build", deploy "npx wrangler deploy".
+  // Custom domain logistics.marketohub.online is bound to this Worker in the Cloudflare UI
+  // after the first successful deploy. Never bind marketohub.online here.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "marketo-logistics",
+  "compatibility_date": "2026-09-04",
+  "assets": {
+    "directory": "./dist",
+    // Direct requests / refreshes on /login, /access-denied and /dashboard serve index.html
+    // so React Router handles them; no Worker script is needed for a static SPA.
+    "not_found_handling": "single-page-application"
+  }
+}

@@ -11,7 +11,10 @@ export type LogisticsContext = {
 }
 type Hub = { id: number; code: string; name: string; city_label?: string }
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api").replace(/\/$/, "")
+// VITE_API_URL is the deployment variable (Cloudflare Workers Builds sets the
+// production value). VITE_API_BASE_URL is accepted for existing local .env files.
+// The localhost fallback only covers a missing local .env; production builds set VITE_API_URL.
+const API_BASE = (import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api").replace(/\/$/, "")
 const TOKEN_KEY = "maketo.logistics.token"
 
 export class ApiError extends Error {
