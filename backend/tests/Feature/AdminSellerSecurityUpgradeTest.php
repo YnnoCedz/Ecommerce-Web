@@ -356,9 +356,13 @@ class AdminSellerSecurityUpgradeTest extends TestCase
         $this->actingAs($buyer)->postJson('/api/seller/applications', [])->assertConflict()->assertJsonPath('code', 'seller_application_pending');
         $this->actingAs($buyer)->postJson("/api/admin/seller-applications/{$application->id}/approve")->assertForbidden();
 
+        // Phase 2.6: an already-approved seller is refused by the accurate
+        // `seller_already_active` conflict rather than by a role check.
         $approvedUser = User::factory()->create(['role' => 'seller']);
         Seller::factory()->for($approvedUser)->create(['status' => 'approved']);
-        $this->actingAs($approvedUser)->postJson('/api/seller/applications', [])->assertForbidden();
+        $this->actingAs($approvedUser)->postJson('/api/seller/applications', [])
+            ->assertConflict()
+            ->assertJsonPath('code', 'seller_already_active');
     }
 
     private function createOrder(User $buyer, array $overrides = []): Order

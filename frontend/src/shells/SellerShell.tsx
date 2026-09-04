@@ -51,6 +51,16 @@ function formatRelativeTime(value: string | null) {
 function resolveNotificationRoute(notification: NotificationRecord) {
   const action = notification.action_type?.toLowerCase() ?? "";
 
+  if (action === "buyer_order") {
+    return notification.order_number
+      ? `/account/orders/${encodeURIComponent(notification.order_number)}`
+      : "/account/orders";
+  }
+
+  if (action.includes("courier-application")) {
+    return "/courier/apply";
+  }
+
   if (action.includes("order") || notification.order_id) {
     return "/seller-center/orders";
   }

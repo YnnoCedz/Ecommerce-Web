@@ -24,12 +24,12 @@ class EnsureAccountIsActive
                 'message' => match ($user->status) {
                     'suspended' => 'This account has been suspended.',
                     'restricted' => 'This account is currently restricted.',
-                    default => 'This account is pending approval.',
+                    default => 'This account is not active.',
                 },
                 'code' => match ($user->status) {
                     'suspended' => 'account_suspended',
                     'restricted' => 'account_restricted',
-                    default => 'account_pending',
+                    default => 'account_inactive',
                 },
             ], 403);
         }

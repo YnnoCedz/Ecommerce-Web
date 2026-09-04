@@ -353,7 +353,7 @@ class ModerationController extends Controller
 
                 return $seller->trade_name ?: $seller->business_name;
             })(),
-            'buyer' => User::query()->where('role', 'buyer')->findOrFail($id)->display_name,
+            'buyer' => User::query()->where('role', '!=', 'admin')->findOrFail($id)->display_name,
             'courier' => Courier::query()->findOrFail($id)->name,
             'product' => Product::query()->findOrFail($id)->name,
             'conversation' => (function () use ($reporter, $id) {

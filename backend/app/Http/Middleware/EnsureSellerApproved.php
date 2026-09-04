@@ -19,10 +19,14 @@ class EnsureSellerApproved
             ], 401);
         }
 
-        if (! $user->isSeller()) {
+        // Seller is additive but requires an approved Marketplace profile.
+        // `users.role === 'seller'` remains legacy data only.
+        $user->unsetRelation('seller');
+
+        if (! $user->canShopMarketplace()) {
             return response()->json([
-                'message' => 'Seller access is required.',
-                'code' => 'seller_role_required',
+                'message' => 'Approved Marketplace access is required before becoming a seller.',
+                'code' => 'marketplace_access_required',
             ], 403);
         }
 

@@ -1,6 +1,6 @@
 # Maketo Flutter design guide
 
-This guide is the mobile counterpart of Maketo's existing web system. The web palette is warm and editorial: Fraunces-style display headings, Outfit-style UI text, an ink/cream foundation, navy actions, amber commerce accents, and restrained status colors. The starter implementation lives in `mobile/lib/core` and is intentionally independent of the Laravel API.
+This guide describes a possible mobile counterpart to Maketo's existing web system. The web palette is warm and editorial: Fraunces-style display headings, Outfit-style UI text, an ink/cream foundation, navy actions, amber commerce accents, and restrained status colors. The previously colocated Flutter starter was removed from this web repository and was intentionally independent of the Laravel API.
 
 ## Architecture and tokens
 
@@ -63,4 +63,4 @@ Use `Theme.of(context).colorScheme`, `textTheme`, and the token classes. `buildL
 - Validate inventory, permissions, and totals on the backend; the Flutter UI is not authoritative.
 - Cache images where appropriate, but retain an error placeholder.
 - Test loading, empty, error, disabled, offline, and text-scaled states.
-- Run `flutter analyze` and `flutter test` from `mobile/` before shipping.
+- If a Flutter project is reintroduced, run `flutter analyze` and `flutter test` from that project's directory before shipping.

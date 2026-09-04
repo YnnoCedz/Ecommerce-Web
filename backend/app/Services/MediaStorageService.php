@@ -134,9 +134,13 @@ class MediaStorageService
         $fileName = Str::uuid()->toString().'.'.$extension;
         $path = $safePrefix === '' ? $fileName : $safePrefix.'/'.$fileName;
 
-        Storage::disk($disk)->putFileAs(dirname($path), $file, basename($path), [
+        $storedPath = Storage::disk($disk)->putFileAs(dirname($path), $file, basename($path), [
             'visibility' => $visibility,
         ]);
+
+        if (! is_string($storedPath) || $storedPath === '') {
+            throw new RuntimeException('Unable to store the uploaded file.');
+        }
 
         return [
             'storage_disk' => $disk,

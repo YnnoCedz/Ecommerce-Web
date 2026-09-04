@@ -366,6 +366,7 @@ class CommerceController extends Controller
                 'sellerOrders.returnRequests.items',
                 'sellerOrders.shipment.courier',
                 'sellerOrders.shipment.trackingEvents',
+                'sellerOrders.shipment.deliveryProof',
                 'payments',
             ])
             ->first();
@@ -422,6 +423,7 @@ class CommerceController extends Controller
                     'discount_total' => (float) $sellerOrder->discount_total,
                     'grand_total' => (float) $sellerOrder->grand_total,
                     'tracking_number' => $sellerOrder->tracking_number,
+                    'shipment_id' => $sellerOrder->shipment?->id,
                     'driver_name' => $sellerOrder->shipment?->driver_name,
                     'courier_name' => $sellerOrder->shipment
                         ? ($sellerOrder->shipment->courier?->name ?? 'Maketo Logistics')
@@ -431,6 +433,11 @@ class CommerceController extends Controller
                     'can_mark_received' => $sellerOrder->status === 'delivered',
                     'can_cancel' => in_array($sellerOrder->status, ['pending', 'new'], true) && ! $sellerOrder->cancellation,
                     'can_return' => in_array($sellerOrder->status, ['delivered', 'completed'], true),
+                    'proof_of_delivery' => $sellerOrder->shipment?->deliveryProof ? [
+                        'exists' => true,
+                        'submitted_at' => optional($sellerOrder->shipment->deliveryProof->submitted_at)->toISOString(),
+                        'note' => $sellerOrder->shipment->deliveryProof->note,
+                    ] : ['exists' => false],
                     'cancellation' => $sellerOrder->cancellation ? [
                         'reason' => $sellerOrder->cancellation->reason,
                         'refunded_amount' => (float) $sellerOrder->cancellation->refunded_amount,

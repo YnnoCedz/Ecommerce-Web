@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
+import { canAccessRider, isAdmin, isMarketplaceShopper, sellerAccessState } from "../auth/capabilities";
 import { fetchCatalogCategories, fetchSearchSuggestions, type CatalogCategory, type SearchSuggestion } from "../api/catalog";
 import ConfirmDialog from "../components/ConfirmDialog";
 import {
@@ -33,6 +34,7 @@ const FOOTER_LINKS: { heading: string; links: { label: string; href: string }[] 
     heading: "Sell on Marketo",
     links: [
       { label: "Become a Seller", href: "/seller-center/onboarding" },
+      { label: "Become a Courier", href: "/courier/apply" },
       { label: "Seller Guidelines", href: "/seller-center/onboarding" },
       { label: "Seller Dashboard", href: "/seller-center" },
       { label: "Commission Rates", href: "/seller-center/onboarding" },
@@ -74,14 +76,38 @@ const BASE_ACCOUNT_LINKS: { label: string; href: string }[] = [
   { label: "Settings", href: "/account/preferences" },
 ];
 
+// Phase 2.6: menus follow the derived capability summary, never `users.role`.
+// Rider and logistics capabilities intentionally surface no operational entry
+// here - the Rider app is a separate client and the Logistics portal does not
+// exist yet, so linking to either would point at nothing.
 function getAccountLinks(user: ReturnType<typeof useAuth>["user"]) {
-  const sellerLink = user?.seller_approved
-    ? { label: "Switch to Seller", href: "/seller-center" }
-    : user?.role === "seller"
-      ? { label: "Seller Application Status", href: "/seller-center/onboarding/status" }
-      : { label: "Become a Seller", href: "/seller-center/onboarding" };
+  if (isAdmin(user)) {
+    return [
+      { label: "Admin Dashboard", href: "/admin" },
+      { label: "Admin Profile", href: "/admin/profile" },
+      { label: "Admin Settings", href: "/admin/settings" },
+    ];
+  }
 
-  return [...BASE_ACCOUNT_LINKS.slice(0, 4), sellerLink, BASE_ACCOUNT_LINKS[4]];
+  const sellerLink = (() => {
+    switch (sellerAccessState(user)) {
+      case "approved":
+        return { label: "Switch to Seller", href: "/seller-center" };
+      case "under_review":
+      case "needs_action":
+        return { label: "Seller Application Status", href: "/seller-center/onboarding/status" };
+      case "suspended":
+        return { label: "Seller Account Status", href: "/403?reason=seller_suspended" };
+      default:
+        return { label: "Become a Seller", href: "/seller-center/onboarding" };
+    }
+  })();
+
+  const courierLink = canAccessRider(user)
+    ? { label: "Courier Status", href: "/courier/apply" }
+    : { label: "Become a Courier", href: "/courier/apply" };
+
+  return [...BASE_ACCOUNT_LINKS.slice(0, 4), sellerLink, courierLink, ...BASE_ACCOUNT_LINKS.slice(4)];
 }
 
 export default function PublicShell({ children, cartCount = 0, wishlistCount = 0, isLoggedIn = false, activePage }: PublicShellProps) {
@@ -115,6 +141,7 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
   const accountName = user?.display_name ?? "Guest";
   const accountEmail = user?.email ?? "Sign in to your account";
   const accountLinks = getAccountLinks(user);
+  const showShopperControls = !user || isMarketplaceShopper(user);
 
   const clearSearchState = () => {
     setSearchValue("");
@@ -231,7 +258,17 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
 
         {/* Announcement bar */}
         <div className="bg-[var(--color-navy)] text-white text-center py-1.5 text-xs font-[var(--font-mono)] tracking-wide hidden sm:block">
-          Free shipping on orders over ₱1,500 &nbsp;·&nbsp; Sellers: Review current commission terms before applying
+          Join Our Logistics Network &nbsp;·&nbsp; Logistics partners and riders:{" "}
+          {/* Shared marketplace sign-in - there is no separate Logistics login surface yet. */}
+          <Link to="/auth/login" className="underline underline-offset-2 hover:opacity-80">
+            Sign in
+          </Link>
+          {" or "}
+          {/* Phase 2.7-gated: /register/logistics always renders the explanatory state. */}
+          <Link to="/register/logistics" className="underline underline-offset-2 hover:opacity-80">
+            register
+          </Link>
+          {" to get started"}
         </div>
 
         {/* Main header row */}
@@ -314,8 +351,9 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
           {/* Right icons cluster */}
           <div className="flex items-center gap-1 ml-auto shrink-0">
 
-            {/* Wishlist */}
-            <Link
+            {showShopperControls && <>
+              {/* Wishlist */}
+              <Link
               to="/account/wishlist"
               aria-label={wishlistCount > 0 ? `Wishlist — ${wishlistCount} saved item${wishlistCount !== 1 ? "s" : ""}` : "Wishlist"}
               className="relative flex-col items-center p-2 text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] transition-colors cursor-pointer hidden md:flex">
@@ -324,10 +362,10 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
                 <span className="absolute top-1 right-1 min-w-4 h-4 px-1 bg-[var(--color-red)] text-white text-[9px] font-[var(--font-mono)] rounded-full flex items-center justify-center" aria-hidden="true">{wishlistCount > 99 ? "99+" : wishlistCount}</span>
               )}
               <span className="text-[9px] font-[var(--font-mono)] mt-0.5 hidden lg:block" aria-hidden="true">Wishlist</span>
-            </Link>
+              </Link>
 
-            {/* Cart */}
-            <Link
+              {/* Cart */}
+              <Link
               to="/cart"
               aria-label={cartCount > 0 ? `Cart — ${cartCount} item${cartCount !== 1 ? "s" : ""}` : "Cart"}
               className="relative flex flex-col items-center p-2 text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] transition-colors cursor-pointer">
@@ -336,7 +374,8 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
                 <span className="absolute top-1 right-0.5 w-4 h-4 bg-[var(--color-amber)] text-white text-[9px] font-[var(--font-mono)] rounded-full flex items-center justify-center" aria-hidden="true">{cartCount}</span>
               )}
               <span className="text-[9px] font-[var(--font-mono)] mt-0.5 hidden lg:block" aria-hidden="true">Cart</span>
-            </Link>
+              </Link>
+            </>}
 
             {/* Account */}
             <div ref={accountRef} className="relative hidden md:block">

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Category;
+use App\Models\Courier;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Payment;
@@ -11,6 +12,8 @@ use App\Models\Seller;
 use App\Models\SellerOrder;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class OrderLifecycleTest extends TestCase
@@ -19,9 +22,11 @@ class OrderLifecycleTest extends TestCase
 
     public function test_seller_admin_and_buyer_complete_the_authorized_order_lifecycle_before_reviewing(): void
     {
+        Storage::fake('r2');
         [$buyer, $sellerUser, $sellerOrder, $item] = $this->orderPortion('LIFECYCLE-1');
         $otherSeller = $this->approvedSeller('other-lifecycle-seller');
         $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
+        $courier = $this->courier('lifecycle-courier');
 
         $this->actingAs($sellerUser)->patchJson("/api/seller/orders/{$sellerOrder->id}/status", [
             'status' => 'delivered',
@@ -44,19 +49,26 @@ class OrderLifecycleTest extends TestCase
         $this->actingAs($admin)->patchJson("/api/admin/seller-orders/{$sellerOrder->id}/delivery-status", ['status' => 'delivered'])
             ->assertUnprocessable();
 
-        foreach (['picked-up', 'in-transit', 'out-for-delivery', 'delivered'] as $status) {
-            $this->actingAs($admin)->patchJson("/api/admin/seller-orders/{$sellerOrder->id}/delivery-status", [
+        $shipment = $sellerOrder->fresh()->shipment;
+        $this->actingAs($admin)->patchJson("/api/admin/shipments/{$shipment->id}/courier", ['courier_id' => $courier->id])->assertOk();
+        foreach (['picked-up', 'in-transit', 'out-for-delivery'] as $status) {
+            $this->actingAs($courier->user)->patchJson("/api/courier/deliveries/{$shipment->id}/status", [
                 'status' => $status,
-            ])->assertOk()->assertJsonPath('data.seller_orders.0.status', $status);
+            ])->assertOk()->assertJsonPath('data.status', $status);
         }
+        $this->actingAs($courier->user)->post(
+            "/api/courier/deliveries/{$shipment->id}/deliver",
+            ['proof_image' => $this->proofImage('lifecycle.png')],
+            ['Accept' => 'application/json'],
+        )->assertOk()->assertJsonPath('data.status', 'delivered');
 
         $this->assertDatabaseHas('shipments', [
             'seller_order_id' => $sellerOrder->id,
             'status' => 'delivered',
         ]);
-        $this->assertDatabaseCount('tracking_events', 5);
-        $this->assertDatabaseHas('shipments', ['seller_order_id' => $sellerOrder->id, 'courier_id' => null]);
-        $this->assertDatabaseHas('tracking_events', ['status' => 'out-for-delivery', 'actor_type' => 'admin_logistics', 'actor_user_id' => $admin->id]);
+        $this->assertDatabaseCount('tracking_events', 6);
+        $this->assertDatabaseHas('shipments', ['seller_order_id' => $sellerOrder->id, 'courier_id' => $courier->id]);
+        $this->assertDatabaseHas('tracking_events', ['status' => 'out-for-delivery', 'actor_type' => 'courier', 'actor_user_id' => $courier->user_id]);
         $this->assertDatabaseHas('orders', [
             'id' => $sellerOrder->order_id,
             'status' => 'delivered',
@@ -133,8 +145,10 @@ class OrderLifecycleTest extends TestCase
 
     public function test_multi_seller_portions_complete_and_become_reviewable_independently(): void
     {
+        Storage::fake('r2');
         [$buyer, $firstSellerUser, $firstSellerOrder, $firstItem] = $this->orderPortion('MULTI-1');
         $admin = User::factory()->create(['role' => 'admin', 'status' => 'active']);
+        $courier = $this->courier('multi-courier');
         $order = $firstSellerOrder->order;
         $secondSeller = $this->approvedSeller('second-multi-seller');
         $secondProduct = $this->productFor($secondSeller, 'second-multi-product');
@@ -159,9 +173,16 @@ class OrderLifecycleTest extends TestCase
         foreach (['confirmed', 'preparing', 'ready'] as $status) {
             $this->actingAs($firstSellerUser)->patchJson("/api/seller/orders/{$firstSellerOrder->id}/status", ['status' => $status])->assertOk();
         }
-        foreach (['picked-up', 'in-transit', 'out-for-delivery', 'delivered'] as $status) {
-            $this->actingAs($admin)->patchJson("/api/admin/seller-orders/{$firstSellerOrder->id}/delivery-status", ['status' => $status])->assertOk();
+        $shipment = $firstSellerOrder->fresh()->shipment;
+        $this->actingAs($admin)->patchJson("/api/admin/shipments/{$shipment->id}/courier", ['courier_id' => $courier->id])->assertOk();
+        foreach (['picked-up', 'in-transit', 'out-for-delivery'] as $status) {
+            $this->actingAs($courier->user)->patchJson("/api/courier/deliveries/{$shipment->id}/status", ['status' => $status])->assertOk();
         }
+        $this->actingAs($courier->user)->post(
+            "/api/courier/deliveries/{$shipment->id}/deliver",
+            ['proof_image' => $this->proofImage('multi.png')],
+            ['Accept' => 'application/json'],
+        )->assertOk();
         $this->actingAs($buyer)->postJson("/api/orders/MULTI-1/seller-orders/{$firstSellerOrder->id}/complete")->assertOk();
 
         $eligible = $this->actingAs($buyer)->getJson('/api/reviews/eligible')->assertOk();
@@ -260,6 +281,30 @@ class OrderLifecycleTest extends TestCase
         ]);
 
         return [$buyer, $seller->user, $sellerOrder, $item];
+    }
+
+    private function courier(string $slug): Courier
+    {
+        $user = User::factory()->create(['role' => 'buyer', 'status' => 'active', 'email_verified_at' => now()]);
+
+        return Courier::create([
+            'user_id' => $user->id,
+            'name' => "Courier {$slug}",
+            'slug' => $slug,
+            'contact_email' => $user->email,
+            'active' => true,
+            'status' => 'active',
+            'availability_status' => 'offline',
+            'approved_at' => now(),
+        ])->load('user');
+    }
+
+    private function proofImage(string $name): UploadedFile
+    {
+        return UploadedFile::fake()->createWithContent(
+            $name,
+            base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', true),
+        );
     }
 
     private function approvedSeller(string $slug): Seller

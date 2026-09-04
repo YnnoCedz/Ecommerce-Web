@@ -84,7 +84,9 @@ export default function VerifyEmailPage({ onNavigate }: { onNavigate: NavFn }) {
       });
 
       setMessage(response.message ?? "Email verified successfully.");
-      navigate(response.redirectTo ?? "/", { replace: true });
+      const requestedReturn = searchParams.get("returnTo") ?? "";
+      const safeReturn = requestedReturn.startsWith("/") && !requestedReturn.startsWith("//") ? requestedReturn : null;
+      navigate(safeReturn ?? response.redirectTo ?? "/", { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.errors) {
         setError(Object.values(err.errors).flat().find(Boolean) ?? err.message);

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { addWishlistItem, fetchWishlistItems, removeWishlistItem } from "../api/buyer";
 import { useAuth } from "../auth/AuthContext";
+import { isMarketplaceShopper } from "../auth/capabilities";
 
 type WishlistContextValue = {
   count: number;
@@ -20,14 +21,14 @@ export function WishlistProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (authLoading) return;
-    if (!user || user.role === "admin") { busyIdsRef.current.clear(); setIds(new Set()); setBusyIds(new Set()); return; }
+    if (!isMarketplaceShopper(user)) { busyIdsRef.current.clear(); setIds(new Set()); setBusyIds(new Set()); return; }
     let active = true;
     void fetchWishlistItems().then(response => { if (active) setIds(new Set(response.data.map(item => item.product_id))); }).catch(() => { if (active) setIds(new Set()); });
     return () => { active = false; };
   }, [authLoading, user?.id, user?.role]);
 
   const toggle = useCallback(async (productId: number) => {
-    if (!user || busyIdsRef.current.has(productId)) return ids.has(productId);
+    if (!isMarketplaceShopper(user) || busyIdsRef.current.has(productId)) return ids.has(productId);
     const previous = ids.has(productId);
     busyIdsRef.current.add(productId);
     setBusyIds(current => new Set(current).add(productId));

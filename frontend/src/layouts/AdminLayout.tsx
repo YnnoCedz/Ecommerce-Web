@@ -5,6 +5,8 @@ const NAV_ROUTES: Record<string, string> = {
   dashboard:  "/admin",
   users:      "/admin/users",
   sellers:    "/admin/sellers",
+  couriers:   "/admin/courier-applications",
+  logistics:  "/admin/logistics-applications",
   products:   "/admin/products",
   orders:     "/admin/orders",
   categories: "/admin/categories",
@@ -19,6 +21,8 @@ const NAV_ROUTES: Record<string, string> = {
 function getActiveNav(pathname: string): string {
   const seg = pathname.replace(/^\/admin\/?/, "").split("/")[0];
   if (seg === "activity") return "analytics";
+  if (seg === "courier-applications") return "couriers";
+  if (seg === "logistics-applications") return "logistics";
   return seg || "dashboard";
 }
 

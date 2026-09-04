@@ -37,10 +37,15 @@ class AuthPerformanceTest extends TestCase
             ->assertJsonMissingPath('user.order_count')
             ->assertJsonMissingPath('user.wishlist_count');
 
+        // Seller and Marketplace capability each use one bounded, indexed
+        // relationship lookup. No commerce collections are loaded.
         $loginQueries = $queries;
-        $this->assertCount(4, $loginQueries);
+        $this->assertCount(8, $loginQueries);
         $this->assertSingleActivityInsert($loginQueries);
-        $this->assertAuthQueriesExcludeMarketplaceData($loginQueries);
+        $this->assertSingleNarrowCourierQuery($loginQueries);
+        $this->assertSingleNarrowLogisticsStaffQuery($loginQueries);
+        $this->assertSingleMarketplaceProfileQuery($loginQueries);
+        $this->assertAuthQueriesExcludeMarketplaceData($loginQueries, ['sellers']);
 
         $queries = [];
         $this->withToken($login->json('token'))
@@ -49,8 +54,11 @@ class AuthPerformanceTest extends TestCase
             ->assertJsonMissingPath('user.order_count')
             ->assertJsonMissingPath('user.wishlist_count');
 
-        $this->assertCount(3, $queries);
-        $this->assertAuthQueriesExcludeMarketplaceData($queries);
+        $this->assertCount(7, $queries);
+        $this->assertSingleNarrowCourierQuery($queries);
+        $this->assertSingleNarrowLogisticsStaffQuery($queries);
+        $this->assertSingleMarketplaceProfileQuery($queries);
+        $this->assertAuthQueriesExcludeMarketplaceData($queries, ['sellers']);
     }
 
     public function test_seller_login_loads_only_the_access_fields_from_the_seller_profile(): void
@@ -83,11 +91,14 @@ class AuthPerformanceTest extends TestCase
 
         $sellerQueries = array_values(array_filter(
             $queries,
-            fn (string $sql): bool => str_contains(strtolower($sql), 'from "sellers"'),
+            fn (string $sql): bool => $this->selectsFrom($sql, 'sellers'),
         ));
 
-        $this->assertCount(5, $queries);
+        $this->assertCount(8, $queries);
         $this->assertSingleActivityInsert($queries);
+        $this->assertSingleNarrowCourierQuery($queries);
+        $this->assertSingleNarrowLogisticsStaffQuery($queries);
+        $this->assertSingleMarketplaceProfileQuery($queries);
         $this->assertCount(1, $sellerQueries);
         $this->assertStringNotContainsString('select *', strtolower($sellerQueries[0]));
         $this->assertAuthQueriesExcludeMarketplaceData($queries, ['sellers']);
@@ -115,5 +126,43 @@ class AuthPerformanceTest extends TestCase
 
         $this->assertCount(1, $activityQueries);
         $this->assertStringStartsWith('insert', strtolower(trim($activityQueries[0])));
+    }
+
+    private function assertSingleNarrowCourierQuery(array $queries): void
+    {
+        $courierQueries = array_values(array_filter(
+            $queries,
+            fn (string $sql): bool => $this->selectsFrom($sql, 'couriers'),
+        ));
+
+        $this->assertCount(1, $courierQueries);
+        $this->assertStringNotContainsString('select *', strtolower($courierQueries[0]));
+    }
+
+    private function assertSingleNarrowLogisticsStaffQuery(array $queries): void
+    {
+        $staffQueries = array_values(array_filter(
+            $queries,
+            fn (string $sql): bool => $this->selectsFrom($sql, 'logistics_staff'),
+        ));
+
+        $this->assertCount(1, $staffQueries);
+        $this->assertStringNotContainsString('select *', strtolower($staffQueries[0]));
+    }
+
+    private function assertSingleMarketplaceProfileQuery(array $queries): void
+    {
+        $profileQueries = array_values(array_filter(
+            $queries,
+            fn (string $sql): bool => $this->selectsFrom($sql, 'marketplace_profiles'),
+        ));
+
+        $this->assertCount(1, $profileQueries);
+        $this->assertStringNotContainsString('select *', strtolower($profileQueries[0]));
+    }
+
+    private function selectsFrom(string $sql, string $table): bool
+    {
+        return preg_match('/\bfrom\s+[`"]'.preg_quote($table, '/').'[`"]/i', $sql) === 1;
     }
 }

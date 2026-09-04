@@ -18,6 +18,20 @@ class SellerOrder extends Model
         'grand_total',
         'courier_id',
         'tracking_number',
+        'pickup_store_name',
+        'pickup_contact_name',
+        'pickup_contact_phone',
+        'pickup_address_line1',
+        'pickup_address_line2',
+        'pickup_region_code',
+        'pickup_region_label',
+        'pickup_province_code',
+        'pickup_province_label',
+        'pickup_city_code',
+        'pickup_city_label',
+        'pickup_barangay_code',
+        'pickup_barangay_label',
+        'pickup_postal_code',
         'confirmed_at',
         'ready_at',
         'picked_up_at',
@@ -52,6 +66,11 @@ class SellerOrder extends Model
     public function shipment()
     {
         return $this->hasOne(Shipment::class);
+    }
+
+    public function courier()
+    {
+        return $this->belongsTo(Courier::class);
     }
 
     public function items()

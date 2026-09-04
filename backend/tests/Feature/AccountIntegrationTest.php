@@ -155,9 +155,11 @@ class AccountIntegrationTest extends TestCase
         $this->assertFalse(Hash::check('CurrentPassword1!', $user->password));
     }
 
-    public function test_only_a_completed_purchase_can_be_reviewed_once_and_only_by_its_buyer(): void
+    public function test_only_a_completed_purchase_can_be_reviewed_once_and_only_by_its_purchasing_account(): void
     {
         [$buyer, $item] = $this->deliveredOrderItem();
+        $buyer->update(['role' => 'seller']);
+        Seller::factory()->create(['user_id' => $buyer->id, 'status' => 'approved', 'verified' => true]);
         $otherBuyer = User::factory()->create();
 
         $this->actingAs($otherBuyer)->postJson('/api/reviews', [

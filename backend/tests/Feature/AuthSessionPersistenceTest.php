@@ -64,9 +64,10 @@ class AuthSessionPersistenceTest extends TestCase
         $this->withToken($token)->getJson('/api/admin/dashboard')
             ->assertForbidden()
             ->assertJsonPath('code', 'insufficient_role');
+        // A buyer without an approved seller profile is refused by capability.
         $this->withToken($token)->getJson('/api/seller/dashboard')
             ->assertForbidden()
-            ->assertJsonPath('code', 'insufficient_role');
+            ->assertJsonPath('code', 'seller_not_approved');
 
         $this->withToken($token)->patchJson('/api/account/password', [
             'current_password' => 'wrong-password',
@@ -136,12 +137,17 @@ class AuthSessionPersistenceTest extends TestCase
         $this->withToken($token)->getJson('/api/admin/me')->assertOk();
         $this->withToken($token)->getJson('/api/admin/dashboard')->assertOk();
         $this->withToken($token)->getJson('/api/admin/users')->assertOk();
+        // Phase 2.6: `role:seller` was removed from the seller prefix. An admin is
+        // refused by the seller capability guard instead, which is the same
+        // 403 outcome proved by the approved-seller-profile rule.
         $this->withToken($token)->getJson('/api/seller/dashboard')
             ->assertForbidden()
-            ->assertJsonPath('code', 'insufficient_role');
+            ->assertJsonPath('code', 'marketplace_access_required');
         $this->withToken($token)->getJson('/api/auth/me')
             ->assertOk()
-            ->assertJsonPath('user.id', $admin->id);
+            ->assertJsonPath('user.id', $admin->id)
+            ->assertJsonPath('user.capabilities.admin', true)
+            ->assertJsonPath('user.capabilities.seller', false);
     }
 
     public function test_invalid_credentials_do_not_issue_a_token(): void

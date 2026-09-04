@@ -123,7 +123,7 @@ function resolveActionRoute(
         ? `/admin/orders?tab=all&order=${notification.seller_order_id}`
         : "/admin/orders"
     case "buyer_order":
-      if (role === "seller" || role === "admin") return null
+      if (role === "admin") return null
       return notification.order_number
         ? `/account/orders/${encodeURIComponent(notification.order_number)}`
         : "/account/orders"
@@ -152,6 +152,10 @@ function resolveActionRoute(
       return role === "seller" ? "/seller-center/analytics" : "/admin/analytics"
     case "seller-profile":
       return "/seller-center/settings"
+    case "courier-application":
+      return role === "admin"
+        ? "/admin/courier-applications"
+        : "/courier/apply"
     default:
       return null
   }

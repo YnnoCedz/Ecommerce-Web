@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { useAuth } from "../../auth/AuthContext";
+import { isAdmin } from "../../auth/capabilities";
 import AuthLayout, { AuthAlert } from "./AuthLayout";
 
 export default function EmailVerifiedPage() {
@@ -22,12 +23,9 @@ export default function EmailVerifiedPage() {
       }
 
       if (user?.email_verified_at) {
-        const redirectTo =
-          user.role === "seller"
-            ? "/seller-center"
-            : user.role === "admin"
-              ? "/admin"
-              : "/account/profile";
+        // Phase 2.6: marketplace-first. A seller capability must not pull the
+        // user into Seller Center automatically; that is an opt-in switch.
+        const redirectTo = isAdmin(user) ? "/admin" : "/account/profile";
 
         navigate(redirectTo, { replace: true });
         return;

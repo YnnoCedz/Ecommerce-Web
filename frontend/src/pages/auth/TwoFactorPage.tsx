@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { useAuth } from "../../auth/AuthContext";
 import { ApiError } from "../../api/client";
 import AuthLayout, { AuthAlert } from "./AuthLayout";
@@ -26,6 +26,7 @@ function formatCountdown(targetIso: string | null) {
 export default function TwoFactorPage() {
   const { pendingTwoFactor, verifyTwoFactor, resendTwoFactor, clearPendingTwoFactor } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [digits, setDigits] = useState<string[]>(Array(CODE_LENGTH).fill(""));
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
@@ -118,7 +119,9 @@ export default function TwoFactorPage() {
       });
       setSuccess(true);
       clearPendingTwoFactor();
-      navigate(response.redirectTo ?? "/", { replace: true });
+      const requestedReturn = searchParams.get("returnTo") ?? "";
+      const safeReturn = requestedReturn.startsWith("/") && !requestedReturn.startsWith("//") ? requestedReturn : null;
+      navigate(safeReturn ?? response.redirectTo ?? "/", { replace: true });
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);

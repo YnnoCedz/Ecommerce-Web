@@ -1,9 +1,12 @@
 <?php
 
-$frontendOrigins = array_values(array_filter(array_map(
+$frontendOrigins = array_values(array_unique(array_filter(array_map(
     static fn (string $origin): string => rtrim(trim($origin), '/'),
-    explode(',', (string) env('FRONTEND_URL', 'http://192.168.1.8:8443')),
-)));
+    explode(',', implode(',', [
+        (string) env('FRONTEND_URL', 'http://192.168.1.8:8443'),
+        (string) env('LOGISTICS_FRONTEND_URL', 'https://logistics.marketohub.online,http://localhost:8450,http://127.0.0.1:8450'),
+    ])),
+))));
 
 return [
     'paths' => ['api/*'],

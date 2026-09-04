@@ -207,8 +207,9 @@ class AdminController extends Controller
     {
         $data = $request->validate([
             'status' => ['required', Rule::in(['picked-up', 'in-transit', 'out-for-delivery', 'delivered'])],
+            'reason' => ['nullable', 'string', 'max:1000'],
         ]);
-        $updated = $this->orderLifecycle->transitionByLogisticsActor($sellerOrder, $request->user(), $data['status']);
+        $updated = $this->orderLifecycle->transitionByLogisticsActor($sellerOrder, $request->user(), $data['status'], $data['reason'] ?? null);
 
         return response()->json([
             'message' => match ($data['status']) {
@@ -304,11 +305,18 @@ class AdminController extends Controller
                         'ready' => 'picked-up',
                         'picked-up' => 'in-transit',
                         'in-transit' => 'out-for-delivery',
-                        'out-for-delivery' => 'delivered',
+                        'out-for-delivery' => null,
                         default => null,
                     },
                     'total' => (float) $sellerOrder->grand_total,
                     'tracking_number' => $shipment?->tracking_number ?? $sellerOrder->tracking_number,
+                    'shipment_id' => $shipment?->id,
+                    'proof_of_delivery' => $shipment?->deliveryProof ? [
+                        'exists' => true,
+                        'submitted_at' => optional($shipment->deliveryProof->submitted_at)->toISOString(),
+                        'note' => $shipment->deliveryProof->note,
+                        'courier_name' => $shipment->courier?->name,
+                    ] : ['exists' => false],
                     'delivery_handler' => $shipment?->courier?->name ?? ($shipment ? 'Maketo Logistics' : null),
                     'courier_id' => $shipment?->courier_id,
                     'seller' => $sellerOrder->seller ? [
@@ -351,6 +359,7 @@ class AdminController extends Controller
             'buyer:id,name,first_name,last_name,email,mobile',
             'sellerOrders.seller:id,business_name,trade_name,address_line1,address_line2,city,province,postal_code',
             'sellerOrders.shipment.courier',
+            'sellerOrders.shipment.deliveryProof',
             'sellerOrders.shipment.trackingEvents' => fn ($query) => $query->orderBy('occurred_at')->orderBy('id'),
             'items:id,order_id,seller_order_id,product_name,variant_name,sku,quantity,unit_price,subtotal',
             'payments' => fn ($query) => $query->latest(),

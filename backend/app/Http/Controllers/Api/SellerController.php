@@ -92,7 +92,7 @@ class SellerController extends Controller
             ->selectRaw("SUM(CASE WHEN status IN ('pending', 'new') THEN grand_total ELSE 0 END) AS pending_sales")
             ->first();
         $recentSellerOrders = (clone $orderQuery)
-            ->with(['order.items.product.images', 'order.buyer', 'shipment.courier', 'shipment.trackingEvents'])
+            ->with(['order.items.product.images', 'order.buyer', 'shipment.courier', 'shipment.trackingEvents', 'shipment.deliveryProof'])
             ->latest('updated_at')
             ->limit(5)
             ->get();
@@ -602,7 +602,7 @@ class SellerController extends Controller
         }
 
         $orders = SellerOrder::query()
-            ->with(['order.items.product.images', 'order.buyer', 'shipment.courier', 'shipment.trackingEvents'])
+            ->with(['order.items.product.images', 'order.buyer', 'shipment.courier', 'shipment.trackingEvents', 'shipment.deliveryProof'])
             ->where('seller_id', $seller->id)
             ->latest('id')
             ->limit(50)
@@ -1236,6 +1236,12 @@ class SellerController extends Controller
                 $order->shipping_postal_code,
             ]))) : null,
             'tracking_number' => $sellerOrder->tracking_number,
+            'shipment_id' => $sellerOrder->shipment?->id,
+            'proof_of_delivery' => $sellerOrder->shipment?->deliveryProof ? [
+                'exists' => true,
+                'submitted_at' => optional($sellerOrder->shipment->deliveryProof->submitted_at)->toISOString(),
+                'note' => $sellerOrder->shipment->deliveryProof->note,
+            ] : ['exists' => false],
             'courier' => $sellerOrder->shipment ? [
                 'name' => $sellerOrder->shipment->courier?->name ?? 'Maketo Logistics',
                 'tracking' => $sellerOrder->shipment->tracking_number,

@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Middleware\EnsureAccountIsActive;
+use App\Http\Middleware\EnsureCourierActive;
+use App\Http\Middleware\EnsureMarketplaceShopper;
+use App\Http\Middleware\EnsureLogisticsStaffActive;
 use App\Http\Middleware\EnsureSellerApproved;
 use App\Http\Middleware\EnsureUserRole;
 use App\Http\Middleware\MeasureApiPerformance;
@@ -26,6 +29,9 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'account.active' => EnsureAccountIsActive::class,
+            'courier.active' => EnsureCourierActive::class,
+            'marketplace.shopper' => EnsureMarketplaceShopper::class,
+            'logistics.staff.active' => EnsureLogisticsStaffActive::class,
             'role' => EnsureUserRole::class,
             'seller.approved' => EnsureSellerApproved::class,
         ]);

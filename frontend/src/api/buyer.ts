@@ -1,6 +1,7 @@
 import { apiFetch } from "./client";
 import { fetchNotifications } from "./notifications";
 import { singleFlight } from "./requestCache";
+import type { DeliveryProofMetadata } from "./deliveryProofs";
 
 export type BuyerOrderListItem = {
   id: number;
@@ -63,6 +64,7 @@ export type BuyerOrderDetail = {
     discount_total: number;
     grand_total: number;
     tracking_number: string | null;
+    shipment_id: number | null;
     driver_name: string | null;
     courier_name: string | null;
     delivered_at: string | null;
@@ -70,6 +72,7 @@ export type BuyerOrderDetail = {
     can_mark_received: boolean;
     can_cancel: boolean;
     can_return: boolean;
+    proof_of_delivery: DeliveryProofMetadata;
     cancellation: { reason: string; refunded_amount: number; cancelled_at: string | null } | null;
     return_requests: BuyerReturnRequest[];
     tracking_events: Array<{

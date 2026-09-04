@@ -6,6 +6,7 @@ import { IconChevronRight, IconChevronLeft, IconHeart, IconCart, IconStore } fro
 import { fetchCatalogProduct, fetchProductReviews, type CatalogProduct, type ProductReview } from "../../api/catalog";
 import { addCartItem } from "../../api/cart";
 import { useAuth } from "../../auth/AuthContext";
+import { isMarketplaceShopper } from "../../auth/capabilities";
 import { useToast } from "../../components/ToastProvider";
 import { startConversation } from "../../api/account";
 import ReportDialog from "../../components/ReportDialog";
@@ -123,6 +124,7 @@ function ReviewCard({ review }: { review: ProductReview }) {
 
 export default function ProductPage({ slug, onNavigate }: { slug: string; onNavigate: NavFn }) {
   const { user } = useAuth();
+  const shopperActionsAvailable = !user || isMarketplaceShopper(user);
   const { showToast } = useToast();
   const navigate = useNavigate();
   const [product, setProduct] = useState<CatalogProduct | null>(null);
@@ -445,7 +447,7 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
               <span className="text-xs text-[var(--color-ink-muted)] ml-3">{currentInStock ? (product.track_inventory ? `${currentStock} in stock` : "In stock") : "Out of stock"}</span>
             </div>
 
-            <div className="flex gap-2 mb-4">
+            {shopperActionsAvailable ? <><div className="flex gap-2 mb-4">
               <button onClick={() => void handleAddToCart()} disabled={cartBusy || !currentInStock} className="flex-1 flex items-center justify-center gap-2 py-3 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] transition-colors cursor-pointer disabled:opacity-60">
                 <IconCart size={15} />
                 {cartBusy ? "Adding..." : "Add to Cart"}
@@ -457,6 +459,7 @@ export default function ProductPage({ slug, onNavigate }: { slug: string; onNavi
             <button onClick={() => void handleBuyNow()} disabled={cartBusy || !currentInStock} className="w-full py-3 bg-[var(--color-amber)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-amber-hover)] transition-colors cursor-pointer disabled:opacity-60 mb-5">
               Buy Now — {currentPrice !== null && Number.isFinite(currentPrice) ? `₱${(currentPrice * qty).toLocaleString()}` : "Price unavailable"}
             </button>
+            </> : <p className="mb-5 rounded-sm border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm text-[var(--color-ink-muted)]">Administrator accounts can browse the catalog but cannot use shopper purchase or wishlist actions.</p>}
 
             <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-sm p-4 mb-4 space-y-3">
               {[

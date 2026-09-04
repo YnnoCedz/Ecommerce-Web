@@ -45,10 +45,20 @@ class SellerApplicationController extends Controller
             'registration_number' => strtoupper(trim((string) $request->input('registration_number', ''))),
         ]);
 
-        if (! $user->isBuyer()) {
+        // Phase 2.6: eligibility is capability-based, not role-based. Any eligible
+        // marketplace identity may apply - including one that already holds rider
+        // capability - while administrators may not.
+        if ($user->isAdmin()) {
             return response()->json([
-                'message' => 'Only buyer accounts can submit a seller application.',
+                'message' => 'Administrator accounts cannot submit a seller application.',
                 'code' => 'seller_application_role_invalid',
+            ], 403);
+        }
+
+        if (! $user->canShopMarketplace()) {
+            return response()->json([
+                'message' => 'Approved Marketplace access is required before applying to become a seller.',
+                'code' => 'marketplace_access_required',
             ], 403);
         }
 
@@ -389,11 +399,9 @@ class SellerApplicationController extends Controller
                 'approved_seller_id' => $seller->id,
             ])->save();
 
-            $sellerApplication->applicant?->forceFill([
-                'role' => 'seller',
-                'status' => 'active',
-            ])->save();
-
+            // Phase 2.6 (D-10): approval must NOT mutate `users.role`. Seller is an
+            // additive capability derived from the approved seller profile above,
+            // so the applicant keeps their existing identity and buyer capability.
             return $seller->fresh();
         });
 

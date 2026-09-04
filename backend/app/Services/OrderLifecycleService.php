@@ -20,16 +20,10 @@ class OrderLifecycleService
         'preparing' => 'ready',
     ];
 
-    private const LOGISTICS_TRANSITIONS = [
-        'ready' => 'picked-up',
-        'picked-up' => 'in-transit',
-        'in-transit' => 'out-for-delivery',
-        'out-for-delivery' => 'delivered',
-    ];
-
     public function __construct(
         private readonly NotificationService $notifications,
         private readonly CommissionService $commissions,
+        private readonly CourierDeliveryService $courierDeliveries,
     ) {}
 
     public function transitionBySeller(SellerOrder $sellerOrder, int $sellerId, string $status, ?string $trackingNumber = null): SellerOrder
@@ -89,71 +83,14 @@ class OrderLifecycleService
         }, 3);
     }
 
-    public function transitionByLogisticsActor(SellerOrder $sellerOrder, User $actor, string $status): SellerOrder
+    public function transitionByLogisticsActor(SellerOrder $sellerOrder, User $actor, string $status, ?string $reason = null): SellerOrder
     {
-        return DB::transaction(function () use ($sellerOrder, $actor, $status) {
-            $locked = SellerOrder::query()
-                ->with(['order.buyer', 'seller.user'])
-                ->whereKey($sellerOrder->id)
-                ->lockForUpdate()
-                ->firstOrFail();
-            $expected = self::LOGISTICS_TRANSITIONS[$locked->status] ?? null;
+        $shipment = $this->courierDeliveries->transitionByAdmin($sellerOrder, $actor, $status, $reason);
 
-            if ($expected !== $status) {
-                throw ValidationException::withMessages([
-                    'status' => ["Delivery cannot move from {$locked->status} to {$status}. Refresh the order and try again."],
-                ]);
-            }
-
-            $timestamps = match ($status) {
-                'picked-up' => ['picked_up_at' => now()],
-                'delivered' => ['delivered_at' => now()],
-                default => [],
-            };
-            $locked->forceFill(['status' => $status, ...$timestamps])->save();
-            $shipment = $this->updateShipment($locked, $status, null, 'admin_logistics', $actor->id);
-            if ($status === 'delivered') {
-                $this->commissions->courier($shipment);
-            }
-            $locked->forceFill(['tracking_number' => $shipment->tracking_number])->save();
-            $order = $this->synchronizeOrder($locked->order_id);
-
-            $labels = [
-                'picked-up' => ['Order picked up', 'Your order was picked up by Maketo Logistics.'],
-                'in-transit' => ['Order in transit', 'Your order is in transit with Maketo Logistics.'],
-                'out-for-delivery' => ['Order out for delivery', 'Your order is out for delivery.'],
-                'delivered' => ['Order delivered', 'Your order has been delivered.'],
-            ];
-            [$title, $body] = $labels[$status];
-
-            if ($order->buyer) {
-                $this->notifications->publishToUser($order->buyer, [
-                    'category' => 'order',
-                    'title' => $title,
-                    'body' => $body,
-                    'action_type' => 'buyer_order',
-                    'action_label' => 'Track order',
-                    'order_id' => $order->id,
-                    'seller_order_id' => $locked->id,
-                ]);
-            }
-
-            if (in_array($status, ['picked-up', 'delivered'], true) && $locked->seller?->user) {
-                $this->notifications->publishToUser($locked->seller->user, [
-                    'category' => 'order',
-                    'title' => $status === 'picked-up' ? 'Order picked up' : 'Order delivered successfully',
-                    'body' => $status === 'picked-up'
-                        ? "Order {$order->order_number} was collected by Maketo Logistics."
-                        : "Order {$order->order_number} was delivered.",
-                    'action_type' => 'seller_order',
-                    'action_label' => 'View order',
-                    'order_id' => $order->id,
-                    'seller_order_id' => $locked->id,
-                ]);
-            }
-
-            return $locked->fresh(['order.items.product.images', 'order.buyer', 'seller', 'shipment.courier', 'shipment.trackingEvents.actor']);
-        }, 3);
+        return $shipment->sellerOrder->load([
+            'order.items.product.images', 'order.buyer', 'seller',
+            'shipment.courier', 'shipment.trackingEvents.actor',
+        ]);
     }
 
     public function completeByBuyer(SellerOrder $sellerOrder, User $buyer): SellerOrder

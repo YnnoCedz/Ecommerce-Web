@@ -8,6 +8,7 @@ import {
   type SellerOrder,
 } from "../../api/seller"
 import { useToast } from "../../components/ToastProvider"
+import DeliveryProofViewer from "../../components/orders/DeliveryProofViewer"
 import { useUrlTab } from "../../hooks/useUrlTab"
 
 type FulfillmentStatus = "new" | "confirmed" | "preparing" | "ready" | "picked-up" | "in-transit" | "out-for-delivery" | "delivered" | "completed" | "cancelled" | "failed"
@@ -412,6 +413,7 @@ function OrderCard({
                 </p>
               </div>
             )}
+            <DeliveryProofViewer shipmentId={order.shipment_id} proof={order.proof_of_delivery} />
             <div>
               <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] uppercase tracking-wide mb-1.5">
                 Items

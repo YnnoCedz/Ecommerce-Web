@@ -1,0 +1,25 @@
+{
+  "name": "maketo-logistics-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 8450",
+    "test": "node --experimental-strip-types --test tests/access.test.ts",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 8450"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^6.0.0",
+    "ecommerce-web": "file:..",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router": "^8.3.0",
+    "typescript": "^5.7.0",
+    "vite": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0"
+  }
+}

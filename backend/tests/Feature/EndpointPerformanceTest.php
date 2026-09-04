@@ -43,8 +43,10 @@ class EndpointPerformanceTest extends TestCase
         $wishlist = $this->captureQueries(fn () => $this->getJson('/api/wishlists')->assertOk());
         $notifications = $this->captureQueries(fn () => $this->getJson('/api/notifications?limit=5')->assertOk());
 
-        $this->assertLessThanOrEqual(5, count($cart));
-        $this->assertLessThanOrEqual(4, count($wishlist));
+        // Marketplace capability authorization adds one bounded profile lookup
+        // before the existing endpoint queries; it must remain constant, not N+1.
+        $this->assertLessThanOrEqual(6, count($cart));
+        $this->assertLessThanOrEqual(5, count($wishlist));
         $this->assertLessThanOrEqual(3, count($notifications));
     }
 

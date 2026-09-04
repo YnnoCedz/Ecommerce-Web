@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Notifications\EmailVerificationCodeNotification;
 use App\Notifications\PasswordResetLinkNotification;
+use App\Services\CapabilityResolver;
 use Illuminate\Auth\MustVerifyEmail as MustVerifyEmailTrait;
 use Illuminate\Contracts\Auth\MustVerifyEmail as MustVerifyEmailContract;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -26,10 +27,19 @@ class User extends Authenticatable implements MustVerifyEmailContract
 
     public const EMAIL_VERIFICATION_MAX_ATTEMPTS = 5;
 
+    public const REGISTRATION_APPROVED = 'approved';
+
+    public const REGISTRATION_PENDING_REVIEW = 'pending_review';
+
+    public const REGISTRATION_REJECTED = 'rejected';
+
     protected $fillable = [
         'name',
         'first_name',
+        'middle_name',
         'last_name',
+        'sex',
+        'birthdate',
         'email',
         'mobile',
         'phone',
@@ -37,6 +47,11 @@ class User extends Authenticatable implements MustVerifyEmailContract
         'password',
         'role',
         'status',
+        'registration_status',
+        'registration_submitted_at',
+        'registration_reviewed_at',
+        'registration_reviewed_by',
+        'registration_decision_reason',
         'location_label',
         'email_verified_at',
         'last_active_at',
@@ -53,13 +68,31 @@ class User extends Authenticatable implements MustVerifyEmailContract
     protected $casts = [
         'email_verified_at' => 'datetime',
         'last_active_at' => 'datetime',
+        'birthdate' => 'date',
         'two_factor_enabled' => 'boolean',
         'two_factor_confirmed_at' => 'datetime',
+        'registration_submitted_at' => 'datetime',
+        'registration_reviewed_at' => 'datetime',
     ];
 
     public function addresses()
     {
         return $this->hasMany(Address::class);
+    }
+
+    public function documents()
+    {
+        return $this->hasMany(UserDocument::class);
+    }
+
+    public function marketplaceProfile()
+    {
+        return $this->hasOne(MarketplaceProfile::class);
+    }
+
+    public function registrationReviewer()
+    {
+        return $this->belongsTo(User::class, 'registration_reviewed_by');
     }
 
     public function seller()
@@ -75,6 +108,81 @@ class User extends Authenticatable implements MustVerifyEmailContract
     public function latestSellerApplication()
     {
         return $this->hasOne(SellerApplication::class, 'applicant_user_id')->latestOfMany();
+    }
+
+    public function courier()
+    {
+        return $this->hasOne(Courier::class);
+    }
+
+    public function courierApplications()
+    {
+        return $this->hasMany(CourierApplication::class);
+    }
+
+    public function latestCourierApplication()
+    {
+        return $this->hasOne(CourierApplication::class)->latestOfMany();
+    }
+
+    public function logisticsStaff()
+    {
+        return $this->hasOne(LogisticsStaff::class);
+    }
+
+    public function logisticsProviderApplications()
+    {
+        return $this->hasMany(LogisticsProviderApplication::class);
+    }
+
+    public function latestLogisticsProviderApplication()
+    {
+        return $this->hasOne(LogisticsProviderApplication::class)->latestOfMany();
+    }
+
+    public function hasActiveCourierProfile(): bool
+    {
+        if ($this->relationLoaded('courier')) {
+            $courier = $this->getRelation('courier');
+        } else {
+            $courier = $this->courier()->first();
+            $this->setRelation('courier', $courier);
+        }
+
+        if ($courier && ! $courier->relationLoaded('activeLogisticsAffiliation')) {
+            $courier->load('activeLogisticsAffiliation.provider');
+        }
+        if ($courier && ! $courier->relationLoaded('approvedApplication')) {
+            $courier->load('approvedApplication:id,logistics_provider_id');
+        }
+
+        $affiliation = $courier?->activeLogisticsAffiliation;
+        $legacyCourier = $courier !== null
+            && ($courier->approved_application_id === null
+                || $courier->approvedApplication?->logistics_provider_id === null);
+
+        return ! $this->isAdmin()
+            && $courier !== null
+            && $courier->active
+            && $courier->status === 'active'
+            && $courier->approved_at !== null
+            && ($legacyCourier || (
+                $affiliation !== null
+                && $affiliation->status === 'active'
+                && $affiliation->ended_at === null
+                && $affiliation->provider?->isActive()
+            ));
+    }
+
+    public function hasActiveLogisticsStaffProfile(): bool
+    {
+        if (! $this->relationLoaded('logisticsStaff')) {
+            $this->load('logisticsStaff.provider');
+        } elseif ($this->logisticsStaff && ! $this->logisticsStaff->relationLoaded('provider')) {
+            $this->logisticsStaff->load('provider');
+        }
+
+        return $this->logisticsStaff?->isActiveForLogistics() ?? false;
     }
 
     public function carts()
@@ -127,6 +235,13 @@ class User extends Authenticatable implements MustVerifyEmailContract
         return $this->role === 'buyer';
     }
 
+    /**
+     * LEGACY. `users.role === 'seller'` is historical data only and is NOT an
+     * authorization authority as of Phase 2.6. Use hasApprovedSellerProfile()
+     * or CapabilityResolver::seller() to prove seller capability.
+     *
+     * @deprecated Phase 2.6 - seller capability is derived from the seller profile.
+     */
     public function isSeller(): bool
     {
         return $this->role === 'seller';
@@ -137,14 +252,75 @@ class User extends Authenticatable implements MustVerifyEmailContract
         return $this->role === 'admin';
     }
 
+    public function canShopMarketplace(): bool
+    {
+        return app(CapabilityResolver::class)->buyer($this);
+    }
+
+    /**
+     * Resolve the seller profile without consulting `users.role`, caching the
+     * relation so repeated capability reads stay at one query.
+     */
+    public function resolveSellerProfile(): ?Seller
+    {
+        if (! $this->relationLoaded('seller')) {
+            $this->setRelation('seller', $this->seller()->first());
+        }
+
+        return $this->getRelation('seller');
+    }
+
+    /**
+     * Phase 2.6: authoritative seller capability. Deliberately role-independent
+     * so one identity can be buyer + seller + rider simultaneously (D-10).
+     */
     public function hasApprovedSellerProfile(): bool
     {
-        return $this->isSeller() && $this->seller?->status === 'approved';
+        return $this->resolveSellerProfile()?->status === 'approved';
+    }
+
+    public function isRegistrationApproved(): bool
+    {
+        return ($this->registration_status ?? self::REGISTRATION_APPROVED) === self::REGISTRATION_APPROVED;
+    }
+
+    public function isRegistrationRejected(): bool
+    {
+        return $this->registration_status === self::REGISTRATION_REJECTED;
+    }
+
+    public function isAwaitingRegistrationReview(): bool
+    {
+        return $this->registration_status === self::REGISTRATION_PENDING_REVIEW;
+    }
+
+    /**
+     * The account itself is usable. Every capability is gated on this first.
+     */
+    public function isAccountEligible(): bool
+    {
+        return $this->canAccessPlatformArea() && $this->hasVerifiedEmail();
     }
 
     public function canAccessPlatformArea(): bool
     {
-        return ! in_array($this->status, ['suspended', 'restricted', 'pending'], true);
+        return $this->status === 'active';
+    }
+
+    /**
+     * @return array{buyer: bool, seller: bool, rider: bool, logistics: bool, admin: bool}
+     */
+    public function capabilities(): array
+    {
+        return app(CapabilityResolver::class)->for($this);
+    }
+
+    /**
+     * Age is always derived from birthdate and is never stored.
+     */
+    public function getAgeAttribute(): ?int
+    {
+        return $this->birthdate?->age;
     }
 
     public function getDisplayNameAttribute(): string

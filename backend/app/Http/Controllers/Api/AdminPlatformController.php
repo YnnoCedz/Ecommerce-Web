@@ -347,7 +347,7 @@ class AdminPlatformController extends Controller
     {
         $current = $this->orderPeriodSummary($from, $to);
         $previous = $this->orderPeriodSummary($previousFrom, $previousTo);
-        $activeBuyers = ActivityLog::whereBetween('created_at', [$from, $to])->where('actor_role', 'buyer')->whereNotNull('user_id')->distinct('user_id')->count('user_id');
+        $activeBuyers = DB::table('orders')->whereBetween('created_at', [$from, $to])->distinct()->count('buyer_id');
         $activeSellers = DB::table('sellers')->whereNull('deleted_at')->where('status', 'approved')->count();
 
         return [
@@ -364,7 +364,7 @@ class AdminPlatformController extends Controller
             'marketplace_growth' => $this->userGrowth($from, $monthly),
             'top_sellers' => $this->topSellers($from, $to)->take(5)->values(),
             'top_products' => $this->topProducts($from, $to)->take(5)->values(),
-            'definitions' => ['active_buyers' => 'Unique buyers with a captured platform activity during the selected period.'],
+            'definitions' => ['active_buyers' => 'Unique Maketo accounts that placed an order during the selected period, regardless of current role.'],
         ];
     }
 
@@ -397,7 +397,7 @@ class AdminPlatformController extends Controller
         $applications = DB::table('seller_applications')->whereBetween(DB::raw('COALESCE(submitted_at, created_at)'), [$from, $to])
             ->selectRaw('COUNT(*) total')->selectRaw("SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) approved")
             ->selectRaw("SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) rejected")->first();
-        $activeBuyers = ActivityLog::whereBetween('created_at', [$from, $to])->where('actor_role', 'buyer')->whereNotNull('user_id')->distinct('user_id')->count('user_id');
+        $activeBuyers = DB::table('orders')->whereBetween('created_at', [$from, $to])->distinct()->count('buyer_id');
         $activeSellers = DB::table('sellers')->whereNull('deleted_at')->where('status', 'approved')->count();
         $warningDate = now()->addDays((int) $this->settings->get('seller_document_expiry_warning_days'))->endOfDay();
 

@@ -4,6 +4,7 @@ import { LoaderCircle, MessageSquare, RotateCcw, Star, X } from "lucide-react";
 import { createReview, startConversation } from "../../api/account";
 import { cancelSellerOrder, completeSellerOrder, fetchBuyerOrder, requestReturn, retryOrderPayment, type BuyerOrderDetail } from "../../api/buyer";
 import { useToast } from "../../components/ToastProvider";
+import DeliveryProofViewer from "../../components/orders/DeliveryProofViewer";
 
 export type DeliveryState =
   | "awaiting-fulfillment"
@@ -304,6 +305,7 @@ export default function OrderDetailPage({ orderNumber, deliveryState }: { orderN
                 <div className="px-5 py-4">
                   <p className="text-sm text-[var(--color-ink-muted)]">Tracking number: {sellerOrder.tracking_number ?? "Not yet assigned"}</p>
                   {sellerOrder.courier_name && <p className="text-sm text-[var(--color-ink-muted)]">Courier: {sellerOrder.courier_name}</p>}
+                  <DeliveryProofViewer shipmentId={sellerOrder.shipment_id} proof={sellerOrder.proof_of_delivery} />
                   {sellerOrder.can_mark_received && (
                     <button onClick={() => void markReceived(sellerOrder.id)} disabled={completingId === sellerOrder.id} className="mt-4 inline-flex items-center gap-2 rounded-sm bg-[var(--color-green)] px-4 py-2.5 text-sm font-[600] text-white disabled:cursor-not-allowed disabled:opacity-60">
                       {completingId === sellerOrder.id && <LoaderCircle size={15} className="animate-spin" />}

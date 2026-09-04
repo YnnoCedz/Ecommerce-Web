@@ -3,8 +3,9 @@
 namespace Database\Seeders;
 
 use App\Models\Category;
-use App\Models\ProductImage;
+use App\Models\MarketplaceProfile;
 use App\Models\Product;
+use App\Models\ProductImage;
 use App\Models\Seller;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -59,7 +60,7 @@ class MarketplaceSeeder extends Seeder
             ]
         );
 
-        User::updateOrCreate(
+        $otpUser = User::updateOrCreate(
             ['email' => 'otp.demo@maketo.local'],
             [
                 'first_name' => 'Olivia',
@@ -113,6 +114,13 @@ class MarketplaceSeeder extends Seeder
                 'two_factor_enabled' => false,
             ]
         );
+
+        foreach ([$buyer, $otpUser, $sellerUser, $artisanUser] as $marketplaceUser) {
+            MarketplaceProfile::updateOrCreate(
+                ['user_id' => $marketplaceUser->id],
+                ['status' => 'approved', 'submitted_at' => $marketplaceUser->created_at, 'approved_at' => now()]
+            );
+        }
 
         $seller = Seller::firstOrCreate(
             ['slug' => 'verde-botanics'],

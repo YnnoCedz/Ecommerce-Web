@@ -3,11 +3,18 @@ import {
   createBrowserRouter,
   Navigate,
   Outlet,
+  useLocation,
   useParams,
   useSearchParams,
 } from "react-router"
 
 import { useAuth } from "./auth/AuthContext"
+import {
+  canAccessSellerCenter,
+  isAdmin,
+  isMarketplaceShopper,
+  sellerAccessState,
+} from "./auth/capabilities"
 import { ApiError } from "./api/client"
 import {
   fetchCurrentSellerApplication,
@@ -27,9 +34,16 @@ const SearchPage = lazy(() => import("./pages/pub/SearchPage"))
 const DealsPage = lazy(() => import("./pages/pub/DealsPage"))
 const ProductPage = lazy(() => import("./pages/pub/ProductPage"))
 const SellerStorePage = lazy(() => import("./pages/pub/SellerStorePage"))
+const RiderAppOnlyPage = lazy(() => import("./pages/auth/RiderAppOnlyPage"))
 
 const LoginPage = lazy(() => import("./pages/auth/LoginPage"))
-const RegisterPage = lazy(() => import("./pages/auth/RegisterPage"))
+const RegisterSelectPage = lazy(() => import("./pages/auth/RegisterSelectPage"))
+const UserRegistrationPage = lazy(() => import("./pages/auth/UserRegistrationPage"))
+const RegistrationPendingPage = lazy(
+  () => import("./pages/auth/RegistrationPendingPage"),
+)
+const LogisticsRegistrationPage = lazy(() => import("./pages/auth/LogisticsRegistrationPage"))
+const MarketplaceUnavailablePage = lazy(() => import("./pages/auth/MarketplaceUnavailablePage"))
 const ForgotPasswordPage = lazy(() => import("./pages/auth/ForgotPasswordPage"))
 const VerifyEmailPage = lazy(() => import("./pages/auth/VerifyEmailPage"))
 const EmailVerifiedPage = lazy(() => import("./pages/auth/EmailVerifiedPage"))
@@ -98,6 +112,15 @@ const AdminActivityPage = lazy(() => import("./pages/admin/AdminActivityPage"))
 const AdminSettingsPage = lazy(() => import("./pages/admin/AdminSettingsPage"))
 const AdminPayoutsPage = lazy(() => import("./pages/admin/AdminPayoutsPage"))
 const AdminProfilePage = lazy(() => import("./pages/admin/AdminProfilePage"))
+const CourierApplicationsPage = lazy(
+  () => import("./pages/admin/CourierApplicationsPage"),
+)
+const LogisticsApplicationsPage = lazy(
+  () => import("./pages/admin/LogisticsApplicationsPage"),
+)
+const UserRegistrationsPage = lazy(
+  () => import("./pages/admin/UserRegistrationsPage"),
+)
 
 const ForbiddenPage = lazy(() => import("./pages/errors/ForbiddenPage"))
 
@@ -133,11 +156,6 @@ function SellerStoreRoute() {
 function LoginRoute() {
   const nav = useNav()
   return <LoginPage onNavigate={nav} />
-}
-
-function RegisterRoute() {
-  const nav = useNav()
-  return <RegisterPage onNavigate={nav} />
 }
 
 function ForgotPasswordRoute() {
@@ -254,8 +272,9 @@ function SessionVerificationFailure() {
   )
 }
 
-function RequireVerifiedAccount() {
+function RequireMarketplaceShopper() {
   const { user, loading, error } = useAuth()
+  const location = useLocation()
 
   if (loading) {
     return <LoadingState label="Loading your account..." />
@@ -266,16 +285,25 @@ function RequireVerifiedAccount() {
   }
 
   if (!user) {
-    return <Navigate to="/auth/login" replace />
+    return (
+      <Navigate
+        to={`/auth/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`}
+        replace
+      />
+    )
   }
 
   if (!user.email_verified_at) {
     return (
       <Navigate
-        to={`/auth/verify-email?email=${encodeURIComponent(user.email)}`}
+        to={`/auth/verify-email?email=${encodeURIComponent(user.email)}&returnTo=${encodeURIComponent(location.pathname + location.search)}`}
         replace
       />
     )
+  }
+
+  if (!isMarketplaceShopper(user)) {
+    return <Navigate to="/marketplace-unavailable" replace />
   }
 
   return <Outlet />
@@ -305,19 +333,28 @@ function RequireSellerAccess() {
     )
   }
 
-  if (user.status !== "active") {
-    return <Navigate to="/403" replace />
+  // Phase 2.6: Seller Center is gated by the derived seller capability, never by
+  // `users.role`. The state machine below is what breaks the old
+  // /seller-center <-> /seller-center/onboarding/status loop: a previously
+  // approved but now suspended seller lands on a terminal page instead of being
+  // bounced back into onboarding, which bounced them back here.
+  if (canAccessSellerCenter(user)) {
+    return <Outlet />
   }
 
-  if (user.role !== "seller") {
-    return <Navigate to="/403" replace />
+  switch (sellerAccessState(user)) {
+    case "under_review":
+    case "needs_action":
+      return <Navigate to="/seller-center/onboarding/status" replace />
+    case "suspended":
+      return <Navigate to="/403?reason=seller_suspended" replace />
+    default:
+      return user.status === "active" ? (
+        <Navigate to="/seller-center/onboarding" replace />
+      ) : (
+        <Navigate to="/403" replace />
+      )
   }
-
-  if (!user.seller_approved) {
-    return <Navigate to="/seller-center/onboarding/status" replace />
-  }
-
-  return <Outlet />
 }
 
 function SellerOnboardingRoute({
@@ -337,8 +374,9 @@ function SellerOnboardingRoute({
       !user ||
       !user.email_verified_at ||
       user.status !== "active" ||
-      !["buyer", "seller"].includes(user.role) ||
-      user.seller_approved
+      isAdmin(user) ||
+      canAccessSellerCenter(user) ||
+      sellerAccessState(user) === "suspended"
     ) {
       setEligibilityLoading(false)
       return
@@ -378,9 +416,13 @@ function SellerOnboardingRoute({
         replace
       />
     )
-  if (user.status !== "active" || !["buyer", "seller"].includes(user.role))
+  if (user.status !== "active" || isAdmin(user))
     return <Navigate to="/403" replace />
-  if (user.seller_approved || application?.status === "approved")
+  // A suspended seller profile must terminate here, not be sent to Seller
+  // Center, which would send them straight back and form a loop.
+  if (sellerAccessState(user) === "suspended")
+    return <Navigate to="/403?reason=seller_suspended" replace />
+  if (canAccessSellerCenter(user))
     return <Navigate to="/seller-center" replace />
   if (eligibilityError)
     return (
@@ -435,7 +477,7 @@ function RequireAdminAccess() {
     return <Navigate to="/403" replace />
   }
 
-  if (user.role !== "admin") {
+  if (!isAdmin(user)) {
     return <Navigate to="/403" replace />
   }
 
@@ -520,7 +562,10 @@ export const router = createBrowserRouter([
         children: [
           { index: true, Component: AdminDashboard },
           { path: "users", Component: UserManagementPage },
+          { path: "user-registrations", Component: UserRegistrationsPage },
           { path: "sellers", Component: SellerManagementPage },
+          { path: "courier-applications", Component: CourierApplicationsPage },
+          { path: "logistics-applications", Component: LogisticsApplicationsPage },
           { path: "products", Component: AdminProductsPage },
           { path: "orders", Component: AdminOrdersPage },
           { path: "categories", Component: CategoryManagementPage },
@@ -551,10 +596,15 @@ export const router = createBrowserRouter([
       { path: "c/:slug", Component: CategoryRoute },
       { path: "p/:id", Component: ProductRoute },
       { path: "s/:id", Component: SellerStoreRoute },
-      { path: "cart", Component: CartPage },
+      { path: "courier/apply", Component: RiderAppOnlyPage },
+      {
+        path: "cart",
+        element: <RequireMarketplaceShopper />,
+        children: [{ index: true, Component: CartPage }],
+      },
       {
         path: "checkout",
-        element: <RequireVerifiedAccount />,
+        element: <RequireMarketplaceShopper />,
         children: [{ index: true, Component: CheckoutFlow }],
       },
       {
@@ -563,7 +613,7 @@ export const router = createBrowserRouter([
       },
       {
         path: "account",
-        element: <RequireVerifiedAccount />,
+        element: <RequireMarketplaceShopper />,
         children: [
           {
             element: <AccountRouteLayout />,
@@ -593,7 +643,11 @@ export const router = createBrowserRouter([
           { index: true, element: <Navigate to="/auth/login" replace /> },
           { path: "login", Component: LoginRoute },
           { path: "two-factor", Component: TwoFactorRoute },
-          { path: "register", Component: RegisterRoute },
+          {
+            // Legacy bookmarks and older emails must not 404.
+            path: "register",
+            element: <Navigate to="/register/user" replace />,
+          },
           { path: "forgot-password", Component: ForgotPasswordRoute },
           { path: "verify-email", Component: VerifyEmailRoute },
           { path: "email-verified", Component: EmailVerifiedRoute },
@@ -602,6 +656,17 @@ export const router = createBrowserRouter([
       },
     ],
   },
+  {
+    path: "/register",
+    errorElement: <RouteErrorPage />,
+    children: [
+      { index: true, Component: RegisterSelectPage },
+      { path: "user", Component: UserRegistrationPage },
+      { path: "logistics", Component: LogisticsRegistrationPage },
+      { path: "pending", Component: RegistrationPendingPage },
+    ],
+  },
+  { path: "/marketplace-unavailable", Component: MarketplaceUnavailablePage, errorElement: <RouteErrorPage /> },
   { path: "/403", Component: ForbiddenPage, errorElement: <RouteErrorPage /> },
   { path: "*", Component: NotFoundRoute, errorElement: <RouteErrorPage /> },
 ])

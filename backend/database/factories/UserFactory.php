@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\MarketplaceProfile;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
@@ -11,11 +12,25 @@ class UserFactory extends Factory
 {
     protected $model = User::class;
 
+    public function configure(): static
+    {
+        return $this->afterCreating(function (User $user): void {
+            if (! $user->isAdmin() && ! $user->marketplaceProfile()->exists()) {
+                MarketplaceProfile::create([
+                    'user_id' => $user->id,
+                    'status' => 'approved',
+                    'submitted_at' => $user->created_at,
+                    'approved_at' => $user->created_at,
+                ]);
+            }
+        });
+    }
+
     public function definition(): array
     {
         $name = $this->faker->name();
         [$firstName, $lastName] = array_pad(explode(' ', $name, 2), 2, '');
-        $phone = '+63' . $this->faker->numerify('9#########');
+        $phone = '+63'.$this->faker->numerify('9#########');
 
         return [
             'name' => $name,

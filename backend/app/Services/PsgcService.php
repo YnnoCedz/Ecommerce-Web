@@ -52,6 +52,22 @@ class PsgcService
 
     public function validateHierarchy(array $input): array
     {
+        $geography = $this->validateMunicipality($input);
+        $city = ['code' => $geography['city_code'], 'name' => $geography['city'], 'postal_code' => $geography['postal_code'] ?? ''];
+        $barangay = $this->find($this->barangays($city['code']), $input['barangay_code']);
+        if (! $barangay) {
+            throw ValidationException::withMessages(['barangay_code' => ['The selected barangay does not belong to this city or municipality.']]);
+        }
+
+        return [
+            ...$geography,
+            'barangay_code' => $barangay['code'], 'barangay' => $barangay['name'],
+            'postal_code' => trim((string) ($barangay['postal_code'] ?: $city['postal_code'] ?: ($input['postal_code'] ?? ''))),
+        ];
+    }
+
+    public function validateMunicipality(array $input): array
+    {
         $region = $this->find($this->regions(), $input['region_code']);
         if (! $region) {
             throw ValidationException::withMessages(['region_code' => ['The selected region is invalid.']]);
@@ -77,17 +93,11 @@ class PsgcService
             throw ValidationException::withMessages(['city_code' => ['The selected city or municipality does not belong to the selected parent.']]);
         }
 
-        $barangay = $this->find($this->barangays($city['code']), $input['barangay_code']);
-        if (! $barangay) {
-            throw ValidationException::withMessages(['barangay_code' => ['The selected barangay does not belong to this city or municipality.']]);
-        }
-
         return [
             'region_code' => $region['code'], 'region' => $region['name'],
             'province_code' => $province['code'] ?? null, 'province' => $province['name'] ?? null,
             'city_code' => $city['code'], 'city' => $city['name'],
-            'barangay_code' => $barangay['code'], 'barangay' => $barangay['name'],
-            'postal_code' => trim((string) ($barangay['postal_code'] ?: $city['postal_code'] ?: ($input['postal_code'] ?? ''))),
+            'postal_code' => trim((string) ($city['postal_code'] ?: ($input['postal_code'] ?? ''))),
         ];
     }
 

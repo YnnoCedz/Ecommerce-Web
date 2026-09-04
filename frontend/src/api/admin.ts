@@ -1,6 +1,7 @@
 import { apiDownload, apiFetch } from "./client";
 import { singleFlight } from "./requestCache";
 import type { AuthUser } from "./auth";
+import type { DeliveryProofMetadata } from "./deliveryProofs";
 
 export type PaginationMeta = { current_page: number; last_page: number; per_page: number; total: number };
 export type AdminUser = { id: number; name: string; email: string; mobile: string; role: "buyer" | "seller" | "admin"; status: string; location: string | null; verified: boolean; orders: number; total_spent: number; joined_at: string | null; last_active_at: string | null };
@@ -10,7 +11,7 @@ export type AdminDeliveryStatus = "picked-up" | "in-transit" | "out-for-delivery
 export type AdminOrder = {
   id: number; order_number: string; status: string; payment_status: string; grand_total: number; currency: string; buyer_name: string | null; created_at: string | null; updated_at: string | null; payment_method: string | null; placed_at: string | null;
   shipping: { name: string; phone: string; address: string }; buyer: { id: number; name: string; email: string } | null;
-  seller_orders: Array<{ id: number; status: string; delivery_status: string | null; next_delivery_status: AdminDeliveryStatus | null; total: number; tracking_number: string | null; delivery_handler: string | null; courier_id: number | null; seller: { id: number; name: string; pickup_address: string } | null; tracking_events: Array<{ id: number; status: string; note: string | null; occurred_at: string | null; actor_type: string | null }> }>;
+  seller_orders: Array<{ id: number; status: string; delivery_status: string | null; next_delivery_status: AdminDeliveryStatus | null; total: number; tracking_number: string | null; shipment_id: number | null; proof_of_delivery: DeliveryProofMetadata; delivery_handler: string | null; courier_id: number | null; seller: { id: number; name: string; pickup_address: string } | null; tracking_events: Array<{ id: number; status: string; note: string | null; occurred_at: string | null; actor_type: string | null }> }>;
   items: Array<{ id: number; seller_order_id: number | null; product_name: string; variant_name: string | null; sku: string; quantity: number; unit_price: number; subtotal: number }>;
   payments: Array<{ id: number; type: string; method: string; status: string; amount: number; reference: string | null; created_at: string | null }>;
 };

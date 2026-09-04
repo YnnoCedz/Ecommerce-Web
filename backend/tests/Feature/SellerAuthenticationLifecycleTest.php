@@ -102,17 +102,23 @@ class SellerAuthenticationLifecycleTest extends TestCase
 
         Auth::forgetGuards();
 
+        // Phase 2.6 (D-10): approval grants the seller capability through the
+        // seller profile and must NOT mutate `users.role`. The applicant keeps
+        // their original identity and their buyer capability.
         $sellerUser = $buyer->refresh();
-        $this->assertSame('seller', $sellerUser->role);
+        $this->assertSame('buyer', $sellerUser->role);
         $this->assertSame('approved', $sellerUser->seller?->status);
+        $this->assertTrue($sellerUser->hasApprovedSellerProfile());
 
         $login = $this->postJson('/api/auth/login', [
             'email' => $sellerUser->email,
             'password' => 'Password123!',
         ])->assertOk()
             ->assertJsonPath('token_type', 'Bearer')
-            ->assertJsonPath('user.role', 'seller')
+            ->assertJsonPath('user.role', 'buyer')
             ->assertJsonPath('user.seller_approved', true)
+            ->assertJsonPath('user.capabilities.seller', true)
+            ->assertJsonPath('user.capabilities.buyer', true)
             ->assertJsonPath('redirect_to', '/');
 
         $token = $login->json('token');

@@ -219,6 +219,8 @@ export type SellerOrder = {
   payment_method: string | null
   shipping_address: string | null
   tracking_number: string | null
+  shipment_id: number | null
+  proof_of_delivery: import("./deliveryProofs").DeliveryProofMetadata
   courier: {
     name: string | null
     tracking: string | null

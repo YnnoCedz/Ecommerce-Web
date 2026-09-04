@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import PublicShell from "../shells/PublicShell";
 import { fetchCart } from "../api/cart";
 import { useWishlist } from "../wishlist/WishlistContext";
+import { isMarketplaceShopper } from "../auth/capabilities";
 
 // ── NavFn context ──────────────────────────────────────────────
 // Bridges the existing onNavigate(page, params) pattern to React Router
@@ -55,7 +56,7 @@ function PublicLayoutContent() {
   useEffect(() => {
     let cancelled = false;
 
-    if (!user || user.role !== "buyer") {
+    if (!isMarketplaceShopper(user)) {
       setCartCount(0);
       return () => {
         cancelled = true;

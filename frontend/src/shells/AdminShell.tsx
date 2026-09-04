@@ -50,6 +50,14 @@ function formatRelativeTime(value: string | null) {
 function resolveNotificationRoute(notification: NotificationRecord) {
   const action = notification.action_type?.toLowerCase() ?? "";
 
+  if (action.includes("courier-application")) {
+    return "/admin/courier-applications";
+  }
+
+  if (action.includes("logistics-application")) {
+    return "/admin/logistics-applications";
+  }
+
   if (action.includes("seller-application") || action.includes("account")) {
     return "/admin/sellers";
   }
@@ -76,7 +84,10 @@ function resolveNotificationRoute(notification: NotificationRecord) {
 const NAV_ITEMS: NavItem[] = [
   { id: "dashboard",   label: "Dashboard",    icon: IconDashboard },
   { id: "users",       label: "Users",        icon: IconUsers },
+  { id: "user-registrations", label: "Pending Registrations", icon: IconUsers },
   { id: "sellers",     label: "Sellers",      icon: IconSellers,    badgeKey: "sellers", badgeColor: "amber" },
+  { id: "couriers",    label: "Couriers",     icon: IconSellers },
+  { id: "logistics",   label: "Logistics Applications", icon: IconSellers },
   { id: "products",    label: "Products",     icon: IconProducts },
   { id: "orders",      label: "Orders",       icon: IconOrders },
   { id: "categories",  label: "Categories",   icon: IconCategories },
@@ -84,6 +95,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "disputes",    label: "Disputes",     icon: IconModeration, badgeKey: "disputes", badgeColor: "red" },
   { id: "analytics",   label: "Analytics",    icon: IconAnalytics },
   { id: "payouts",     label: "Payouts",      icon: IconOrders },
+  { id: "activity",    label: "Activity",     icon: IconReports },
   { id: "settings",    label: "Settings",     icon: IconSettings },
 ];
 
@@ -254,12 +266,12 @@ export default function AdminShell({ children, activeNav = "dashboard", onNavCha
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
         <p className="font-[var(--font-mono)] text-[9px] text-white/30 tracking-widest uppercase px-3 mb-2">Platform</p>
-        {NAV_ITEMS.slice(0, 8).map(item => <SidebarLink key={item.id} item={item} />)}
+        {NAV_ITEMS.slice(0, 9).map(item => <SidebarLink key={item.id} item={item} />)}
 
         <div className="pt-3 pb-1">
           <p className="font-[var(--font-mono)] text-[9px] text-white/30 tracking-widest uppercase px-3 mb-2">Reports & Config</p>
         </div>
-        {NAV_ITEMS.slice(8).map(item => <SidebarLink key={item.id} item={item} />)}
+        {NAV_ITEMS.slice(9).map(item => <SidebarLink key={item.id} item={item} />)}
       </nav>
 
       {/* Bottom */}
