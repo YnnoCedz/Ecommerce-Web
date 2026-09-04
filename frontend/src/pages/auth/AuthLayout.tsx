@@ -52,6 +52,104 @@ export function Field({
   );
 }
 
+// ── Shared select (same control styling as Field) ─────────────────────────────
+
+export function Select({
+  label, value, onChange, options, error, disabled, placeholder, required, hint,
+}: {
+  label: string; value: string; onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+  error?: string; disabled?: boolean; placeholder?: string; required?: boolean; hint?: string;
+}) {
+  return (
+    <div>
+      <label className="block text-xs font-[600] text-[var(--color-ink)] mb-1.5">
+        {label}
+        {required && <span className="text-[var(--color-red)] ml-0.5">*</span>}
+      </label>
+      <select
+        value={value}
+        disabled={disabled}
+        onChange={e => onChange(e.target.value)}
+        className={`w-full px-3.5 py-2.5 text-sm rounded-sm border outline-none transition-all bg-white text-[var(--color-ink)] ${
+          error
+            ? "border-[var(--color-red)] focus:ring-2 focus:ring-[var(--color-red)]/15"
+            : "border-[var(--color-border)] focus:border-[var(--color-navy)] focus:ring-2 focus:ring-[var(--color-navy)]/10"
+        } disabled:bg-[var(--color-surface)] disabled:text-[var(--color-ink-muted)]`}
+      >
+        <option value="">{placeholder ?? "Select"}</option>
+        {options.map(option => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+      {error && (
+        <p className="text-xs text-[var(--color-red)] mt-1.5 flex items-center gap-1">
+          <CircleX size={11} aria-hidden="true" />
+          {error}
+        </p>
+      )}
+      {hint && !error && <p className="text-xs text-[var(--color-ink-muted)] mt-1.5">{hint}</p>}
+    </div>
+  );
+}
+
+// ── Shared private-document upload control ────────────────────────────────────
+
+export function FileField({
+  label, accept, onChange, error, hint, required, file,
+}: {
+  label: string; accept: string; onChange: (file: File | null) => void;
+  error?: string; hint?: string; required?: boolean; file?: File | null;
+}) {
+  return (
+    <div>
+      <label className="block text-xs font-[600] text-[var(--color-ink)] mb-1.5">
+        {label}
+        {required && <span className="text-[var(--color-red)] ml-0.5">*</span>}
+      </label>
+      <input
+        type="file"
+        accept={accept}
+        onChange={e => onChange(e.target.files?.[0] ?? null)}
+        className={`w-full text-sm text-[var(--color-ink-muted)] rounded-sm border px-3 py-2.5 bg-white file:mr-3 file:px-3 file:py-1.5 file:rounded-sm file:border-0 file:text-xs file:font-[600] file:bg-[var(--color-surface)] file:text-[var(--color-navy)] cursor-pointer ${
+          error ? "border-[var(--color-red)]" : "border-[var(--color-border)]"
+        }`}
+      />
+      {error ? (
+        <p className="text-xs text-[var(--color-red)] mt-1.5 flex items-center gap-1">
+          <CircleX size={11} aria-hidden="true" />
+          {error}
+        </p>
+      ) : (
+        hint && <p className="text-xs text-[var(--color-ink-muted)] mt-1.5">{hint}</p>
+      )}
+    </div>
+  );
+}
+
+// ── Titled form section (long registration forms) ─────────────────────────────
+
+export function FormSection({
+  title, description, children,
+}: {
+  title: string; description?: string; children: ReactNode;
+}) {
+  return (
+    <section className="space-y-4">
+      <div className="border-b border-[var(--color-border)] pb-2">
+        <h2 className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] tracking-[0.18em] uppercase">{title}</h2>
+        {description && <p className="text-xs text-[var(--color-ink-muted)] mt-1.5 leading-relaxed">{description}</p>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** Two columns from `sm` up, one column on mobile. */
+export function FieldRow({ children }: { children: ReactNode }) {
+  return <div className="grid gap-4 sm:grid-cols-2">{children}</div>;
+}
+
 // ── Inline alert (error / warning / info) ─────────────────────────────────────
 
 export function AuthAlert({ type, message }: { type: "error" | "warning" | "info" | "success"; message: string }) {
@@ -131,9 +229,13 @@ export function PasswordStrength({ password }: { password: string }) {
 // ── Main centered auth layout ──────────────────────────────────────────────────
 
 export default function AuthLayout({
-  children, title, subtitle, footer,
+  children, title, subtitle, footer, width = "md", eyebrow,
 }: {
   children: ReactNode; title: string; subtitle?: ReactNode; footer?: ReactNode;
+  /** "wide" gives long registration forms room for two columns without changing the design language. */
+  width?: "md" | "wide";
+  /** Optional product label under the brand mark, e.g. "Logistics Partner Portal". */
+  eyebrow?: string;
 }) {
   return (
     <div className="min-h-screen bg-[var(--color-ground)] flex flex-col items-center justify-center px-4 py-12">
@@ -143,18 +245,21 @@ export default function AuthLayout({
           <span className="font-[var(--font-display)] text-2xl text-white font-[400] leading-none">M</span>
         </div>
         <span className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] tracking-[0.22em] uppercase">Marketo</span>
+        {eyebrow && (
+          <span className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-disabled)] tracking-[0.18em] uppercase">{eyebrow}</span>
+        )}
       </div>
 
       {/* Card */}
-      <div className="w-full max-w-md bg-white border border-[var(--color-border)] rounded-sm shadow-[0_4px_32px_rgba(28,27,24,0.08)]">
-        <div className="px-8 pt-7 pb-6 border-b border-[var(--color-border)]">
+      <div className={`w-full ${width === "wide" ? "max-w-3xl" : "max-w-md"} bg-white border border-[var(--color-border)] rounded-sm shadow-[0_4px_32px_rgba(28,27,24,0.08)]`}>
+        <div className="px-6 sm:px-8 pt-7 pb-6 border-b border-[var(--color-border)]">
           <h1 className="font-[var(--font-display)] text-2xl font-[400] text-[var(--color-ink)] leading-snug">{title}</h1>
           {subtitle && <div className="text-sm text-[var(--color-ink-muted)] mt-1.5 leading-relaxed">{subtitle}</div>}
         </div>
-        <div className="px-8 py-7 space-y-5">{children}</div>
+        <div className="px-6 sm:px-8 py-7 space-y-5">{children}</div>
       </div>
 
-      {footer && <div className="mt-5 text-center text-sm text-[var(--color-ink-muted)]">{footer}</div>}
+      {footer && <div className="mt-5 text-center text-sm text-[var(--color-ink-muted)] max-w-3xl">{footer}</div>}
     </div>
   );
 }

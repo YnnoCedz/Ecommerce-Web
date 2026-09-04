@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react"
 import { Link, useNavigate } from "react-router"
+import { Loader2 } from "lucide-react"
 import { registerLogisticsRequest, submitLogisticsApplicationRequest } from "../../api/auth"
 import { ApiError } from "../../api/client"
 import { useAuth } from "../../auth/AuthContext"
@@ -11,21 +12,25 @@ import {
   fetchRegions,
   type LocationOption,
 } from "../../api/locations"
-import AuthLayout, { AuthAlert, Field } from "./AuthLayout"
+import AuthLayout, {
+  AuthAlert,
+  Field,
+  FieldRow,
+  FileField,
+  FormSection,
+  PasswordStrength,
+  Select,
+} from "./AuthLayout"
 import { logisticsLoginUrl } from "../../config/logisticsPortal"
 
-function LocationSelect({ label, value, options, onChange, required = true }: {
-  label: string; value: string; options: LocationOption[]; onChange: (value: string) => void; required?: boolean
-}) {
-  return <label className="block space-y-1.5">
-    <span className="text-sm font-[500] text-[var(--color-ink)]">{label}{required && " *"}</span>
-    <select value={value} required={required} onChange={event => onChange(event.target.value)}
-      className="w-full rounded-sm border border-[var(--color-border)] bg-white px-3 py-2.5 text-sm text-[var(--color-ink)] focus:border-[var(--color-navy)] focus:outline-none">
-      <option value="">Select {label.toLowerCase()}</option>
-      {options.map(option => <option key={option.code} value={option.code}>{option.name}</option>)}
-    </select>
-  </label>
-}
+const SEXES = [
+  { value: "female", label: "Female" },
+  { value: "male", label: "Male" },
+  { value: "prefer_not_to_say", label: "Prefer not to say" },
+]
+
+const toOptions = (list: LocationOption[]) =>
+  list.map(item => ({ value: item.code, label: item.name }))
 
 export default function LogisticsRegistrationPage() {
   const navigate = useNavigate()
@@ -44,6 +49,11 @@ export default function LogisticsRegistrationPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // Local subscriber digits only; the +63 country code is fixed by the control,
+  // so the value posted is always the +639XXXXXXXXX shape the API validates.
+  const localPhone = form.phone.replace(/\D/g, "").replace(/^63/, "").replace(/^0/, "").slice(0, 10)
 
   useEffect(() => {
     if (!user) return
@@ -85,10 +95,46 @@ export default function LogisticsRegistrationPage() {
 
   const set = (key: keyof typeof form) => (value: string) => setForm(current => ({ ...current, [key]: value }))
 
+  /**
+   * Mirrors the Marketplace registration error treatment. It replaces the
+   * native constraint bubbles the previous raw inputs relied on, so every
+   * validation message renders in the shared styled controls.
+   */
+  function validate(): boolean {
+    const next: Record<string, string> = {}
+
+    if (!user) {
+      if (!form.first_name.trim()) next.first_name = "First name is required"
+      if (!form.last_name.trim()) next.last_name = "Last name is required"
+      if (!form.sex) next.sex = "Select an option"
+      if (!form.birthdate) next.birthdate = "Birthday is required"
+      if (!form.email.trim()) next.email = "Email is required"
+      else if (!/\S+@\S+\.\S+/.test(form.email)) next.email = "Enter a valid email"
+      if (!localPhone) next.phone = "Mobile number is required"
+      else if (localPhone.length !== 10 || !localPhone.startsWith("9")) next.phone = "Enter a 10-digit mobile number starting with 9"
+      if (!form.password) next.password = "Password is required"
+      if (form.password !== form.password_confirmation) next.password_confirmation = "Passwords do not match"
+    }
+
+    if (!form.company_name.trim()) next.company_name = "Business name is required"
+    if (!form.address_line1.trim()) next.address_line1 = "Business address is required"
+    if (!form.region_code) next.region_code = "Region is required"
+    if (provinces.length > 0 && !form.province_code) next.province_code = "Province is required"
+    if (!form.city_code) next.city_code = "City or municipality is required"
+    if (!form.barangay_code) next.barangay_code = "Barangay is required"
+    if (!form.postal_code.trim()) next.postal_code = "Postal code is required"
+    if (!applicantId) next.applicant_id = "Applicant ID is required"
+    if (!businessPermit) next.business_permit = "Business / DTI permit is required"
+
+    setErrors(next)
+    return Object.keys(next).length === 0
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault()
-    if (!applicantId || !businessPermit) { setError("Applicant ID and Business/DTI permit are required."); return }
-    setSubmitting(true); setError(null)
+    setError(null)
+    if (!validate() || !applicantId || !businessPermit) return
+    setSubmitting(true)
     try {
       if (user) {
         const response = await submitLogisticsApplicationRequest({
@@ -110,7 +156,7 @@ export default function LogisticsRegistrationPage() {
 
       const response = await registerLogisticsRequest({
           ...form,
-          phone: form.phone.replace(/\D/g, "").replace(/^0/, "+63").replace(/^63/, "+63"),
+          phone: `+63${localPhone}`,
           province_code: form.province_code || undefined,
           applicant_id: applicantId, business_permit: businessPermit,
         })
@@ -120,11 +166,25 @@ export default function LogisticsRegistrationPage() {
     } catch (reason) {
       if (reason instanceof ApiError && reason.code === "existing_account") {
         setError("An existing Maketo identity was found. Sign in to continue your Logistics application.")
-      } else setError(reason instanceof ApiError ? reason.message : "Unable to submit the Logistics application.")
+      } else {
+        // Server-side 422 details land on the same fields as local validation.
+        if (reason instanceof ApiError && reason.errors) {
+          setErrors(Object.fromEntries(
+            Object.entries(reason.errors).map(([field, messages]) => [field, messages?.[0] ?? ""]),
+          ))
+        }
+        setError(reason instanceof ApiError ? reason.message : "Unable to submit the Logistics application.")
+      }
     } finally { setSubmitting(false) }
   }
 
-  return <AuthLayout title="Register a Logistics Provider" subtitle={user ? `Continue as ${user.email}. Your Logistics application remains separate from Marketplace access.` : "Create one Maketo identity and submit your provider application for Admin review."}
+  return <AuthLayout
+    width="wide"
+    eyebrow="Logistics Partner"
+    title="Register a Logistics Provider"
+    subtitle={user
+      ? `Continue as ${user.email}. Your Logistics application remains separate from Marketplace access.`
+      : "Create one Maketo identity and submit your provider application for Admin review. Logistics does not require a Marketplace buyer account."}
     footer={<span className="block space-y-1">
       {/* Logistics-specific Sign In: always the dedicated Logistics Partner Portal, never the Marketplace login. */}
       <span className="block">Already an approved Logistics partner? <a href={logisticsLoginUrl()} className="text-[var(--color-navy)] font-[500] hover:underline">Sign in to the Logistics Partner Portal</a></span>
@@ -133,36 +193,97 @@ export default function LogisticsRegistrationPage() {
     </span>}>
     {error && <AuthAlert type="error" message={error} />}
     {success && <AuthAlert type="success" message={`${success} Once approved, sign in at the Logistics Partner Portal: ${logisticsLoginUrl()}`} />}
-    <form onSubmit={submit} className="space-y-5">
-      {!user && <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="First name" value={form.first_name} onChange={set("first_name")} required />
-        <Field label="Middle name / initial" value={form.middle_name} onChange={set("middle_name")} />
-        <Field label="Last name" value={form.last_name} onChange={set("last_name")} required />
-        <label className="block space-y-1.5"><span className="text-sm font-[500] text-[var(--color-ink)]">Sex *</span><select value={form.sex} required onChange={event => set("sex")(event.target.value)} className="w-full rounded-sm border border-[var(--color-border)] bg-white px-3 py-2.5 text-sm"><option value="">Select</option><option value="female">Female</option><option value="male">Male</option><option value="prefer_not_to_say">Prefer not to say</option></select></label>
-        <Field label="Birthday" type="date" value={form.birthdate} onChange={set("birthdate")} required />
-        <Field label="Email" type="email" value={form.email} onChange={set("email")} required />
-        <Field label="Philippine mobile number" value={form.phone} onChange={set("phone")} placeholder="09171234567" required />
-        <span />
-        <Field label="Password" type="password" value={form.password} onChange={set("password")} required />
-        <Field label="Confirm password" type="password" value={form.password_confirmation} onChange={set("password_confirmation")} required />
-      </div>}
-      <div className="border-t border-[var(--color-border)] pt-5 space-y-4">
-        <h2 className="text-sm font-[600] text-[var(--color-ink)]">Provider details</h2>
-        <Field label="Business / company name" value={form.company_name} onChange={set("company_name")} required />
-        <Field label="Legal name" value={form.legal_name} onChange={set("legal_name")} />
-        <Field label="Business address" value={form.address_line1} onChange={set("address_line1")} required />
-        <Field label="Address line 2" value={form.address_line2} onChange={set("address_line2")} />
-        <LocationSelect label="Region" value={form.region_code} options={regions} onChange={value => setForm(current => ({ ...current, region_code: value, province_code: "", city_code: "", barangay_code: "" }))} />
-        {provinces.length > 0 && <LocationSelect label="Province" value={form.province_code} options={provinces} onChange={value => setForm(current => ({ ...current, province_code: value, city_code: "", barangay_code: "" }))} />}
-        <LocationSelect label="Municipality / city" value={form.city_code} options={cities} onChange={value => setForm(current => ({ ...current, city_code: value, barangay_code: "" }))} />
-        <LocationSelect label="Barangay" value={form.barangay_code} options={barangays} onChange={set("barangay_code")} />
-        <Field label="Postal code" value={form.postal_code} onChange={set("postal_code")} required />
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <label className="text-sm text-[var(--color-ink)]">Applicant ID *<input className="mt-1 block w-full text-sm" type="file" accept="image/*,.pdf" required onChange={event => setApplicantId(event.target.files?.[0] ?? null)} /></label>
-        <label className="text-sm text-[var(--color-ink)]">Business / DTI permit *<input className="mt-1 block w-full text-sm" type="file" accept="image/*,.pdf" required onChange={event => setBusinessPermit(event.target.files?.[0] ?? null)} /></label>
-      </div>
-      <button type="submit" disabled={submitting || Boolean(success)} className="w-full rounded-sm bg-[var(--color-navy)] py-3 text-sm font-[500] text-white disabled:opacity-60">{submitting ? "Submitting..." : success ? "Application submitted" : "Submit Logistics registration"}</button>
+
+    <form onSubmit={submit} className="space-y-8">
+      {!user && <FormSection title="Representative information" description="The person who will manage this Logistics provider account.">
+        <FieldRow>
+          <Field label="First name" value={form.first_name} onChange={set("first_name")} error={errors.first_name} required />
+          <Field label="Middle name / initial" value={form.middle_name} onChange={set("middle_name")} />
+        </FieldRow>
+        <FieldRow>
+          <Field label="Last name" value={form.last_name} onChange={set("last_name")} error={errors.last_name} required />
+          <Select label="Sex" value={form.sex} onChange={set("sex")} options={SEXES} error={errors.sex} required />
+        </FieldRow>
+        <FieldRow>
+          <Field label="Birthday" type="date" value={form.birthdate} onChange={set("birthdate")} error={errors.birthdate} required />
+          <Field label="Email address" type="email" value={form.email} onChange={set("email")} placeholder="you@example.com" error={errors.email} required />
+        </FieldRow>
+        <FieldRow>
+          <div>
+            <label htmlFor="logistics-phone" className="block text-xs font-[600] text-[var(--color-ink)] mb-1.5">
+              Mobile number<span className="text-[var(--color-red)] ml-0.5">*</span>
+            </label>
+            <div className={`flex items-center rounded-sm border bg-white ${errors.phone ? "border-[var(--color-red)]" : "border-[var(--color-border)] focus-within:border-[var(--color-navy)] focus-within:ring-2 focus-within:ring-[var(--color-navy)]/10"}`}>
+              <span className="px-3 text-sm text-[var(--color-ink-muted)] border-r border-[var(--color-border)] py-2.5">+63</span>
+              <input
+                id="logistics-phone"
+                type="tel"
+                inputMode="numeric"
+                value={localPhone}
+                onChange={event => set("phone")(event.target.value)}
+                placeholder="9171234567"
+                className="flex-1 px-3 py-2.5 text-sm outline-none bg-transparent text-[var(--color-ink)]"
+              />
+            </div>
+            {errors.phone && <p className="text-xs text-[var(--color-red)] mt-1.5">{errors.phone}</p>}
+          </div>
+          <span className="hidden sm:block" />
+        </FieldRow>
+      </FormSection>}
+
+      <FormSection title="Business information">
+        <FieldRow>
+          <Field label="Business / company name" value={form.company_name} onChange={set("company_name")} error={errors.company_name} required />
+          <Field label="Legal name" value={form.legal_name} onChange={set("legal_name")} placeholder="Optional" />
+        </FieldRow>
+      </FormSection>
+
+      <FormSection title="Business address">
+        <FieldRow>
+          <Field label="Business address" value={form.address_line1} onChange={set("address_line1")} placeholder="Street and building" error={errors.address_line1} required />
+          <Field label="Address line 2" value={form.address_line2} onChange={set("address_line2")} placeholder="Optional" />
+        </FieldRow>
+        <FieldRow>
+          <Select label="Region" value={form.region_code} options={toOptions(regions)} placeholder="Select region" error={errors.region_code}
+            onChange={value => setForm(current => ({ ...current, region_code: value, province_code: "", city_code: "", barangay_code: "" }))} required />
+          {provinces.length > 0 ? (
+            <Select label="Province" value={form.province_code} options={toOptions(provinces)} placeholder="Select province" error={errors.province_code}
+              onChange={value => setForm(current => ({ ...current, province_code: value, city_code: "", barangay_code: "" }))} required />
+          ) : <span className="hidden sm:block" />}
+        </FieldRow>
+        <FieldRow>
+          <Select label="Municipality / city" value={form.city_code} options={toOptions(cities)} placeholder="Select city or municipality" error={errors.city_code}
+            disabled={cities.length === 0}
+            onChange={value => setForm(current => ({ ...current, city_code: value, barangay_code: "" }))} required />
+          <Select label="Barangay" value={form.barangay_code} options={toOptions(barangays)} placeholder="Select barangay" error={errors.barangay_code}
+            disabled={barangays.length === 0} onChange={set("barangay_code")} required />
+        </FieldRow>
+        <FieldRow>
+          <Field label="Postal code" value={form.postal_code} onChange={set("postal_code")} placeholder="1100" error={errors.postal_code} required />
+          <span className="hidden sm:block" />
+        </FieldRow>
+      </FormSection>
+
+      <FormSection title="Documents" description="Stored privately and visible only to Maketo administrators during review.">
+        <FieldRow>
+          <FileField label="Applicant ID" accept="image/*,.pdf" file={applicantId} onChange={setApplicantId} error={errors.applicant_id} required />
+          <FileField label="Business / DTI permit" accept="image/*,.pdf" file={businessPermit} onChange={setBusinessPermit} error={errors.business_permit} required />
+        </FieldRow>
+      </FormSection>
+
+      {!user && <FormSection title="Security">
+        <FieldRow>
+          <Field label="Password" type="password" value={form.password} onChange={set("password")} placeholder="Create a strong password" error={errors.password} required />
+          <Field label="Confirm password" type="password" value={form.password_confirmation} onChange={set("password_confirmation")} placeholder="Re-enter your password" error={errors.password_confirmation} required />
+        </FieldRow>
+        <PasswordStrength password={form.password} />
+      </FormSection>}
+
+      <button type="submit" disabled={submitting || Boolean(success)}
+        className="w-full py-3 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center justify-center gap-2">
+        {submitting ? (<><Loader2 size={14} className="animate-spin" aria-hidden="true" />Submitting...</>)
+          : success ? "Application submitted" : "Submit Logistics registration"}
+      </button>
     </form>
   </AuthLayout>
 }

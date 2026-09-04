@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
 import { Link, useNavigate, useSearchParams } from "react-router"
+import { Loader2 } from "lucide-react"
 import { useAuth } from "../../auth/AuthContext"
 import { ApiError } from "../../api/client"
 import {
@@ -10,7 +11,15 @@ import {
   fetchRegions,
   type LocationOption,
 } from "../../api/locations"
-import AuthLayout, { Field, PasswordStrength, AuthAlert } from "./AuthLayout"
+import AuthLayout, {
+  AuthAlert,
+  Field,
+  FieldRow,
+  FileField,
+  FormSection,
+  PasswordStrength,
+  Select,
+} from "./AuthLayout"
 
 const SEXES = [
   { value: "female", label: "Female" },
@@ -39,55 +48,6 @@ function deriveAge(birthdate: string): number | null {
 
 function normalizePhilippinePhone(local: string): string {
   return `+63${local.replace(/\D/g, "").slice(0, 10)}`
-}
-
-function Select({
-  label,
-  value,
-  onChange,
-  options,
-  error,
-  disabled,
-  placeholder,
-  required,
-}: {
-  label: string
-  value: string
-  onChange: (v: string) => void
-  options: { value: string; label: string }[]
-  error?: string
-  disabled?: boolean
-  placeholder?: string
-  required?: boolean
-}) {
-  return (
-    <div>
-      <label className="block text-xs font-[600] text-[var(--color-ink)] mb-1.5">
-        {label}
-        {required && <span className="text-[var(--color-red)] ml-0.5">*</span>}
-      </label>
-      <select
-        value={value}
-        disabled={disabled}
-        onChange={e => onChange(e.target.value)}
-        className={`w-full px-3.5 py-2.5 text-sm rounded-sm border outline-none transition-all bg-white text-[var(--color-ink)] ${
-          error
-            ? "border-[var(--color-red)] focus:ring-2 focus:ring-[var(--color-red)]/15"
-            : "border-[var(--color-border)] focus:border-[var(--color-navy)] focus:ring-2 focus:ring-[var(--color-navy)]/10"
-        } disabled:bg-[var(--color-surface)] disabled:text-[var(--color-ink-muted)]`}
-      >
-        <option value="">{placeholder ?? "Select"}</option>
-        {options.map(option => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      {error && (
-        <p className="text-xs text-[var(--color-red)] mt-1.5">{error}</p>
-      )}
-    </div>
-  )
 }
 
 const toOptions = (list: LocationOption[]) =>
@@ -321,6 +281,7 @@ export default function UserRegistrationPage() {
 
   return (
     <AuthLayout
+      width="wide"
       title="Create your Maketo account"
       subtitle="Verify your email, then a Maketo administrator reviews your registration before your account is activated."
       footer={
@@ -344,121 +305,128 @@ export default function UserRegistrationPage() {
     >
       {message && <AuthAlert type="error" message={message} />}
 
-      <form onSubmit={submit} className="space-y-5">
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="First name" value={firstName} onChange={setFirstName} placeholder="Ana" error={errors.firstName} required />
-          <Field label="Last name" value={lastName} onChange={setLastName} placeholder="Reyes" error={errors.lastName} required />
-        </div>
+      <form onSubmit={submit} className="space-y-8">
+        <FormSection title="Personal information">
+          <FieldRow>
+            <Field label="First name" value={firstName} onChange={setFirstName} placeholder="Ana" error={errors.firstName} required />
+            <Field label="Middle name" value={middleName} onChange={setMiddleName} placeholder="Optional" error={errors.middleName} />
+          </FieldRow>
+          <FieldRow>
+            <Field label="Last name" value={lastName} onChange={setLastName} placeholder="Reyes" error={errors.lastName} required />
+            <Select label="Sex" value={sex} onChange={setSex} options={SEXES} error={errors.sex} required />
+          </FieldRow>
+          <FieldRow>
+            <Field label="Birthday" type="date" value={birthdate} onChange={setBirthdate} error={errors.birthdate} required />
+            <div>
+              <label htmlFor="registration-age" className="block text-xs font-[600] text-[var(--color-ink)] mb-1.5">
+                Age
+              </label>
+              <input
+                id="registration-age"
+                readOnly
+                disabled
+                value={age === null ? "" : String(age)}
+                placeholder="—"
+                aria-label="Age, calculated from your birthday"
+                className="w-full px-3.5 py-2.5 text-sm rounded-sm border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-ink-muted)]"
+              />
+              <p className="text-xs text-[var(--color-ink-muted)] mt-1.5">
+                Calculated from your birthday
+              </p>
+            </div>
+          </FieldRow>
+        </FormSection>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Middle name" value={middleName} onChange={setMiddleName} placeholder="Optional" error={errors.middleName} />
-          <Select label="Sex" value={sex} onChange={setSex} options={SEXES} error={errors.sex} required />
-        </div>
+        <FormSection title="Contact information">
+          <FieldRow>
+            <Field label="Email address" type="email" value={email} onChange={setEmail} placeholder="you@example.com" error={errors.email} required />
+            <div>
+              <label htmlFor="registration-phone" className="block text-xs font-[600] text-[var(--color-ink)] mb-1.5">
+                Mobile number<span className="text-[var(--color-red)] ml-0.5">*</span>
+              </label>
+              <div
+                className={`flex items-center rounded-sm border bg-white ${
+                  errors.phone
+                    ? "border-[var(--color-red)]"
+                    : "border-[var(--color-border)] focus-within:border-[var(--color-navy)] focus-within:ring-2 focus-within:ring-[var(--color-navy)]/10"
+                }`}
+              >
+                <span className="px-3 text-sm text-[var(--color-ink-muted)] border-r border-[var(--color-border)] py-2.5">
+                  +63
+                </span>
+                <input
+                  id="registration-phone"
+                  type="tel"
+                  inputMode="numeric"
+                  value={displayPhone}
+                  onChange={e => setPhoneLocal(e.target.value)}
+                  placeholder="9171234567"
+                  className="flex-1 px-3 py-2.5 text-sm outline-none bg-transparent text-[var(--color-ink)]"
+                />
+              </div>
+              {errors.phone && (
+                <p className="text-xs text-[var(--color-red)] mt-1.5">{errors.phone}</p>
+              )}
+            </div>
+          </FieldRow>
+        </FormSection>
 
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Birthday" type="date" value={birthdate} onChange={setBirthdate} error={errors.birthdate} required />
-          <div>
-            <label className="block text-xs font-[600] text-[var(--color-ink)] mb-1.5">
-              Age
-            </label>
-            <input
-              readOnly
-              disabled
-              value={age === null ? "" : String(age)}
-              placeholder="—"
-              aria-label="Age, calculated from your birthday"
-              className="w-full px-3.5 py-2.5 text-sm rounded-sm border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-ink-muted)]"
-            />
-            <p className="text-xs text-[var(--color-ink-muted)] mt-1.5">
-              Calculated from your birthday
-            </p>
-          </div>
-        </div>
+        <FormSection title="Address">
+          <FieldRow>
+            <Select label="Region" value={regionCode} onChange={setRegionCode} options={toOptions(regions)} error={errors.regionCode} placeholder="Select region" required />
+            {provinces.length > 0 ? (
+              <Select label="Province" value={provinceCode} onChange={setProvinceCode} options={toOptions(provinces)} error={errors.provinceCode} placeholder="Select province" required />
+            ) : (
+              <span className="hidden sm:block" />
+            )}
+          </FieldRow>
+          <FieldRow>
+            <Select label="City / Municipality" value={cityCode} onChange={setCityCode} options={toOptions(cities)} error={errors.cityCode} placeholder="Select city or municipality" disabled={cities.length === 0} required />
+            <Select label="Barangay" value={barangayCode} onChange={setBarangayCode} options={toOptions(barangays)} error={errors.barangayCode} placeholder="Select barangay" disabled={barangays.length === 0} required />
+          </FieldRow>
+          <FieldRow>
+            <Field label="House number" value={houseNumber} onChange={setHouseNumber} placeholder="12" />
+            <Field label="Street" value={street} onChange={setStreet} placeholder="Mabini Street" error={errors.street} required />
+          </FieldRow>
+          <FieldRow>
+            <Field label="Postal code" value={postalCode} onChange={setPostalCode} placeholder="1100" error={errors.postalCode} required />
+            <span className="hidden sm:block" />
+          </FieldRow>
+        </FormSection>
 
-        <Field label="Email address" type="email" value={email} onChange={setEmail} placeholder="you@example.com" error={errors.email} required />
-
-        <div>
-          <label className="block text-xs font-[600] text-[var(--color-ink)] mb-1.5">
-            Mobile number<span className="text-[var(--color-red)] ml-0.5">*</span>
-          </label>
-          <div
-            className={`flex items-center rounded-sm border bg-white ${
-              errors.phone
-                ? "border-[var(--color-red)]"
-                : "border-[var(--color-border)] focus-within:border-[var(--color-navy)]"
-            }`}
-          >
-            <span className="px-3 text-sm text-[var(--color-ink-muted)] border-r border-[var(--color-border)] py-2.5">
-              +63
-            </span>
-            <input
-              type="tel"
-              inputMode="numeric"
-              value={displayPhone}
-              onChange={e => setPhoneLocal(e.target.value)}
-              placeholder="9171234567"
-              className="flex-1 px-3 py-2.5 text-sm outline-none bg-transparent text-[var(--color-ink)]"
-            />
-          </div>
-          {errors.phone && (
-            <p className="text-xs text-[var(--color-red)] mt-1.5">{errors.phone}</p>
-          )}
-        </div>
-
-        <div className="pt-1 border-t border-[var(--color-border)]">
-          <p className="text-xs font-[600] text-[var(--color-ink)] pt-4 pb-1">
-            Address
-          </p>
-        </div>
-
-        <Select label="Region" value={regionCode} onChange={setRegionCode} options={toOptions(regions)} error={errors.regionCode} placeholder="Select region" required />
-
-        {provinces.length > 0 && (
-          <Select label="Province" value={provinceCode} onChange={setProvinceCode} options={toOptions(provinces)} error={errors.provinceCode} placeholder="Select province" required />
-        )}
-
-        <Select label="City / Municipality" value={cityCode} onChange={setCityCode} options={toOptions(cities)} error={errors.cityCode} placeholder="Select city or municipality" disabled={cities.length === 0} required />
-
-        <Select label="Barangay" value={barangayCode} onChange={setBarangayCode} options={toOptions(barangays)} error={errors.barangayCode} placeholder="Select barangay" disabled={barangays.length === 0} required />
-
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="House number" value={houseNumber} onChange={setHouseNumber} placeholder="12" />
-          <Field label="Street" value={street} onChange={setStreet} placeholder="Mabini Street" error={errors.street} required />
-        </div>
-
-        <Field label="Postal code" value={postalCode} onChange={setPostalCode} placeholder="1100" error={errors.postalCode} required />
-
-        <div>
-          <label className="block text-xs font-[600] text-[var(--color-ink)] mb-1.5">
-            Government-issued ID<span className="text-[var(--color-red)] ml-0.5">*</span>
-          </label>
-          <input
-            type="file"
+        <FormSection title="Identity verification">
+          <FileField
+            label="Government-issued ID"
             accept="image/jpeg,image/png,image/webp"
-            onChange={e => setIdDocument(e.target.files?.[0] ?? null)}
-            className="w-full text-sm text-[var(--color-ink-muted)] file:mr-3 file:px-3 file:py-2 file:rounded-sm file:border-0 file:text-xs file:font-[600] file:bg-[var(--color-surface)] file:text-[var(--color-navy)] cursor-pointer"
+            file={idDocument}
+            onChange={setIdDocument}
+            error={errors.idDocument}
+            hint="Stored privately and visible only to Maketo administrators during review."
+            required
           />
-          {errors.idDocument ? (
-            <p className="text-xs text-[var(--color-red)] mt-1.5">{errors.idDocument}</p>
-          ) : (
-            <p className="text-xs text-[var(--color-ink-muted)] mt-1.5">
-              Stored privately and visible only to Maketo administrators during review.
-            </p>
-          )}
-        </div>
+        </FormSection>
 
-        <div className="space-y-3">
-          <Field label="Password" type="password" value={password} onChange={setPassword} placeholder="Create a strong password" error={errors.password} required />
+        <FormSection title="Security">
+          <FieldRow>
+            <Field label="Password" type="password" value={password} onChange={setPassword} placeholder="Create a strong password" error={errors.password} required />
+            <Field label="Confirm password" type="password" value={confirm} onChange={setConfirm} placeholder="Re-enter your password" error={errors.confirm} required />
+          </FieldRow>
           <PasswordStrength password={password} />
-          <Field label="Confirm password" type="password" value={confirm} onChange={setConfirm} placeholder="Re-enter your password" error={errors.confirm} required />
-        </div>
+        </FormSection>
 
         <button
           type="submit"
           disabled={submitting}
-          className="w-full bg-[var(--color-navy)] text-white text-sm font-[500] py-2.5 rounded-sm hover:opacity-90 transition-opacity disabled:opacity-60 cursor-pointer"
+          className="w-full py-3 bg-[var(--color-navy)] text-white text-sm font-[500] rounded-sm hover:bg-[var(--color-navy-hover)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors cursor-pointer flex items-center justify-center gap-2"
         >
-          {submitting ? "Creating account..." : "Create account"}
+          {submitting ? (
+            <>
+              <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+              Creating account...
+            </>
+          ) : (
+            "Create account"
+          )}
         </button>
       </form>
     </AuthLayout>

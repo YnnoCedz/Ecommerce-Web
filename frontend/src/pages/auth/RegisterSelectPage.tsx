@@ -1,4 +1,5 @@
 import { Link } from "react-router"
+import { logisticsLoginUrl } from "../../config/logisticsPortal"
 import { ShoppingBag, Truck } from "lucide-react"
 import AuthLayout from "./AuthLayout"
 
@@ -22,7 +23,7 @@ const OPTIONS: Option[] = [
   {
     key: "user",
     label: "User",
-    description: "Shop and use the marketplace",
+    description: "Shop and use the Maketo Marketplace.",
     href: "/register/user",
     icon: ShoppingBag,
     enabled: true,
@@ -30,7 +31,7 @@ const OPTIONS: Option[] = [
   {
     key: "logistics",
     label: "Logistics",
-    description: "Register a logistics business",
+    description: "Register a Logistics Provider / Sorting Center.",
     href: "/register/logistics",
     icon: Truck,
     enabled: true,
@@ -45,14 +46,26 @@ export default function RegisterSelectPage() {
       title="Create your Maketo account"
       subtitle="How would you like to join Maketo?"
       footer={
-        <span>
-          Already have an account?{" "}
-          <Link
-            to="/auth/login"
-            className="text-[var(--color-navy)] font-[500] hover:underline"
-          >
-            Sign in
-          </Link>
+        <span className="block space-y-1">
+          <span className="block">
+            Already have an account?{" "}
+            <Link
+              to="/auth/login"
+              className="text-[var(--color-navy)] font-[500] hover:underline"
+            >
+              Sign in
+            </Link>
+          </span>
+          {/* Approved Logistics partners sign in on the dedicated portal, not the Marketplace login. */}
+          <span className="block">
+            Approved Logistics partner?{" "}
+            <a
+              href={logisticsLoginUrl()}
+              className="text-[var(--color-navy)] font-[500] hover:underline"
+            >
+              Sign in to the Logistics Partner Portal
+            </a>
+          </span>
         </span>
       }
     >
