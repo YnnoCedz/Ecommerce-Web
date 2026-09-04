@@ -12,6 +12,7 @@ import {
   type LocationOption,
 } from "../../api/locations"
 import AuthLayout, { AuthAlert, Field } from "./AuthLayout"
+import { logisticsLoginUrl } from "../../config/logisticsPortal"
 
 function LocationSelect({ label, value, options, onChange, required = true }: {
   label: string; value: string; options: LocationOption[]; onChange: (value: string) => void; required?: boolean
@@ -124,9 +125,14 @@ export default function LogisticsRegistrationPage() {
   }
 
   return <AuthLayout title="Register a Logistics Provider" subtitle={user ? `Continue as ${user.email}. Your Logistics application remains separate from Marketplace access.` : "Create one Maketo identity and submit your provider application for Admin review."}
-    footer={user ? undefined : <span>Already have a Maketo identity? <Link to="/auth/login?returnTo=%2Fregister%2Flogistics" className="text-[var(--color-navy)] font-[500] hover:underline">Sign in to continue</Link></span>}>
+    footer={<span className="block space-y-1">
+      {/* Logistics-specific Sign In: always the dedicated Logistics Partner Portal, never the Marketplace login. */}
+      <span className="block">Already an approved Logistics partner? <a href={logisticsLoginUrl()} className="text-[var(--color-navy)] font-[500] hover:underline">Sign in to the Logistics Partner Portal</a></span>
+      {/* Shared-identity continuation: an existing Maketo identity authenticates on the Marketplace login and returns here to submit the application. */}
+      {!user && <span className="block">Already have a Maketo identity but not yet a Logistics partner? <Link to="/auth/login?returnTo=%2Fregister%2Flogistics" className="text-[var(--color-navy)] font-[500] hover:underline">Sign in to continue this application</Link></span>}
+    </span>}>
     {error && <AuthAlert type="error" message={error} />}
-    {success && <AuthAlert type="success" message={`${success} You can sign in to the Logistics Partner Portal after approval.`} />}
+    {success && <AuthAlert type="success" message={`${success} Once approved, sign in at the Logistics Partner Portal: ${logisticsLoginUrl()}`} />}
     <form onSubmit={submit} className="space-y-5">
       {!user && <div className="grid gap-4 sm:grid-cols-2">
         <Field label="First name" value={form.first_name} onChange={set("first_name")} required />

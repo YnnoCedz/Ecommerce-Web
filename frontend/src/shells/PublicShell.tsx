@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import { canAccessRider, isAdmin, isMarketplaceShopper, sellerAccessState } from "../auth/capabilities";
 import { fetchCatalogCategories, fetchSearchSuggestions, type CatalogCategory, type SearchSuggestion } from "../api/catalog";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { logisticsLoginUrl } from "../config/logisticsPortal";
 import {
   IconCart, IconHeart, IconSearch, IconMenu, IconClose,
   IconChevronDown, IconChevronRight, IconHome,
@@ -258,13 +259,12 @@ export default function PublicShell({ children, cartCount = 0, wishlistCount = 0
 
         {/* Announcement bar */}
         <div className="bg-[var(--color-navy)] text-white text-center py-1.5 text-xs font-[var(--font-mono)] tracking-wide hidden sm:block">
-          Join Our Logistics Network &nbsp;·&nbsp; Logistics partners and riders:{" "}
-          {/* Shared marketplace sign-in - there is no separate Logistics login surface yet. */}
-          <Link to="/auth/login" className="underline underline-offset-2 hover:opacity-80">
+          Join Our Logistics Network &nbsp;·&nbsp; Logistics partners:{" "}
+          {/* Logistics Sign In targets the dedicated Logistics Partner Portal (VITE_LOGISTICS_FRONTEND_URL + /login), never the Marketplace login. Riders sign in through the Rider app only. */}
+          <a href={logisticsLoginUrl()} className="underline underline-offset-2 hover:opacity-80">
             Sign in
-          </Link>
+          </a>
           {" or "}
-          {/* Phase 2.7-gated: /register/logistics always renders the explanatory state. */}
           <Link to="/register/logistics" className="underline underline-offset-2 hover:opacity-80">
             register
           </Link>
