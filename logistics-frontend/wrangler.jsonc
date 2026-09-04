@@ -5,7 +5,7 @@
   // Workers Builds: root path "logistics-frontend", build "npm run build", deploy "npx wrangler deploy".
   // Custom domain logistics.marketohub.online is bound to this Worker in the Cloudflare UI
   // after the first successful deploy. Never bind marketohub.online here.
-  "$schema": "node_modules/wrangler/config-schema.json",
+  "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "marketo-logistics",
   "compatibility_date": "2026-09-04",
   "assets": {
