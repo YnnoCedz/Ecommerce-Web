@@ -1,7 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { useLocation, useNavigate } from "react-router"
-import { LayoutDashboard, LogOut, Menu, X } from "lucide-react"
-import type { AuthUser } from "../api"
+import {
+  BarChart3, Boxes, Building2, ClipboardList, Cog, LayoutDashboard, LogOut, Mail,
+  PackageCheck, ShieldCheck, Truck, UserRoundCheck, Users, Warehouse, X, Menu,
+} from "lucide-react"
+import type { AuthUser, LogisticsContext } from "../api"
+import { MARKETPLACE_URL } from "../config"
 
 /**
  * Authenticated shell for the Logistics Partner Portal.
@@ -17,15 +21,35 @@ import type { AuthUser } from "../api"
  */
 
 type NavItem = { id: string; label: string; path: string; icon: typeof LayoutDashboard }
+type NavSection = { label: string; items: NavItem[] }
 
-const NAV_ITEMS: NavItem[] = [
-  { id: "dashboard", label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+export const NAV_SECTIONS: NavSection[] = [
+  { label: "Overview", items: [{ id: "dashboard", label: "Dashboard", path: "/dashboard", icon: LayoutDashboard }] },
+  { label: "Operations", items: [
+    { id: "pickups", label: "Pickup Requests", path: "/operations/pickups", icon: ClipboardList },
+    { id: "incoming", label: "Incoming Parcels", path: "/operations/incoming", icon: PackageCheck },
+    { id: "sorting", label: "Sorting", path: "/operations/sorting", icon: Boxes },
+    { id: "assignments", label: "Delivery Assignment", path: "/operations/assignments", icon: UserRoundCheck },
+    { id: "shipments", label: "Shipments", path: "/operations/shipments", icon: Truck },
+  ] },
+  { label: "Network", items: [
+    { id: "riders", label: "Riders", path: "/riders", icon: Users },
+    { id: "hubs", label: "Hubs", path: "/hubs", icon: Warehouse },
+  ] },
+  { label: "Communication", items: [{ id: "messages", label: "Messages", path: "/messages", icon: Mail }] },
+  { label: "Insights", items: [{ id: "reports", label: "Reports", path: "/reports", icon: BarChart3 }] },
+  { label: "Management", items: [
+    { id: "provider", label: "Provider Profile", path: "/provider", icon: Building2 },
+    { id: "staff", label: "Staff & Access", path: "/staff", icon: ShieldCheck },
+    { id: "settings", label: "Settings", path: "/settings", icon: Cog },
+  ] },
 ]
 
 export default function AppShell({
-  user, onSignOut, children,
+  user, context, onSignOut, children,
 }: {
   user: AuthUser
+  context: LogisticsContext
   onSignOut: () => void
   children: ReactNode
 }) {
@@ -42,7 +66,7 @@ export default function AppShell({
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       {/* Brand, matching the Admin shell lockup. */}
-      <div className="flex items-center gap-2.5 h-14 px-5 border-b border-white/10 shrink-0">
+      <a href={MARKETPLACE_URL} aria-label="Return to Marketo Marketplace" className="flex items-center gap-2.5 h-14 px-5 border-b border-white/10 shrink-0 hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[var(--color-amber)]">
         <div className="w-6 h-6 bg-[var(--color-amber)] rounded flex items-center justify-center shrink-0">
           <span className="text-white font-[var(--font-display)] text-xs font-[400]">M</span>
         </div>
@@ -50,12 +74,13 @@ export default function AppShell({
           <p className="font-[var(--font-display)] text-sm font-[400] text-white leading-tight">Marketo</p>
           <p className="font-[var(--font-mono)] text-[9px] text-white/40 tracking-widest uppercase leading-tight">Logistics</p>
         </div>
-      </div>
+      </a>
 
-      <nav aria-label="Logistics navigation" className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
-        <p className="font-[var(--font-mono)] text-[9px] text-white/30 tracking-widest uppercase px-3 mb-2">Workspace</p>
-        {NAV_ITEMS.map(item => {
-          const isActive = location.pathname === item.path
+      <nav aria-label="Logistics navigation" className="flex-1 overflow-y-auto py-4 px-3 space-y-5">
+        {NAV_SECTIONS.map(section => <div key={section.label}>
+          <p className="font-[var(--font-mono)] text-[9px] text-white/30 tracking-widest uppercase px-3 mb-2">{section.label}</p>
+          <div className="space-y-0.5">{section.items.map(item => {
+          const isActive = location.pathname === item.path || (item.path !== "/dashboard" && location.pathname.startsWith(`${item.path}/`))
           const Icon = item.icon
           return (
             <button
@@ -71,7 +96,8 @@ export default function AppShell({
               {isActive && <span className="w-1 h-4 bg-[var(--color-amber)] rounded-full shrink-0" />}
             </button>
           )
-        })}
+          })}</div>
+        </div>)}
       </nav>
 
       <div className="px-3 pb-4 pt-2 border-t border-white/10 shrink-0">
@@ -135,9 +161,10 @@ export default function AppShell({
             <Menu size={18} aria-hidden="true" />
           </button>
 
-          <span className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] tracking-widest uppercase truncate">
-            Logistics Partner Portal
-          </span>
+          <div className="min-w-0">
+            <p className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] tracking-widest uppercase truncate">Logistics Partner Portal</p>
+            <p className="text-xs text-[var(--color-ink)] truncate hidden sm:block">{context.provider.company_name} · {context.staff.primary_hub?.name ?? "Provider-wide access"}</p>
+          </div>
 
           <div className="ml-auto relative">
             <button

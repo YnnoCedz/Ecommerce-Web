@@ -1,14 +1,20 @@
 import { useEffect, useState, type FormEvent } from "react"
 import { Navigate, Route, Routes, useNavigate } from "react-router"
-import { Building2, ShieldCheck, Warehouse } from "lucide-react"
 import { ApiError, clearToken, context, getToken, login, logout, me, storeToken, verifyTwoFactor, type AuthUser, type LogisticsContext } from "./api"
 import { logisticsDestination } from "./access"
 import AuthLayout from "./components/AuthLayout"
 import AppShell from "./components/AppShell"
+import ApplyPage from "./pages/ApplyPage"
+import ApplicationStatusPage from "./pages/ApplicationStatusPage"
 import {
-  Alert, Button, Card, DetailRow, EmptyState, Field, LoadingRows, PageHeader, StatusBadge,
+  Alert, Button, Field, LoadingRows,
 } from "./components/ui"
 import { forgotPasswordUrl, logisticsRegistrationUrl } from "./config"
+import {
+  AssignmentsPage, DashboardPage, HubsPage, HubDetailPage, IncomingParcelsPage,
+  MessagesPage, PickupRequestsPage, ProviderPage, ReportsPage, RiderDetailPage,
+  RidersPage, SettingsPage, ShipmentDetailPage, ShipmentsPage, SortingPage, StaffPage,
+} from "./pages/PortalPages"
 
 function LoginPage({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => void }) {
   const navigate = useNavigate()
@@ -53,10 +59,13 @@ function LoginPage({ onAuthenticated }: { onAuthenticated: (user: AuthUser) => v
         : "Use your Marketo identity to access your Logistics Partner workspace."}
       footnote={challenge ? undefined : (
         <span>
-          Not yet a Logistics partner?{" "}
+          No Marketo account yet?{" "}
           <a href={logisticsRegistrationUrl()} className="text-[var(--color-navy)] font-[500] hover:underline">
             Register as a Logistics Provider
           </a>
+          <span className="block mt-1 text-xs">
+            Already have a Marketo account? Sign in above to apply.
+          </span>
         </span>
       )}
     >
@@ -127,25 +136,20 @@ function AccessDenied({ user }: { user: AuthUser | null }) {
         This Marketo identity does not currently have access to the Logistics Partner Portal.
         Sign-in succeeded; Logistics access is approved separately by a Marketo administrator.
       </Alert>
-      <p className="text-sm text-[var(--color-ink-muted)] leading-relaxed">
-        If your provider application is still under review, you will be able to sign in here once it is approved.
-      </p>
       <div className="flex flex-wrap gap-3">
-        <Button variant="secondary" onClick={() => navigate("/login", { replace: true })}>
+        <Button variant="secondary" onClick={() => navigate("/application-status", { replace: true })}>
+          View application status
+        </Button>
+        <Button variant="ghost" onClick={() => navigate("/login", { replace: true })}>
           Return to sign in
         </Button>
-        <a
-          href={logisticsRegistrationUrl()}
-          className="py-3 px-4 text-sm font-[500] rounded-sm text-[var(--color-navy)] hover:bg-[var(--color-surface)] transition-colors flex items-center"
-        >
-          Register as a Logistics Provider
-        </a>
       </div>
     </AuthLayout>
   )
 }
 
-function Dashboard({ user }: { user: AuthUser }) {
+function Workspace({ user, onSignOut }: { user: AuthUser; onSignOut: () => void }) {
+  const navigate = useNavigate()
   const [data, setData] = useState<LogisticsContext | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -153,64 +157,40 @@ function Dashboard({ user }: { user: AuthUser }) {
   useEffect(() => {
     void context()
       .then(response => setData(response.data))
-      .catch(reason => setError(reason instanceof Error ? reason.message : "Unable to load provider context."))
+      .catch(reason => {
+        if (reason instanceof ApiError && reason.status === 403) {
+          navigate("/access-denied", { replace: true })
+          return
+        }
+        setError(reason instanceof Error ? reason.message : "Unable to load provider context.")
+      })
       .finally(() => setLoading(false))
-  }, [])
+  }, [navigate])
 
-  // Every value below comes from /api/logistics/context. No metric is invented.
-  return (
-    <>
-      <PageHeader
-        title="Logistics dashboard"
-        subtitle={data ? `${data.provider.company_name} workspace` : `Signed in as ${user.display_name || user.email}`}
-      />
+  if (loading) return <AuthLayout title="Loading workspace" subtitle="Verifying your provider and hub access..."><LoadingRows rows={4} /></AuthLayout>
+  if (error || !data) return <AuthLayout title="Workspace unavailable" subtitle="The Logistics context could not be loaded."><Alert>{error ?? "Provider context is unavailable."}</Alert><Button variant="secondary" onClick={() => window.location.reload()}>Try again</Button></AuthLayout>
 
-      {error && <Alert>{error}</Alert>}
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <Card title="Provider" icon={<Building2 size={15} />}>
-          {loading ? <LoadingRows rows={3} /> : data ? (
-            <dl className="space-y-4">
-              <DetailRow label="Company">{data.provider.company_name}</DetailRow>
-              <DetailRow label="Provider code">
-                <span className="font-[var(--font-mono)] text-xs">{data.provider.code}</span>
-              </DetailRow>
-              <DetailRow label="Status"><StatusBadge status={data.provider.status} /></DetailRow>
-            </dl>
-          ) : <p className="text-sm text-[var(--color-ink-muted)]">Provider details are unavailable.</p>}
-        </Card>
-
-        <Card title="Your access" icon={<ShieldCheck size={15} />}>
-          {loading ? <LoadingRows rows={3} /> : data ? (
-            <dl className="space-y-4">
-              <DetailRow label="Staff">{data.staff.name}</DetailRow>
-              <DetailRow label="Staff type">{data.staff.type.replaceAll("_", " ")}</DetailRow>
-              <DetailRow label="Status"><StatusBadge status={data.staff.status} /></DetailRow>
-            </dl>
-          ) : <p className="text-sm text-[var(--color-ink-muted)]">Staff details are unavailable.</p>}
-        </Card>
-
-        <Card title="Hubs" icon={<Warehouse size={15} />}>
-          {loading ? <LoadingRows rows={3} /> : data ? (
-            data.authorized_hubs.length > 0 ? (
-              <dl className="space-y-4">
-                <DetailRow label="Primary hub">{data.staff.primary_hub?.name ?? "Provider-wide"}</DetailRow>
-                <DetailRow label="Authorized">
-                  {data.authorized_hubs.map(hub => hub.name).join(", ")}
-                </DetailRow>
-              </dl>
-            ) : (
-              <EmptyState
-                icon={<Warehouse size={18} aria-hidden="true" />}
-                title="No hubs configured"
-                description="This provider has no active hubs yet. Hubs appear here once they are set up."
-              />
-            )
-          ) : <p className="text-sm text-[var(--color-ink-muted)]">Hub details are unavailable.</p>}
-        </Card>
-      </div>
-    </>
-  )
+  return <AppShell user={user} context={data} onSignOut={onSignOut}>
+    <Routes>
+      <Route path="/dashboard" element={<DashboardPage user={user} context={data} />} />
+      <Route path="/operations/pickups" element={<PickupRequestsPage />} />
+      <Route path="/operations/incoming" element={<IncomingParcelsPage context={data} />} />
+      <Route path="/operations/sorting" element={<SortingPage />} />
+      <Route path="/operations/assignments" element={<AssignmentsPage />} />
+      <Route path="/operations/shipments" element={<ShipmentsPage />} />
+      <Route path="/operations/shipments/:id" element={<ShipmentDetailPage />} />
+      <Route path="/riders" element={<RidersPage context={data} />} />
+      <Route path="/riders/:id" element={<RiderDetailPage context={data} />} />
+      <Route path="/hubs" element={<HubsPage />} />
+      <Route path="/hubs/:id" element={<HubDetailPage context={data} />} />
+      <Route path="/messages" element={<MessagesPage />} />
+      <Route path="/reports" element={<ReportsPage />} />
+      <Route path="/provider" element={<ProviderPage context={data} />} />
+      <Route path="/staff" element={<StaffPage user={user} context={data} />} />
+      <Route path="/settings" element={<SettingsPage />} />
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+    </Routes>
+  </AppShell>
 }
 
 export default function App() {
@@ -242,11 +222,18 @@ export default function App() {
   return <Routes>
     <Route path="/login" element={<LoginPage onAuthenticated={setUser} />} />
     <Route path="/access-denied" element={<AccessDenied user={user} />} />
-    <Route path="/dashboard" element={
+    <Route path="/application-status" element={
       !user ? <Navigate to="/login" replace />
-        : !user.capabilities.logistics ? <Navigate to="/access-denied" replace />
-        : <AppShell user={user} onSignOut={signOut}><Dashboard user={user} /></AppShell>
+        : user.capabilities.logistics ? <Navigate to="/dashboard" replace />
+        : <ApplicationStatusPage user={user} isAdmin={user.capabilities.admin} />
     } />
-    <Route path="*" element={<Navigate to={logisticsDestination(user)} replace />} />
+    <Route path="/apply" element={
+      !user ? <Navigate to="/login" replace />
+        : user.capabilities.logistics ? <Navigate to="/dashboard" replace />
+        : <ApplyPage user={user} />
+    } />
+    <Route path="/*" element={!user ? <Navigate to="/login" replace />
+      : !user.capabilities.logistics ? <Navigate to="/access-denied" replace />
+        : <Workspace user={user} onSignOut={signOut} />} />
   </Routes>
 }

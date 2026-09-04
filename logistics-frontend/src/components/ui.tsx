@@ -201,6 +201,112 @@ export function StatusBadge({ status, label }: { status: string | null | undefin
   )
 }
 
+// ── Select and file upload (mirror the Marketplace auth controls) ─────────────
+
+export function Select({
+  id, label, value, onChange, options, error, disabled, placeholder, required,
+}: {
+  id: string
+  label: string
+  value: string
+  onChange: (value: string) => void
+  options: { value: string; label: string }[]
+  error?: string
+  disabled?: boolean
+  placeholder?: string
+  required?: boolean
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="block text-xs font-[600] text-[var(--color-ink)] mb-1.5">
+        {label}
+        {required && <span className="text-[var(--color-red)] ml-0.5">*</span>}
+      </label>
+      <select
+        id={id}
+        value={value}
+        disabled={disabled}
+        aria-invalid={Boolean(error)}
+        onChange={event => onChange(event.target.value)}
+        className={`w-full px-3.5 py-2.5 text-sm rounded-sm border outline-none transition-all bg-white text-[var(--color-ink)] ${
+          error
+            ? "border-[var(--color-red)] focus:ring-2 focus:ring-[var(--color-red)]/15"
+            : "border-[var(--color-border)] focus:border-[var(--color-navy)] focus:ring-2 focus:ring-[var(--color-navy)]/10"
+        } disabled:bg-[var(--color-surface)] disabled:text-[var(--color-ink-muted)]`}
+      >
+        <option value="">{placeholder ?? "Select"}</option>
+        {options.map(option => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+      {error && (
+        <p className="text-xs text-[var(--color-red)] mt-1.5 flex items-center gap-1">
+          <CircleX size={11} aria-hidden="true" />
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
+
+export function FileField({
+  id, label, accept, onChange, error, hint, required,
+}: {
+  id: string
+  label: string
+  accept: string
+  onChange: (file: File | null) => void
+  error?: string
+  hint?: string
+  required?: boolean
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="block text-xs font-[600] text-[var(--color-ink)] mb-1.5">
+        {label}
+        {required && <span className="text-[var(--color-red)] ml-0.5">*</span>}
+      </label>
+      <input
+        id={id}
+        type="file"
+        accept={accept}
+        aria-invalid={Boolean(error)}
+        onChange={event => onChange(event.target.files?.[0] ?? null)}
+        className={`w-full text-sm text-[var(--color-ink-muted)] rounded-sm border px-3 py-2.5 bg-white file:mr-3 file:px-3 file:py-1.5 file:rounded-sm file:border-0 file:text-xs file:font-[600] file:bg-[var(--color-surface)] file:text-[var(--color-navy)] cursor-pointer ${
+          error ? "border-[var(--color-red)]" : "border-[var(--color-border)]"
+        }`}
+      />
+      {error ? (
+        <p className="text-xs text-[var(--color-red)] mt-1.5 flex items-center gap-1">
+          <CircleX size={11} aria-hidden="true" />
+          {error}
+        </p>
+      ) : (
+        hint && <p className="text-xs text-[var(--color-ink-muted)] mt-1.5">{hint}</p>
+      )}
+    </div>
+  )
+}
+
+export function FormSection({ title, description, children }: {
+  title: string; description?: string; children: ReactNode
+}) {
+  return (
+    <section className="space-y-4">
+      <div className="border-b border-[var(--color-border)] pb-2">
+        <h2 className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-muted)] tracking-[0.18em] uppercase">{title}</h2>
+        {description && <p className="text-xs text-[var(--color-ink-muted)] mt-1.5 leading-relaxed">{description}</p>}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+/** Two columns from `sm` up, one column on mobile. */
+export function FieldRow({ children }: { children: ReactNode }) {
+  return <div className="grid gap-4 sm:grid-cols-2">{children}</div>
+}
+
 // ── Page header, cards, states ────────────────────────────────────────────────
 
 export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 8450",
-    "test": "node --experimental-strip-types --test tests/access.test.ts",
+    "test": "node --experimental-strip-types --test tests/access.test.ts tests/portal.test.ts",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --port 8450"
   },

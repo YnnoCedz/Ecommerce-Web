@@ -51,12 +51,14 @@ export function PublicFooter() {
 }
 
 export default function AuthLayout({
-  title, subtitle, children, footnote,
+  title, subtitle, children, footnote, width = "md",
 }: {
   title: string
   subtitle?: ReactNode
   children: ReactNode
   footnote?: ReactNode
+  /** "wide" gives the application form room for two columns, as on the Marketplace. */
+  width?: "md" | "wide"
 }) {
   return (
     <div className="min-h-screen flex flex-col bg-[var(--color-ground)]">
@@ -79,7 +81,7 @@ export default function AuthLayout({
           <span className="font-[var(--font-mono)] text-[10px] text-[var(--color-ink-disabled)] tracking-[0.18em] uppercase">Logistics Partner Portal</span>
         </div>
 
-        <div className="w-full max-w-md bg-white border border-[var(--color-border)] rounded-sm shadow-[0_4px_32px_rgba(28,27,24,0.08)]">
+        <div className={`w-full ${width === "wide" ? "max-w-3xl" : "max-w-md"} bg-white border border-[var(--color-border)] rounded-sm shadow-[0_4px_32px_rgba(28,27,24,0.08)]`}>
           <div className="px-6 sm:px-8 pt-7 pb-6 border-b border-[var(--color-border)]">
             <h1 className="font-[var(--font-display)] text-2xl font-[400] text-[var(--color-ink)] leading-snug">{title}</h1>
             {subtitle && <div className="text-sm text-[var(--color-ink-muted)] mt-1.5 leading-relaxed">{subtitle}</div>}
@@ -87,7 +89,7 @@ export default function AuthLayout({
           <div className="px-6 sm:px-8 py-7 space-y-5">{children}</div>
         </div>
 
-        {footnote && <div className="mt-5 text-center text-sm text-[var(--color-ink-muted)] max-w-md">{footnote}</div>}
+        {footnote && <div className="mt-5 text-center text-sm text-[var(--color-ink-muted)] max-w-3xl">{footnote}</div>}
       </main>
 
       <PublicFooter />

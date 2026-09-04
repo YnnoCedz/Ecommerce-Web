@@ -21,11 +21,29 @@ const appShell = read("../src/components/AppShell.tsx")
 const ui = read("../src/components/ui.tsx")
 const styles = read("../src/styles.css")
 const config = read("../src/config.ts")
+const applyPage = read("../src/pages/ApplyPage.tsx")
+const statusPage = read("../src/pages/ApplicationStatusPage.tsx")
 
-test("only Logistics-capable identities bootstrap the dashboard", () => {
+test("the portal decides where a signed-in identity belongs", () => {
+  // The user is never asked whether they are approved; the capability answers it.
   assert.equal(logisticsDestination(user(true)), "/dashboard")
-  assert.equal(logisticsDestination(user(false)), "/access-denied")
+  assert.equal(logisticsDestination(user(false)), "/application-status")
   assert.equal(logisticsDestination(null), "/login")
+})
+
+test("the portal owns the whole logistics door, including applying", () => {
+  // Applying with an existing identity happens here, not on the Marketplace,
+  // because a portal session cannot authenticate a cross-origin Marketplace form.
+  for (const path of ["/login", "/dashboard", "/application-status", "/apply", "/access-denied"]) {
+    assert.ok(app.includes(`<Route path="${path}"`), `missing route: ${path}`)
+  }
+  assert.match(applyPage, /submitApplication/)
+  assert.match(statusPage, /currentApplication/)
+
+  // Both authenticated non-capable routes bounce an already-approved partner
+  // to the workspace, so nobody lands on an apply form they do not need.
+  const bounces = app.match(/user\.capabilities\.logistics \? <Navigate to="\/dashboard" replace \/>/g) ?? []
+  assert.equal(bounces.length, 2)
 })
 
 test("minimal client wires shared 2FA, context, and logout", () => {
@@ -33,13 +51,15 @@ test("minimal client wires shared 2FA, context, and logout", () => {
   assert.match(app, /context\(\)/)
   assert.match(app, /await logout\(\)/)
   assert.match(app, /path="\/access-denied"/)
+  assert.match(app, /submitApplication|ApplyPage/)
 })
 
 test("public routes share the branded auth shell, authenticated routes the app shell", () => {
   // Login (which also renders the 2FA challenge), access-denied and the
   // session-restore state use AuthLayout; the dashboard uses AppShell.
-  assert.equal(app.match(/<AuthLayout/g)?.length, 3)
-  assert.match(app, /<AppShell user=\{user\} onSignOut=\{signOut\}>/)
+  assert.ok((app.match(/<AuthLayout/g)?.length ?? 0) >= 3)
+  for (const page of [applyPage, statusPage]) assert.match(page, /<AuthLayout/)
+  assert.match(app, /<AppShell user=\{user\} context=\{data\} onSignOut=\{onSignOut\}>/)
   assert.match(authLayout, /PublicHeader/)
   assert.match(authLayout, /PublicFooter/)
   assert.match(authLayout, /Logistics Partner Portal/)
